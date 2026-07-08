@@ -1,0 +1,53 @@
+name: Release
+
+# Publishes @sld-kit/core to npm whenever main is pushed with a version that
+# is not yet on the registry. Bump packages/core/package.json "version",
+# commit, push main → the package is published. Pushes that do not change the
+# version are validated but publish nothing (idempotent).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  # Required for npm provenance (OIDC). The repo must be public.
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Never publish a broken build.
+      - run: pnpm run typecheck
+      - run: pnpm run lint
+      - run: pnpm run test
+      # Build + publint + attw — guards the artifact before publish.
+      - run: pnpm --filter @sld-kit/core run verify:pack
+
+      - name: Publish @sld-kit/core if the version is new
+        working-directory: packages/core
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VERSION" version > /dev/null 2>&1; then
+            echo "$NAME@$VERSION is already published — nothing to do."
+          else
+            echo "Publishing $NAME@$VERSION…"
+            # provenance comes from publishConfig.provenance + id-token: write.
+            npm publish --access public
+          fi
