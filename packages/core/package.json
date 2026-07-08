@@ -1,0 +1,59 @@
+{
+  "name": "@sld-kit/core",
+  "version": "0.1.0",
+  "description": "Headless, framework-agnostic engine for single-line (electrical) diagrams: document model, grid layout, undo/redo commands, JSON serialization and PowerPoint-safe SVG export.",
+  "type": "module",
+  "sideEffects": false,
+  "license": "MIT",
+  "author": "Adrian Sanchez R",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adrisanchu/sld-kit.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/adrisanchu/sld-kit/tree/main/packages/core#readme",
+  "keywords": [
+    "sld",
+    "single-line-diagram",
+    "electrical",
+    "diagram",
+    "svg",
+    "headless"
+  ],
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "demo": "tsx tests/demo.ts",
+    "prepublishOnly": "pnpm run build",
+    "verify:pack": "pnpm run build && publint && attw --pack --ignore-rules cjs-resolves-to-esm"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.4",
+    "publint": "^0.3.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "vitest": "^2.1.8"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

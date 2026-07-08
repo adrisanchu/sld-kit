@@ -1,0 +1,79 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`SvgExporter (default theme) > matches the locked snapshot 1`] = `
+"<svg xmlns="http://www.w3.org/2000/svg" width="732" height="682" viewBox="0 0 732 682">
+<rect x="0" y="0" width="732" height="682" fill="#ffffff"/>
+<polyline points="150,177 150,104" fill="none" stroke="#334155" stroke-width="2"/>
+<polyline points="150,237 150,311" fill="none" stroke="#334155" stroke-width="2"/>
+<polyline points="150,371 150,578" fill="none" stroke="#334155" stroke-width="2"/>
+<polyline points="294,177 294,104" fill="none" stroke="#334155" stroke-width="2"/>
+<polyline points="294,237 294,311" fill="none" stroke="#334155" stroke-width="2"/>
+<polyline points="294,505 294,578" fill="none" stroke="#334155" stroke-width="2"/>
+<polyline points="294,371 294,445" fill="none" stroke="#334155" stroke-width="2"/>
+<polyline points="438,177 438,104" fill="none" stroke="#334155" stroke-width="2"/>
+<polyline points="438,237 438,311" fill="none" stroke="#334155" stroke-width="2"/>
+<polyline points="438,505 438,578" fill="none" stroke="#334155" stroke-width="2"/>
+<polyline points="438,371 438,445" fill="none" stroke="#334155" stroke-width="2"/>
+<polyline points="582,311 582,104" fill="none" stroke="#334155" stroke-width="2"/>
+<polyline points="582,505 582,578" fill="none" stroke="#334155" stroke-width="2"/>
+<polyline points="582,371 582,445" fill="none" stroke="#334155" stroke-width="2"/>
+<polyline points="150,274 222,274 222,62" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 222 52 L 227.5 62 L 216.5 62 Z" fill="#334155"/>
+<circle cx="150" cy="274" r="3.5" fill="#334155"/>
+<rect x="211" y="67" width="22" height="22" fill="#ffffff"/>
+<g transform="translate(211 67) scale(0.917)" stroke="#334155" fill="none">
+<circle cx="12" cy="12" r="9" fill="none" stroke-width="1.6"/>
+<path d="M 6.5 12 C 8.5 8, 10.5 8, 12 12 C 13.5 16, 15.5 16, 17.5 12" fill="none" stroke-width="1.6"/>
+</g>
+<text x="222" y="36" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0f172a">SOLAR PARK 1</text>
+<polyline points="294,274 366,274 366,62" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 366 52 L 371.5 62 L 360.5 62 Z" fill="#334155"/>
+<circle cx="294" cy="274" r="3.5" fill="#334155"/>
+<text x="366" y="36" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0f172a">FEEDER A</text>
+<polyline points="438,274 510,274 510,62" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 510 52 L 515.5 62 L 504.5 62 Z" fill="#334155"/>
+<circle cx="438" cy="274" r="3.5" fill="#334155"/>
+<text x="510" y="36" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0f172a">FEEDER B</text>
+<polyline points="294,408 366,408 366,620" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 366 630 L 360.5 620 L 371.5 620 Z" fill="#334155"/>
+<circle cx="294" cy="408" r="3.5" fill="#334155"/>
+<text x="366" y="656" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0f172a">FEEDER C</text>
+<polyline points="438,408 510,408 510,620" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 510 630 L 504.5 620 L 515.5 620 Z" fill="#334155"/>
+<circle cx="438" cy="408" r="3.5" fill="#334155"/>
+<rect x="499" y="593" width="22" height="22" fill="#ffffff"/>
+<g transform="translate(499 593) scale(0.917)" stroke="#334155" fill="none">
+<circle cx="12" cy="8.5" r="6" fill="none" stroke-width="1.6"/>
+<circle cx="12" cy="15.5" r="6" fill="none" stroke-width="1.6"/>
+</g>
+<text x="510" y="656" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0f172a">TIE 220 kV</text>
+<polyline points="582,408 654,408 654,620" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 654 630 L 648.5 620 L 659.5 620 Z" fill="#334155"/>
+<circle cx="582" cy="408" r="3.5" fill="#334155"/>
+<text x="654" y="656" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0f172a">FEEDER D</text>
+<rect x="60" y="101" width="612" height="6" fill="#0f172a"/>
+<text x="60" y="93" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#0f172a">BB1</text>
+<rect x="60" y="575" width="612" height="6" fill="#0f172a"/>
+<text x="60" y="567" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#0f172a">BB2</text>
+<rect x="102" y="177" width="96" height="60" rx="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1.5"/>
+<text x="150" y="211.2" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#14532d">R1</text>
+<rect x="246" y="177" width="96" height="60" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+<text x="294" y="211.2" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#1e3a8a">L1</text>
+<rect x="390" y="177" width="96" height="60" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+<text x="438" y="211.2" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#1e3a8a">L2</text>
+<rect x="102" y="311" width="96" height="60" rx="6" fill="#ede9fe" stroke="#8b5cf6" stroke-width="1.5"/>
+<text x="150" y="345.2" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#4c1d95">C1</text>
+<rect x="246" y="311" width="96" height="60" rx="6" fill="#ede9fe" stroke="#8b5cf6" stroke-width="1.5"/>
+<text x="294" y="345.2" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#4c1d95">C2</text>
+<rect x="390" y="311" width="96" height="60" rx="6" fill="#ede9fe" stroke="#8b5cf6" stroke-width="1.5"/>
+<text x="438" y="345.2" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#4c1d95">C3</text>
+<rect x="534" y="311" width="96" height="60" rx="6" fill="#ede9fe" stroke="#8b5cf6" stroke-width="1.5"/>
+<text x="582" y="345.2" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#4c1d95">C4</text>
+<rect x="246" y="445" width="96" height="60" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+<text x="294" y="479.2" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#1e3a8a">L3</text>
+<rect x="390" y="445" width="96" height="60" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+<text x="438" y="479.2" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#78350f">T1</text>
+<rect x="534" y="445" width="96" height="60" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+<text x="582" y="479.2" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#1e3a8a">L4</text>
+</svg>"
+`;

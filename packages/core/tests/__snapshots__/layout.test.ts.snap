@@ -1,0 +1,674 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`LayoutEngine > geometry is stable (snapshot) 1`] = `
+{
+  "geometry": [
+    [
+      "bb-1",
+      {
+        "kind": "busbar",
+        "labelAt": {
+          "x": 60,
+          "y": 93,
+        },
+        "rect": {
+          "height": 6,
+          "width": 612,
+          "x": 60,
+          "y": 101,
+        },
+      },
+    ],
+    [
+      "bb-2",
+      {
+        "kind": "busbar",
+        "labelAt": {
+          "x": 60,
+          "y": 567,
+        },
+        "rect": {
+          "height": 6,
+          "width": 612,
+          "x": 60,
+          "y": 575,
+        },
+      },
+    ],
+    [
+      "cn-c0t-ext",
+      {
+        "arrow": {
+          "angle": -90,
+          "at": {
+            "x": 222,
+            "y": 52,
+          },
+        },
+        "dot": {
+          "x": 150,
+          "y": 274,
+        },
+        "kind": "connection",
+        "labelAt": {
+          "anchor": "middle",
+          "at": {
+            "x": 222,
+            "y": 36,
+          },
+        },
+        "points": [
+          {
+            "x": 150,
+            "y": 274,
+          },
+          {
+            "x": 222,
+            "y": 274,
+          },
+          {
+            "x": 222,
+            "y": 62,
+          },
+        ],
+        "symbol": {
+          "box": {
+            "height": 22,
+            "width": 22,
+            "x": 211,
+            "y": 67,
+          },
+          "key": "external:renewable",
+        },
+      },
+    ],
+    [
+      "cn-c1b-ext",
+      {
+        "arrow": {
+          "angle": 90,
+          "at": {
+            "x": 366,
+            "y": 630,
+          },
+        },
+        "dot": {
+          "x": 294,
+          "y": 408,
+        },
+        "kind": "connection",
+        "labelAt": {
+          "anchor": "middle",
+          "at": {
+            "x": 366,
+            "y": 656,
+          },
+        },
+        "points": [
+          {
+            "x": 294,
+            "y": 408,
+          },
+          {
+            "x": 366,
+            "y": 408,
+          },
+          {
+            "x": 366,
+            "y": 620,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-c1t-ext",
+      {
+        "arrow": {
+          "angle": -90,
+          "at": {
+            "x": 366,
+            "y": 52,
+          },
+        },
+        "dot": {
+          "x": 294,
+          "y": 274,
+        },
+        "kind": "connection",
+        "labelAt": {
+          "anchor": "middle",
+          "at": {
+            "x": 366,
+            "y": 36,
+          },
+        },
+        "points": [
+          {
+            "x": 294,
+            "y": 274,
+          },
+          {
+            "x": 366,
+            "y": 274,
+          },
+          {
+            "x": 366,
+            "y": 62,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-c2t-ext",
+      {
+        "arrow": {
+          "angle": -90,
+          "at": {
+            "x": 510,
+            "y": 52,
+          },
+        },
+        "dot": {
+          "x": 438,
+          "y": 274,
+        },
+        "kind": "connection",
+        "labelAt": {
+          "anchor": "middle",
+          "at": {
+            "x": 510,
+            "y": 36,
+          },
+        },
+        "points": [
+          {
+            "x": 438,
+            "y": 274,
+          },
+          {
+            "x": 510,
+            "y": 274,
+          },
+          {
+            "x": 510,
+            "y": 62,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-c3b-ext",
+      {
+        "arrow": {
+          "angle": 90,
+          "at": {
+            "x": 654,
+            "y": 630,
+          },
+        },
+        "dot": {
+          "x": 582,
+          "y": 408,
+        },
+        "kind": "connection",
+        "labelAt": {
+          "anchor": "middle",
+          "at": {
+            "x": 654,
+            "y": 656,
+          },
+        },
+        "points": [
+          {
+            "x": 582,
+            "y": 408,
+          },
+          {
+            "x": 654,
+            "y": 408,
+          },
+          {
+            "x": 654,
+            "y": 620,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-pos-c0m-down",
+      {
+        "kind": "connection",
+        "points": [
+          {
+            "x": 150,
+            "y": 371,
+          },
+          {
+            "x": 150,
+            "y": 578,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-pos-c0m-top",
+      {
+        "kind": "connection",
+        "points": [
+          {
+            "x": 150,
+            "y": 237,
+          },
+          {
+            "x": 150,
+            "y": 311,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-pos-c0t-bar",
+      {
+        "kind": "connection",
+        "points": [
+          {
+            "x": 150,
+            "y": 177,
+          },
+          {
+            "x": 150,
+            "y": 104,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-pos-c1b-bar",
+      {
+        "kind": "connection",
+        "points": [
+          {
+            "x": 294,
+            "y": 505,
+          },
+          {
+            "x": 294,
+            "y": 578,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-pos-c1m-bot",
+      {
+        "kind": "connection",
+        "points": [
+          {
+            "x": 294,
+            "y": 371,
+          },
+          {
+            "x": 294,
+            "y": 445,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-pos-c1m-top",
+      {
+        "kind": "connection",
+        "points": [
+          {
+            "x": 294,
+            "y": 237,
+          },
+          {
+            "x": 294,
+            "y": 311,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-pos-c1t-bar",
+      {
+        "kind": "connection",
+        "points": [
+          {
+            "x": 294,
+            "y": 177,
+          },
+          {
+            "x": 294,
+            "y": 104,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-pos-c2b-bar",
+      {
+        "kind": "connection",
+        "points": [
+          {
+            "x": 438,
+            "y": 505,
+          },
+          {
+            "x": 438,
+            "y": 578,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-pos-c2m-bot",
+      {
+        "kind": "connection",
+        "points": [
+          {
+            "x": 438,
+            "y": 371,
+          },
+          {
+            "x": 438,
+            "y": 445,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-pos-c2m-top",
+      {
+        "kind": "connection",
+        "points": [
+          {
+            "x": 438,
+            "y": 237,
+          },
+          {
+            "x": 438,
+            "y": 311,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-pos-c2t-bar",
+      {
+        "kind": "connection",
+        "points": [
+          {
+            "x": 438,
+            "y": 177,
+          },
+          {
+            "x": 438,
+            "y": 104,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-pos-c3b-bar",
+      {
+        "kind": "connection",
+        "points": [
+          {
+            "x": 582,
+            "y": 505,
+          },
+          {
+            "x": 582,
+            "y": 578,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-pos-c3m-bot",
+      {
+        "kind": "connection",
+        "points": [
+          {
+            "x": 582,
+            "y": 371,
+          },
+          {
+            "x": 582,
+            "y": 445,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-pos-c3m-up",
+      {
+        "kind": "connection",
+        "points": [
+          {
+            "x": 582,
+            "y": 311,
+          },
+          {
+            "x": 582,
+            "y": 104,
+          },
+        ],
+      },
+    ],
+    [
+      "cn-shared-transformer",
+      {
+        "arrow": {
+          "angle": 90,
+          "at": {
+            "x": 510,
+            "y": 630,
+          },
+        },
+        "dot": {
+          "x": 438,
+          "y": 408,
+        },
+        "kind": "connection",
+        "labelAt": {
+          "anchor": "middle",
+          "at": {
+            "x": 510,
+            "y": 656,
+          },
+        },
+        "points": [
+          {
+            "x": 438,
+            "y": 408,
+          },
+          {
+            "x": 510,
+            "y": 408,
+          },
+          {
+            "x": 510,
+            "y": 620,
+          },
+        ],
+        "symbol": {
+          "box": {
+            "height": 22,
+            "width": 22,
+            "x": 499,
+            "y": 593,
+          },
+          "key": "external:transformer",
+        },
+      },
+    ],
+    [
+      "pos-c0m",
+      {
+        "cell": {
+          "col": 0,
+          "row": 2,
+        },
+        "kind": "position",
+        "rect": {
+          "height": 60,
+          "width": 96,
+          "x": 102,
+          "y": 311,
+        },
+      },
+    ],
+    [
+      "pos-c0t",
+      {
+        "cell": {
+          "col": 0,
+          "row": 1,
+        },
+        "kind": "position",
+        "rect": {
+          "height": 60,
+          "width": 96,
+          "x": 102,
+          "y": 177,
+        },
+      },
+    ],
+    [
+      "pos-c1b",
+      {
+        "cell": {
+          "col": 1,
+          "row": 3,
+        },
+        "kind": "position",
+        "rect": {
+          "height": 60,
+          "width": 96,
+          "x": 246,
+          "y": 445,
+        },
+      },
+    ],
+    [
+      "pos-c1m",
+      {
+        "cell": {
+          "col": 1,
+          "row": 2,
+        },
+        "kind": "position",
+        "rect": {
+          "height": 60,
+          "width": 96,
+          "x": 246,
+          "y": 311,
+        },
+      },
+    ],
+    [
+      "pos-c1t",
+      {
+        "cell": {
+          "col": 1,
+          "row": 1,
+        },
+        "kind": "position",
+        "rect": {
+          "height": 60,
+          "width": 96,
+          "x": 246,
+          "y": 177,
+        },
+      },
+    ],
+    [
+      "pos-c2b",
+      {
+        "cell": {
+          "col": 2,
+          "row": 3,
+        },
+        "kind": "position",
+        "rect": {
+          "height": 60,
+          "width": 96,
+          "x": 390,
+          "y": 445,
+        },
+      },
+    ],
+    [
+      "pos-c2m",
+      {
+        "cell": {
+          "col": 2,
+          "row": 2,
+        },
+        "kind": "position",
+        "rect": {
+          "height": 60,
+          "width": 96,
+          "x": 390,
+          "y": 311,
+        },
+      },
+    ],
+    [
+      "pos-c2t",
+      {
+        "cell": {
+          "col": 2,
+          "row": 1,
+        },
+        "kind": "position",
+        "rect": {
+          "height": 60,
+          "width": 96,
+          "x": 390,
+          "y": 177,
+        },
+      },
+    ],
+    [
+      "pos-c3b",
+      {
+        "cell": {
+          "col": 3,
+          "row": 3,
+        },
+        "kind": "position",
+        "rect": {
+          "height": 60,
+          "width": 96,
+          "x": 534,
+          "y": 445,
+        },
+      },
+    ],
+    [
+      "pos-c3m",
+      {
+        "cell": {
+          "col": 3,
+          "row": 2,
+        },
+        "kind": "position",
+        "rect": {
+          "height": 60,
+          "width": 96,
+          "x": 534,
+          "y": 311,
+        },
+      },
+    ],
+  ],
+  "size": {
+    "height": 682,
+    "width": 732,
+  },
+}
+`;
