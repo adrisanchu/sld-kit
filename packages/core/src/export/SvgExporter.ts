@@ -2,6 +2,7 @@ import { SldDocument } from '../SldDocument';
 import { LayoutEngine, type DiagramLayout } from '../layout/LayoutEngine';
 import { arrowheadPath } from '../layout/geometry';
 import type { Rect } from '../layout/geometry';
+import { connectionPath } from '../layout/paths';
 import { SvgBuilder } from './SvgBuilder';
 import { SymbolRegistry } from '../symbols/SymbolRegistry';
 import { createDefaultSymbolRegistry } from '../symbols/defaults';
@@ -88,8 +89,8 @@ export class SvgExporter {
       const geo = layout.geometry.get(conn.id);
       if (geo?.kind !== 'connection') continue;
 
-      b.element('polyline', {
-        points: geo.points.map((p) => `${p.x},${p.y}`).join(' '),
+      b.element('path', {
+        d: connectionPath(geo.points, geo.hops, cfg.hopRadius),
         fill: 'none',
         stroke: theme.structure.connection,
         'stroke-width': 2
