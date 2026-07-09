@@ -3,21 +3,21 @@
 exports[`SvgExporter (default theme) > matches the locked snapshot 1`] = `
 "<svg xmlns="http://www.w3.org/2000/svg" width="732" height="682" viewBox="0 0 732 682">
 <rect x="0" y="0" width="732" height="682" fill="#ffffff"/>
-<polyline points="150,177 150,104" fill="none" stroke="#334155" stroke-width="2"/>
-<polyline points="150,237 150,311" fill="none" stroke="#334155" stroke-width="2"/>
-<polyline points="150,371 150,578" fill="none" stroke="#334155" stroke-width="2"/>
-<polyline points="294,177 294,104" fill="none" stroke="#334155" stroke-width="2"/>
-<polyline points="294,237 294,311" fill="none" stroke="#334155" stroke-width="2"/>
-<polyline points="294,505 294,578" fill="none" stroke="#334155" stroke-width="2"/>
-<polyline points="294,371 294,445" fill="none" stroke="#334155" stroke-width="2"/>
-<polyline points="438,177 438,104" fill="none" stroke="#334155" stroke-width="2"/>
-<polyline points="438,237 438,311" fill="none" stroke="#334155" stroke-width="2"/>
-<polyline points="438,505 438,578" fill="none" stroke="#334155" stroke-width="2"/>
-<polyline points="438,371 438,445" fill="none" stroke="#334155" stroke-width="2"/>
-<polyline points="582,311 582,104" fill="none" stroke="#334155" stroke-width="2"/>
-<polyline points="582,505 582,578" fill="none" stroke="#334155" stroke-width="2"/>
-<polyline points="582,371 582,445" fill="none" stroke="#334155" stroke-width="2"/>
-<polyline points="150,274 222,274 222,62" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 150 177 L 150 104" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 150 237 L 150 311" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 150 371 L 150 578" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 294 177 L 294 104" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 294 237 L 294 311" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 294 505 L 294 578" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 294 371 L 294 445" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 438 177 L 438 104" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 438 237 L 438 311" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 438 505 L 438 578" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 438 371 L 438 445" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 582 311 L 582 104" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 582 505 L 582 578" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 582 371 L 582 445" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 150 274 L 222 274 L 222 62" fill="none" stroke="#334155" stroke-width="2"/>
 <path d="M 222 52 L 227.5 62 L 216.5 62 Z" fill="#334155"/>
 <circle cx="150" cy="274" r="3.5" fill="#334155"/>
 <rect x="211" y="67" width="22" height="22" fill="#ffffff"/>
@@ -26,19 +26,19 @@ exports[`SvgExporter (default theme) > matches the locked snapshot 1`] = `
 <path d="M 6.5 12 C 8.5 8, 10.5 8, 12 12 C 13.5 16, 15.5 16, 17.5 12" fill="none" stroke-width="1.6"/>
 </g>
 <text x="222" y="36" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0f172a">SOLAR PARK 1</text>
-<polyline points="294,274 366,274 366,62" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 294 274 L 366 274 L 366 62" fill="none" stroke="#334155" stroke-width="2"/>
 <path d="M 366 52 L 371.5 62 L 360.5 62 Z" fill="#334155"/>
 <circle cx="294" cy="274" r="3.5" fill="#334155"/>
 <text x="366" y="36" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0f172a">FEEDER A</text>
-<polyline points="438,274 510,274 510,62" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 438 274 L 510 274 L 510 62" fill="none" stroke="#334155" stroke-width="2"/>
 <path d="M 510 52 L 515.5 62 L 504.5 62 Z" fill="#334155"/>
 <circle cx="438" cy="274" r="3.5" fill="#334155"/>
 <text x="510" y="36" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0f172a">FEEDER B</text>
-<polyline points="294,408 366,408 366,620" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 294 408 L 366 408 L 366 620" fill="none" stroke="#334155" stroke-width="2"/>
 <path d="M 366 630 L 360.5 620 L 371.5 620 Z" fill="#334155"/>
 <circle cx="294" cy="408" r="3.5" fill="#334155"/>
 <text x="366" y="656" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0f172a">FEEDER C</text>
-<polyline points="438,408 510,408 510,620" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 438 408 L 510 408 L 510 620" fill="none" stroke="#334155" stroke-width="2"/>
 <path d="M 510 630 L 504.5 620 L 515.5 620 Z" fill="#334155"/>
 <circle cx="438" cy="408" r="3.5" fill="#334155"/>
 <rect x="499" y="593" width="22" height="22" fill="#ffffff"/>
@@ -47,7 +47,7 @@ exports[`SvgExporter (default theme) > matches the locked snapshot 1`] = `
 <circle cx="12" cy="15.5" r="6" fill="none" stroke-width="1.6"/>
 </g>
 <text x="510" y="656" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0f172a">TIE 220 kV</text>
-<polyline points="582,408 654,408 654,620" fill="none" stroke="#334155" stroke-width="2"/>
+<path d="M 582 408 L 654 408 L 654 620" fill="none" stroke="#334155" stroke-width="2"/>
 <path d="M 654 630 L 648.5 620 L 659.5 620 Z" fill="#334155"/>
 <circle cx="582" cy="408" r="3.5" fill="#334155"/>
 <text x="654" y="656" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0f172a">FEEDER D</text>

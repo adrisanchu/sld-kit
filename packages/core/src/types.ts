@@ -35,8 +35,8 @@ export type PositionType = (typeof DEFAULT_POSITION_TYPES)[number] | (string & {
 /** Kind of asset an external connection arrow points to. */
 export type ExternalAssetKind = 'line' | 'transformer' | 'renewable' | 'storage' | 'demand';
 
-/** Which vertical direction an external arrow leaves the diagram. */
-export type ExternalDirection = 'up' | 'down';
+/** Which direction an external arrow leaves the diagram. */
+export type ExternalDirection = 'up' | 'down' | 'left' | 'right';
 
 /**
  * One end of a Connection.
@@ -57,7 +57,8 @@ export type ExternalDirection = 'up' | 'down';
  *    connections. When absent the layout derives it (opposite the arrow's
  *    direction, i.e. toward mid-bay).
  *  - `side` picks which side of the column the external's vertical lane runs
- *    on. Default `'right'`.
+ *    on. Default `'right'`. Ignored (and greyed in the dialog) when `direction`
+ *    is `'left'` or `'right'` — the direction itself says where the line goes.
  */
 export type Endpoint =
   | { kind: 'element'; id: ElementId; tap?: 'above' | 'below' }
