@@ -211,7 +211,7 @@ function validateEndpoint(ep: unknown, connId: string, side: 'from' | 'to'): voi
     if (typeof ext.label !== 'string') {
       throw new SldParseError(`Connection ${connId}: invalid external label`);
     }
-    if (ext.direction !== undefined && ext.direction !== 'up' && ext.direction !== 'down') {
+    if (ext.direction !== undefined && !['up', 'down', 'left', 'right'].includes(ext.direction as string)) {
       throw new SldParseError(`Connection ${connId}: invalid external direction`);
     }
     if (ext.side !== undefined && ext.side !== 'left' && ext.side !== 'right') {
