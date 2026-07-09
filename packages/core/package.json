@@ -1,6 +1,6 @@
 {
   "name": "@sld-kit/core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Headless, framework-agnostic engine for single-line (electrical) diagrams: document model, grid layout, undo/redo commands, JSON serialization and PowerPoint-safe SVG export.",
   "type": "module",
   "sideEffects": false,
