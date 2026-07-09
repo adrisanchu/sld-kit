@@ -47,9 +47,13 @@ export function detectCrossings(geometry: Map<ElementId, ElementGeometry>): void
           const vMinY = Math.min(q1.y, q2.y);
           const vMaxY = Math.max(q1.y, q2.y);
 
-          // Strict interior crossing: each point must be inside the other segment.
+          // vx must be strictly interior to the horizontal segment (excludes endpoints).
           if (vx <= hMinX + eps || vx >= hMaxX - eps) continue;
-          if (hy <= vMinY + eps || hy >= vMaxY - eps) continue;
+          // hy must lie within the vertical segment (endpoints included).
+          // Node routing starts vertical segments exactly at gapMidY, so strict
+          // interior would incorrectly exclude those real crossings. The junction-dot
+          // check below is the primary guard against electrical junctions.
+          if (hy < vMinY - eps || hy > vMaxY + eps) continue;
 
           const crossing: Point = { x: vx, y: hy };
 
