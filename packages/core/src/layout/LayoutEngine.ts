@@ -296,7 +296,8 @@ export class LayoutEngine {
       const key = `${gapY}:${dir}`;
 
       if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push({ col: el.col, id: conn.id });
+      const group = groups.get(key);
+      if (group) group.push({ col: el.col, id: conn.id });
     }
 
     for (const [key, exits] of groups) {
