@@ -22,6 +22,8 @@ export { planPositionWiring, type WiringPlan } from './wiring';
 export { nextPositionLabel, nextExternalLabel, POSITION_LABEL_PREFIX, EXTERNAL_LABEL_PREFIX } from './naming';
 
 export { type Point, type Rect, rectCenter, rectContains, arrowheadPath } from './layout/geometry';
+export { connectionPath } from './layout/paths';
+export { detectCrossings } from './layout/crossings';
 export {
   LayoutEngine,
   type DiagramLayout,
