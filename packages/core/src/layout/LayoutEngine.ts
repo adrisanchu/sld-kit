@@ -5,6 +5,7 @@ import { SldDocument } from '../SldDocument';
 import { BusBar } from '../elements/BusBar';
 import { Position } from '../elements/Position';
 import { Connection } from '../elements/Connection';
+import { detectCrossings } from './crossings';
 
 export interface BusBarGeometry {
   kind: 'busbar';
@@ -29,6 +30,12 @@ export interface ConnectionGeometry {
   labelAt?: { at: Point; anchor: 'start' | 'middle' | 'end' };
   /** Virtual-node junction dot: the 3-way tap where an external meets a bay. */
   dot?: Point;
+  /**
+   * Crossing points on this connection's horizontal segments where a hop arc
+   * should be drawn. Populated by `detectCrossings` after layout. Sorted by x.
+   * `undefined` means no crossings were detected.
+   */
+  hops?: Point[];
 }
 
 export type ElementGeometry = BusBarGeometry | PositionGeometry | ConnectionGeometry;
@@ -72,13 +79,34 @@ export class LayoutEngine {
     }
     const innerHeight = rows > 0 ? y - cfg.cellGapY - cfg.margin : 0;
     const innerWidth = cols > 0 ? cols * cfg.cellWidth + (cols - 1) * cfg.cellGapX : 0;
+
+    // Pre-scan connections for horizontal exits to determine canvas padding.
+    let hasLeftExit = false;
+    let hasRightExit = false;
+    for (const conn of doc.connections()) {
+      const ext = conn.from.kind === 'external' ? conn.from : conn.to.kind === 'external' ? conn.to : null;
+      if (!ext) continue;
+      if (ext.direction === 'left') hasLeftExit = true;
+      if (ext.direction === 'right') hasRightExit = true;
+    }
+    // Extra space needed for a horizontal exit: beyond the bar overhang,
+    // across the stem, past the arrowhead, plus room for the label text.
+    const labelRoom = 80;
+    const leftShift = hasLeftExit
+      ? Math.max(0, labelRoom + cfg.busBarOverhang + cfg.externalStemLength - cfg.margin)
+      : 0;
+    const extraRight = hasRightExit
+      ? Math.max(0, labelRoom + cfg.busBarOverhang + cfg.externalStemLength + cfg.arrowSize - cfg.margin)
+      : 0;
+    const leftMargin = cfg.margin + leftShift;
+
     const size = {
-      width: innerWidth + 2 * cfg.margin,
+      width: innerWidth + 2 * cfg.margin + leftShift + extraRight,
       height: innerHeight + 2 * cfg.margin
     };
 
     const cellRect = (cell: Cell): Rect => ({
-      x: cfg.margin + cell.col * (cfg.cellWidth + cfg.cellGapX),
+      x: leftMargin + cell.col * (cfg.cellWidth + cfg.cellGapX),
       y: rowTops[cell.row] ?? cfg.margin,
       width: cfg.cellWidth,
       height: rowHeights[cell.row] ?? cfg.cellHeight
@@ -94,7 +122,7 @@ export class LayoutEngine {
         }
       }
       if (row === -1) return null;
-      const col = Math.floor((p.x - cfg.margin + cfg.cellGapX / 2) / (cfg.cellWidth + cfg.cellGapX));
+      const col = Math.floor((p.x - leftMargin + cfg.cellGapX / 2) / (cfg.cellWidth + cfg.cellGapX));
       if (col < 0 || col >= cols) return null;
       return { row, col };
     };
@@ -112,7 +140,7 @@ export class LayoutEngine {
       if (bar.row < 0 || bar.row >= rows) continue;
       const centerY = rowTops[bar.row] + rowHeights[bar.row] / 2;
       const rect: Rect = {
-        x: cfg.margin - cfg.busBarOverhang,
+        x: leftMargin - cfg.busBarOverhang,
         y: centerY - cfg.busBarThickness / 2,
         width: innerWidth + 2 * cfg.busBarOverhang,
         height: cfg.busBarThickness
@@ -138,15 +166,31 @@ export class LayoutEngine {
     }
 
     const sortedBarRows = [...barRows].sort((a, b) => a - b);
-    // Center Y of the topmost / bottommost bars — external stems extend
-    // beyond these so a line leaving an inner position clears the bars.
     const barCenterY = (row: number) => rowTops[row] + rowHeights[row] / 2;
     const topBarY = sortedBarRows.length ? barCenterY(sortedBarRows[0]) : null;
     const bottomBarY = sortedBarRows.length ? barCenterY(sortedBarRows[sortedBarRows.length - 1]) : null;
+
+    // Pre-compute lane-stacking ranks for horizontal side exits.
+    const sideExitRankMap = this.computeSideExitRanks(doc, sortedBarRows, rowBoundaryY);
+
     for (const conn of doc.connections()) {
-      const geo = this.connectionGeometry(doc, conn, geometry, sortedBarRows, topBarY, bottomBarY, rowBoundaryY);
+      const geo = this.connectionGeometry(
+        doc,
+        conn,
+        geometry,
+        sortedBarRows,
+        topBarY,
+        bottomBarY,
+        rowBoundaryY,
+        leftMargin,
+        innerWidth,
+        sideExitRankMap
+      );
       if (geo) geometry.set(conn.id, geo);
     }
+
+    // Post-layout crossing detection: annotates hops on horizontal segments.
+    detectCrossings(geometry);
 
     return {
       size,
@@ -164,9 +208,10 @@ export class LayoutEngine {
    * Default direction for an external arrow. Positions typically sit
    * between the bars, so an external line leaves toward whichever bar the
    * position is nearer (crossing it on the way out); positions outside the
-   * bar block leave away from it.
+   * bar block leave away from it. Only ever returns 'up' or 'down';
+   * 'left'/'right' are always explicit user intent.
    */
-  private externalDirection(pos: Position, sortedBarRows: number[], rows: number): ExternalDirection {
+  private externalDirection(pos: Position, sortedBarRows: number[], rows: number): 'up' | 'down' {
     if (sortedBarRows.length === 0) return pos.row < rows / 2 ? 'up' : 'down';
     const top = sortedBarRows[0];
     const bottom = sortedBarRows[sortedBarRows.length - 1];
@@ -222,6 +267,50 @@ export class LayoutEngine {
   }
 
   /**
+   * Pre-computes lane-stacking ranks for side exits (left/right). When two or
+   * more externals share the same row gap and exit direction, they are assigned
+   * ranks 0, 1, 2… sorted by column (nearest to the exit edge first). Each
+   * rank offsets the horizontal run by `barTapOffset` vertically within the gap.
+   */
+  private computeSideExitRanks(
+    doc: SldDocument,
+    sortedBarRows: number[],
+    rowBoundaryY: (at: number) => number
+  ): Map<ElementId, number> {
+    const rankMap = new Map<ElementId, number>();
+    const groups = new Map<string, { col: number; id: ElementId }[]>();
+
+    for (const conn of doc.connections()) {
+      const ext = conn.from.kind === 'external' ? conn.from : conn.to.kind === 'external' ? conn.to : null;
+      if (!ext || (ext.direction !== 'left' && ext.direction !== 'right')) continue;
+      const dir = ext.direction;
+
+      const posEnd = conn.from.kind === 'element' ? conn.from : conn.to.kind === 'element' ? conn.to : null;
+      if (!posEnd) continue;
+      const el = doc.getElement(posEnd.id);
+      if (!(el instanceof Position)) continue;
+
+      const derivedVertical = this.externalDirection(el, sortedBarRows, doc.grid.rows);
+      const tap: 'above' | 'below' = posEnd.tap ?? (derivedVertical === 'up' ? 'below' : 'above');
+      const gapY = rowBoundaryY(tap === 'above' ? el.row : el.row + 1);
+      const key = `${gapY}:${dir}`;
+
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push({ col: el.col, id: conn.id });
+    }
+
+    for (const [key, exits] of groups) {
+      const dir = key.split(':')[1] as 'left' | 'right';
+      exits.sort((a, b) => (dir === 'left' ? a.col - b.col : b.col - a.col));
+      for (let i = 0; i < exits.length; i++) {
+        rankMap.set(exits[i].id, i);
+      }
+    }
+
+    return rankMap;
+  }
+
+  /**
    * v0 straight stem: the external leaves the position box edge, runs straight
    * out crossing the outer bar, and ends beyond it with arrowhead + label.
    * Used as the degenerate fallback for positions with no tap-side neighbour.
@@ -236,9 +325,6 @@ export class LayoutEngine {
     const cfg = this.cfg;
     const cx = posGeo.rect.x + posGeo.rect.width / 2;
     const startY = dir === 'up' ? posGeo.rect.y : posGeo.rect.y + posGeo.rect.height;
-    // The stem must clear the outermost bar: if that bar sits beyond the
-    // position edge in this direction, start measuring from the bar so the
-    // arrow ends outside the bar block (matching real SLDs).
     const clearY =
       dir === 'up'
         ? topBarY !== null
@@ -248,9 +334,6 @@ export class LayoutEngine {
           ? Math.max(startY, bottomBarY)
           : startY;
     const endY = dir === 'up' ? clearY - cfg.externalStemLength : clearY + cfg.externalStemLength;
-    // Stop the line at the arrow base (not tip) so base and line-end meet at the
-    // same y — eliminates the anti-aliasing seam between the filled triangle and
-    // the stroked line.
     const lineEndY = dir === 'up' ? endY + cfg.arrowSize : endY - cfg.arrowSize;
     const geo: ConnectionGeometry = {
       kind: 'connection',
@@ -292,17 +375,11 @@ export class LayoutEngine {
   ): ConnectionGeometry {
     const cfg = this.cfg;
     const cx = posGeo.rect.x + posGeo.rect.width / 2;
-    // Node Y = midpoint of the gap on the tap side (rowBoundaryY returns the
-    // gap centre). The node X is the column centre, so it lands on the
-    // straight vertical through-segment for free.
     const gapMidY = rowBoundaryY(tap === 'above' ? pos.row : pos.row + 1);
     const node: Point = { x: cx, y: gapMidY };
-    // The lane runs in the mid-gap of the column boundary on `side`
-    // (half a box + half a column gap out from the centre), clearing the box.
     const side = external.side ?? 'right';
     const laneOffset = cfg.cellWidth / 2 + cfg.cellGapX / 2;
     const laneX = side === 'right' ? cx + laneOffset : cx - laneOffset;
-    // The lane must clear the outer bar, measured from the node.
     const clearY =
       dir === 'up'
         ? topBarY !== null
@@ -324,8 +401,6 @@ export class LayoutEngine {
       }
     };
     if (external.asset !== 'line') {
-      // Sit the glyph on the lane segment beyond the bar (clearY→endY), so it
-      // never lands on top of the bar it just crossed.
       const midY = (clearY + endY) / 2;
       geo.symbol = {
         key: `external:${external.asset}`,
@@ -340,6 +415,85 @@ export class LayoutEngine {
     return geo;
   }
 
+  /**
+   * Side exit routing: the external leaves the position horizontally, to the
+   * left or right diagram edge, ending with an arrowhead + label at the margin.
+   *
+   * Node case (hasThrough=true): starts at the virtual node in the row gap,
+   * marked with a junction dot. Straight fallback (hasThrough=false): starts
+   * at the box edge and runs at the box's vertical centre.
+   *
+   * Lane stacking: when multiple exits share the same row gap and direction,
+   * `rank` shifts each run vertically by `barTapOffset` to prevent overlap.
+   */
+  private sideExternalGeometry(
+    posGeo: { rect: Rect },
+    pos: Position,
+    dir: 'left' | 'right',
+    tap: 'above' | 'below',
+    external: Extract<Endpoint, { kind: 'external' }>,
+    rowBoundaryY: (at: number) => number,
+    leftMargin: number,
+    innerWidth: number,
+    rank: number,
+    hasThrough: boolean
+  ): ConnectionGeometry {
+    const cfg = this.cfg;
+    const cx = posGeo.rect.x + posGeo.rect.width / 2;
+
+    // Arrow tip x: just past the bus-bar overhangs by one stem length.
+    const edgeX =
+      dir === 'right'
+        ? leftMargin + innerWidth + cfg.busBarOverhang + cfg.externalStemLength
+        : leftMargin - cfg.busBarOverhang - cfg.externalStemLength;
+
+    // Line ends at the arrow base so the stroked line and filled triangle meet.
+    const lineEndX = dir === 'right' ? edgeX - cfg.arrowSize : edgeX + cfg.arrowSize;
+    const arrowAngle = dir === 'right' ? 0 : 180;
+
+    // Y of this run: node gap mid-point for the node case, box centre for straight.
+    const gapMidY = rowBoundaryY(tap === 'above' ? pos.row : pos.row + 1);
+    const runY = (hasThrough ? gapMidY : posGeo.rect.y + posGeo.rect.height / 2) + rank * cfg.barTapOffset;
+
+    // Label: past the arrow tip, text anchored at the outer margin.
+    const labelOffset = cfg.arrowSize + 6;
+    const labelX = dir === 'right' ? edgeX + labelOffset : edgeX - labelOffset;
+    const labelY = runY + cfg.labelFontSize * 0.35;
+
+    const startPoint: Point = hasThrough
+      ? { x: cx, y: runY }
+      : { x: dir === 'right' ? posGeo.rect.x + posGeo.rect.width : posGeo.rect.x, y: runY };
+
+    const geo: ConnectionGeometry = {
+      kind: 'connection',
+      points: [startPoint, { x: lineEndX, y: runY }],
+      arrow: { at: { x: edgeX, y: runY }, angle: arrowAngle },
+      labelAt: {
+        at: { x: labelX, y: labelY },
+        anchor: dir === 'right' ? 'start' : 'end'
+      }
+    };
+
+    if (hasThrough) {
+      geo.dot = { x: cx, y: runY };
+    }
+
+    if (external.asset !== 'line') {
+      const midX = (startPoint.x + edgeX) / 2;
+      geo.symbol = {
+        key: `external:${external.asset}`,
+        box: {
+          x: midX - cfg.symbolSize / 2,
+          y: runY - cfg.symbolSize / 2,
+          width: cfg.symbolSize,
+          height: cfg.symbolSize
+        }
+      };
+    }
+
+    return geo;
+  }
+
   private connectionGeometry(
     doc: SldDocument,
     conn: Connection,
@@ -347,7 +501,10 @@ export class LayoutEngine {
     sortedBarRows: number[],
     topBarY: number | null,
     bottomBarY: number | null,
-    rowBoundaryY: (at: number) => number
+    rowBoundaryY: (at: number) => number,
+    leftMargin: number,
+    innerWidth: number,
+    sideExitRankMap: Map<ElementId, number>
   ): ConnectionGeometry | null {
     const resolve = (e: Endpoint) => (e.kind === 'element' ? doc.getElement(e.id) : null);
     const a = resolve(conn.from);
@@ -361,12 +518,35 @@ export class LayoutEngine {
       const posGeo = geometry.get(el.id);
       if (posGeo?.kind !== 'position') return null;
       const dir = external.direction ?? this.externalDirection(el, sortedBarRows, doc.grid.rows);
-      // The tap is the row gap the external node sits in: an explicit override
-      // on the position endpoint, else the side toward mid-bay (opposite the
-      // arrow direction). A node only exists where a through-connection runs
-      // for it to lie on; otherwise fall back to the v0 straight stem.
       const posEndpoint = conn.from.kind === 'element' ? conn.from : conn.to.kind === 'element' ? conn.to : null;
-      const tap: 'above' | 'below' = posEndpoint?.tap ?? (dir === 'up' ? 'below' : 'above');
+
+      // For horizontal exits, derive the tap the same way as vertical:
+      // use the position's natural vertical direction to choose which row gap.
+      const derivedTap = (d: ExternalDirection): 'above' | 'below' => {
+        if (d === 'up') return 'below';
+        if (d === 'down') return 'above';
+        const nat = this.externalDirection(el, sortedBarRows, doc.grid.rows);
+        return nat === 'up' ? 'below' : 'above';
+      };
+      const tap: 'above' | 'below' = posEndpoint?.tap ?? derivedTap(dir);
+
+      if (dir === 'left' || dir === 'right') {
+        const hasThrough = this.hasThroughConnection(doc, el, tap);
+        const rank = sideExitRankMap.get(conn.id) ?? 0;
+        return this.sideExternalGeometry(
+          posGeo,
+          el,
+          dir,
+          tap,
+          external,
+          rowBoundaryY,
+          leftMargin,
+          innerWidth,
+          rank,
+          hasThrough
+        );
+      }
+
       if (!this.hasThroughConnection(doc, el, tap)) {
         return this.straightExternalGeometry(posGeo, dir, external, topBarY, bottomBarY);
       }
@@ -385,13 +565,6 @@ export class LayoutEngine {
       const barY = barGeo.rect.y + barGeo.rect.height / 2;
       const startY = bar.row > pos.row ? posGeo.rect.y + posGeo.rect.height : posGeo.rect.y;
 
-      // A bay may tap several bars on the same side (double busbar). The
-      // nearest bar keeps the straight trunk at `cx`; each farther bar branches
-      // off the SAME way an external arrow does (nodeExternalGeometry): a
-      // junction node sits at the equidistant mid-gap next to the box — on the
-      // bay's straight through-segment — marked with a dot, then the leg turns
-      // 90° into its own lane and runs down (crossing the nearer bar without a
-      // dot) to tap this bar.
       const side = Math.sign(bar.row - pos.row);
       const taps = this.sameSideBarTaps(doc, pos, side, geometry);
       const rank = taps.findIndex((t) => t.bar.id === bar.id);
@@ -406,9 +579,6 @@ export class LayoutEngine {
         };
       }
 
-      // Node at the mid-gap adjacent to the box on the bar side (same formula
-      // as the external tap). It lies on the nearest-bar connection's straight
-      // trunk, so the far leg starts there without redrawing the trunk.
       const gapMidY = rowBoundaryY(side > 0 ? pos.row + 1 : pos.row);
       const laneX = cx + rank * cfg.barTapOffset;
       return {
@@ -454,7 +624,6 @@ export class LayoutEngine {
       };
     }
 
-    // Unsupported combination (busbar ↔ busbar, dangling ids…): no geometry.
     return null;
   }
 }

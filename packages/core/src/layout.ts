@@ -42,6 +42,8 @@ export const SLD_LAYOUT = {
   barTapOffset: 16,
   /** Square box size for external asset glyphs (transformer, renewable…). */
   symbolSize: 22,
+  /** Semicircular arc radius drawn where a horizontal run hops over a vertical one. */
+  hopRadius: 6,
   fontFamily: 'Arial, Helvetica, sans-serif',
   labelFontSize: 12,
   busLabelFontSize: 13
