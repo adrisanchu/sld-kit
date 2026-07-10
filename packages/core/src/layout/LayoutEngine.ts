@@ -171,7 +171,7 @@ export class LayoutEngine {
     const bottomBarY = sortedBarRows.length ? barCenterY(sortedBarRows[sortedBarRows.length - 1]) : null;
 
     // Pre-compute lane-stacking ranks for horizontal side exits.
-    const sideExitRankMap = this.computeSideExitRanks(doc, sortedBarRows, rowBoundaryY);
+    const sideExitRankMap = this.computeGapExitRanks(doc, sortedBarRows, rowBoundaryY);
 
     for (const conn of doc.connections()) {
       const geo = this.connectionGeometry(
@@ -267,44 +267,99 @@ export class LayoutEngine {
   }
 
   /**
-   * Pre-computes lane-stacking ranks for side exits (left/right). When two or
-   * more externals share the same row gap and exit direction, they are assigned
-   * ranks 0, 1, 2… sorted by column (nearest to the exit edge first). Each
-   * rank offsets the horizontal run by `barTapOffset` vertically within the gap.
+   * Pre-computes lane-stacking ranks for every external that taps a row gap,
+   * in any direction. Externals sharing a gap whose horizontal footprints
+   * overlap are assigned distinct ranks (0, 1, 2 …); each rank offsets the run
+   * or junction node vertically by `barTapOffset`, so colliding exits stagger
+   * onto separate lines instead of overlapping. Non-overlapping footprints —
+   * e.g. a left exit and a right exit leaving toward opposite edges — both keep
+   * rank 0 and run in parallel, untouched.
+   *
+   * Footprints are measured in column units: a right exit spans `[col, ∞)`, a
+   * left exit `(−∞, col]`, and an up/down exit only its half-cell jog toward
+   * its lane side (`[col, col+0.5]` or `[col−0.5, col]`). Two footprints
+   * conflict when their closed intervals intersect. Horizontal exits — which
+   * run across the gap — claim their lanes first (lowest ranks), then vertical
+   * exits fill what remains; ties break by the run that reaches its edge
+   * soonest (shortest run nearest rank 0), matching the previous side-exit
+   * ordering.
    */
-  private computeSideExitRanks(
+  private computeGapExitRanks(
     doc: SldDocument,
     sortedBarRows: number[],
     rowBoundaryY: (at: number) => number
   ): Map<ElementId, number> {
     const rankMap = new Map<ElementId, number>();
-    const groups = new Map<string, { col: number; id: ElementId }[]>();
+    const cols = doc.grid.cols;
+
+    interface Exit {
+      id: ElementId;
+      lo: number;
+      hi: number;
+      horizontal: boolean;
+      /** Processing priority within the gap (lower goes first). */
+      order: number;
+      rank: number;
+    }
+    const groups = new Map<number, Exit[]>();
 
     for (const conn of doc.connections()) {
       const ext = conn.from.kind === 'external' ? conn.from : conn.to.kind === 'external' ? conn.to : null;
-      if (!ext || (ext.direction !== 'left' && ext.direction !== 'right')) continue;
-      const dir = ext.direction;
-
+      if (!ext) continue;
       const posEnd = conn.from.kind === 'element' ? conn.from : conn.to.kind === 'element' ? conn.to : null;
       if (!posEnd) continue;
       const el = doc.getElement(posEnd.id);
       if (!(el instanceof Position)) continue;
 
-      const derivedVertical = this.externalDirection(el, sortedBarRows, doc.grid.rows);
-      const tap: 'above' | 'below' = posEnd.tap ?? (derivedVertical === 'up' ? 'below' : 'above');
-      const gapY = rowBoundaryY(tap === 'above' ? el.row : el.row + 1);
-      const key = `${gapY}:${dir}`;
+      const dir = ext.direction ?? this.externalDirection(el, sortedBarRows, doc.grid.rows);
+      const horizontal = dir === 'left' || dir === 'right';
 
-      if (!groups.has(key)) groups.set(key, []);
-      const group = groups.get(key);
-      if (group) group.push({ col: el.col, id: conn.id });
+      // Tap gap: same derivation as connectionGeometry.
+      const nat = this.externalDirection(el, sortedBarRows, doc.grid.rows);
+      const derivedTap: 'above' | 'below' =
+        dir === 'up' ? 'below' : dir === 'down' ? 'above' : nat === 'up' ? 'below' : 'above';
+      const tap: 'above' | 'below' = posEnd.tap ?? derivedTap;
+      const gapY = rowBoundaryY(tap === 'above' ? el.row : el.row + 1);
+
+      const c = el.col;
+      let lo: number;
+      let hi: number;
+      let order: number;
+      if (dir === 'right') {
+        lo = c;
+        hi = Infinity;
+        order = cols - c; // shorter right run (nearer the right edge) first
+      } else if (dir === 'left') {
+        lo = -Infinity;
+        hi = c;
+        order = c + 1; // shorter left run (nearer the left edge) first
+      } else {
+        const side = ext.side ?? 'right';
+        lo = side === 'right' ? c : c - 0.5;
+        hi = side === 'right' ? c + 0.5 : c;
+        order = c;
+      }
+
+      const exit: Exit = { id: conn.id, lo, hi, horizontal, order, rank: 0 };
+      const arr = groups.get(gapY);
+      if (arr) arr.push(exit);
+      else groups.set(gapY, [exit]);
     }
 
-    for (const [key, exits] of groups) {
-      const dir = key.split(':')[1] as 'left' | 'right';
-      exits.sort((a, b) => (dir === 'left' ? a.col - b.col : b.col - a.col));
-      for (let i = 0; i < exits.length; i++) {
-        rankMap.set(exits[i].id, i);
+    for (const [, exits] of groups) {
+      exits.sort((a, b) => (a.horizontal === b.horizontal ? a.order - b.order : a.horizontal ? -1 : 1));
+
+      const placed: Exit[] = [];
+      for (const e of exits) {
+        const taken = new Set<number>();
+        for (const p of placed) {
+          if (e.lo <= p.hi && p.lo <= e.hi) taken.add(p.rank);
+        }
+        let r = 0;
+        while (taken.has(r)) r++;
+        e.rank = r;
+        rankMap.set(e.id, r);
+        placed.push(e);
       }
     }
 
@@ -372,28 +427,32 @@ export class LayoutEngine {
     external: Extract<Endpoint, { kind: 'external' }>,
     topBarY: number | null,
     bottomBarY: number | null,
-    rowBoundaryY: (at: number) => number
+    rowBoundaryY: (at: number) => number,
+    rank: number
   ): ConnectionGeometry {
     const cfg = this.cfg;
     const cx = posGeo.rect.x + posGeo.rect.width / 2;
-    const gapMidY = rowBoundaryY(tap === 'above' ? pos.row : pos.row + 1);
-    const node: Point = { x: cx, y: gapMidY };
+    // Stagger the junction (and its 90° jog) within the row gap when another
+    // gap exit shares the same lane, so the dot lands on a clear line instead
+    // of on a crossing. The dot stays on the bay's through-segment.
+    const nodeY = rowBoundaryY(tap === 'above' ? pos.row : pos.row + 1) + rank * cfg.barTapOffset;
+    const node: Point = { x: cx, y: nodeY };
     const side = external.side ?? 'right';
     const laneOffset = cfg.cellWidth / 2 + cfg.cellGapX / 2;
     const laneX = side === 'right' ? cx + laneOffset : cx - laneOffset;
     const clearY =
       dir === 'up'
         ? topBarY !== null
-          ? Math.min(gapMidY, topBarY)
-          : gapMidY
+          ? Math.min(nodeY, topBarY)
+          : nodeY
         : bottomBarY !== null
-          ? Math.max(gapMidY, bottomBarY)
-          : gapMidY;
+          ? Math.max(nodeY, bottomBarY)
+          : nodeY;
     const endY = dir === 'up' ? clearY - cfg.externalStemLength : clearY + cfg.externalStemLength;
     const lineEndY = dir === 'up' ? endY + cfg.arrowSize : endY - cfg.arrowSize;
     const geo: ConnectionGeometry = {
       kind: 'connection',
-      points: [node, { x: laneX, y: gapMidY }, { x: laneX, y: lineEndY }],
+      points: [node, { x: laneX, y: nodeY }, { x: laneX, y: lineEndY }],
       arrow: { at: { x: laneX, y: endY }, angle: dir === 'up' ? -90 : 90 },
       dot: node,
       labelAt: {
@@ -537,9 +596,10 @@ export class LayoutEngine {
       };
       const tap: 'above' | 'below' = posEndpoint?.tap ?? derivedTap(dir);
 
+      const rank = sideExitRankMap.get(conn.id) ?? 0;
+
       if (dir === 'left' || dir === 'right') {
         const hasThrough = this.hasThroughConnection(doc, el, tap);
-        const rank = sideExitRankMap.get(conn.id) ?? 0;
         return this.sideExternalGeometry(
           posGeo,
           el,
@@ -557,7 +617,7 @@ export class LayoutEngine {
       if (!this.hasThroughConnection(doc, el, tap)) {
         return this.straightExternalGeometry(posGeo, dir, external, topBarY, bottomBarY);
       }
-      return this.nodeExternalGeometry(posGeo, el, dir, tap, external, topBarY, bottomBarY, rowBoundaryY);
+      return this.nodeExternalGeometry(posGeo, el, dir, tap, external, topBarY, bottomBarY, rowBoundaryY, rank);
     }
 
     // position ↔ busbar
