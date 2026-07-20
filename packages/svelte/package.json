@@ -1,0 +1,60 @@
+{
+  "name": "@sld-kit/svelte",
+  "version": "0.1.0",
+  "description": "Svelte 4 components for single-line (electrical) diagrams: a headless pan/zoom canvas, element views, and event-dispatching editor chrome built on @sld-kit/core.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Adrian Sanchez R",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adrisanchu/sld-kit.git",
+    "directory": "packages/svelte"
+  },
+  "homepage": "https://github.com/adrisanchu/sld-kit/tree/main/packages/svelte#readme",
+  "keywords": [
+    "sld",
+    "single-line-diagram",
+    "electrical",
+    "svelte",
+    "diagram",
+    "svg"
+  ],
+  "svelte": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "svelte": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "svelte-package",
+    "dev": "svelte-package --watch",
+    "prepublishOnly": "svelte-package",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "echo \"no tests yet\" && exit 0"
+  },
+  "peerDependencies": {
+    "@sld-kit/core": "^0.2.2",
+    "lucide-svelte": ">=0.400.0",
+    "svelte": "^4.0.0"
+  },
+  "devDependencies": {
+    "@sld-kit/core": "workspace:^",
+    "@sveltejs/package": "^2.3.7",
+    "@sveltejs/vite-plugin-svelte": "^3.1.2",
+    "lucide-svelte": "^0.483.0",
+    "svelte": "^4.2.7",
+    "svelte-check": "^3.8.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
