@@ -19,9 +19,14 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Build first: @sld-kit/svelte's typecheck resolves @sld-kit/core's types
+      # from packages/core/dist (gitignored), so core must be built beforehand.
+      # Runs in workspace dependency order (core → svelte).
+      - run: pnpm run build
+
       - run: pnpm run typecheck
       - run: pnpm run lint
       - run: pnpm run test
 
-      # Build + publint + attw (guards the publishable artifact).
+      # publint + attw (guards the publishable artifact; rebuilds core).
       - run: pnpm --filter @sld-kit/core run verify:pack
