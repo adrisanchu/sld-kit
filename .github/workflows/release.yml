@@ -1,9 +1,10 @@
 name: Release
 
-# Publishes @sld-kit/core to npm whenever main is pushed with a version that
-# is not yet on the registry. Bump packages/core/package.json "version",
-# commit, push main → the package is published. Pushes that do not change the
-# version are validated but publish nothing (idempotent).
+# Publishes @sld-kit/core and @sld-kit/svelte to npm whenever main is pushed
+# with a version that is not yet on the registry. Bump the package's
+# package.json "version", commit, push main → that package is published.
+# Pushes that do not change a version are validated but publish nothing (each
+# publish step checks the registry first, so it is idempotent).
 
 on:
   push:
@@ -50,4 +51,24 @@ jobs:
             echo "Publishing $NAME@$VERSION…"
             # provenance comes from publishConfig.provenance + id-token: write.
             npm publish --access public
+          fi
+
+      # Build the Svelte components (svelte-package → dist) before publishing.
+      - run: pnpm --filter @sld-kit/svelte run build
+
+      - name: Publish @sld-kit/svelte if the version is new
+        working-directory: packages/svelte
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VERSION" version > /dev/null 2>&1; then
+            echo "$NAME@$VERSION is already published — nothing to do."
+          else
+            echo "Publishing $NAME@$VERSION…"
+            # pnpm publish (not npm) rewrites the workspace: protocol in
+            # devDependencies; provenance comes from publishConfig.provenance
+            # + id-token: write.
+            pnpm publish --access public --no-git-checks
           fi
