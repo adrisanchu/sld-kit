@@ -4,7 +4,15 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '**/.svelte-kit/**']
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/coverage/**',
+      '**/.svelte-kit/**',
+      // adapter-static output of the example app (also present in CI, which
+      // builds before it lints).
+      '**/build/**'
+    ]
   },
   eslint.configs.recommended,
   ...tseslint.configs.strict,
@@ -23,6 +31,24 @@ export default tseslint.config(
     files: ['**/tests/**/*.ts'],
     rules: {
       '@typescript-eslint/no-non-null-assertion': 'off'
+    }
+  },
+  {
+    // Node-context config files (svelte/vite/tailwind/postcss) — give them Node
+    // globals and allow CommonJS `require` in the `.cjs` PostCSS config.
+    files: ['**/*.config.{js,ts}', '**/*.cjs'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        module: 'writable',
+        require: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        console: 'readonly'
+      }
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off'
     }
   }
 );
