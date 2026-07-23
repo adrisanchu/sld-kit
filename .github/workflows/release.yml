@@ -31,10 +31,13 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Build core first so @sld-kit/svelte's typecheck can resolve its types
-      # (packages/core/dist is gitignored). The svelte package is built later,
+      # Build the whole workspace before validation (core → svelte, in
+      # dependency order). Both packages' dist/ are gitignored, and their
+      # types resolve from dist — @sld-kit/svelte resolves @sld-kit/core, and
+      # examples/svelte resolves @sld-kit/svelte — so typecheck needs both
+      # built beforehand. Mirrors ci.yml. The svelte package is rebuilt later,
       # right before its own publish step.
-      - run: pnpm --filter @sld-kit/core run build
+      - run: pnpm run build
 
       # Never publish a broken build.
       - run: pnpm run typecheck
