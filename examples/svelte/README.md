@@ -6,6 +6,9 @@ mirrors a real consumer app: a library list of diagrams and a full editor, all b
 `localStorage` (no server, no database). Private and never published — it exists to
 demonstrate the packages and to catch API regressions.
 
+**[▶ Live demo](https://adrisanchu.github.io/sld-kit/)** — deployed to GitHub Pages from
+`main` via [`.github/workflows/deploy-pages.yml`](../../.github/workflows/deploy-pages.yml).
+
 ## Run it
 
 From the **monorepo root**:
