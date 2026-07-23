@@ -120,6 +120,38 @@ export class SldDocument {
     this.emit({ type: 'elements', ids: [json.id] });
   }
 
+  /**
+   * Rename an element's id, repointing every connection endpoint that
+   * referenced the old id so the diagram stays internally consistent (a shared
+   * id is how the composite editor recognizes the same physical asset across
+   * two documents). Z-order is preserved: the renamed element keeps its slot in
+   * the insertion sequence.
+   *
+   * No-ops (returns false) when `from` is unknown, `to` is empty, `from === to`,
+   * or `to` is already taken — callers that need to surface a conflict should
+   * check `getElement(to)` first, mirroring how MoveElementCommand assumes a
+   * valid plan. Being its own inverse (`renameElement(to, from)` undoes it),
+   * it needs no snapshot bookkeeping to be undoable.
+   */
+  renameElement(from: ElementId, to: ElementId): boolean {
+    if (!to || from === to || !this.elements.has(from) || this.elements.has(to)) return false;
+    // Maps can't rename a key in place without losing order, so rebuild the map
+    // in insertion order, swapping the renamed key and repointing references.
+    const rebuilt = new Map<ElementId, SldElement>();
+    for (const [id, el] of this.elements) {
+      const json = el.toJSON();
+      if (id === from) json.id = to;
+      if (json.kind === 'connection') {
+        if (json.from.kind === 'element' && json.from.id === from) json.from = { ...json.from, id: to };
+        if (json.to.kind === 'element' && json.to.id === from) json.to = { ...json.to, id: to };
+      }
+      rebuilt.set(id === from ? to : id, elementFromJson(json));
+    }
+    this.elements = rebuilt;
+    this.emit({ type: 'replace' });
+    return true;
+  }
+
   setGrid(rows: number, cols: number): void {
     this.grid = { rows, cols };
     this.emit({ type: 'grid' });

@@ -138,6 +138,32 @@ export class UpdateElementCommand implements Command {
 }
 
 /**
+ * Rename an element's id, repointing every connection endpoint that referenced
+ * the old id (see `SldDocument.renameElement`). Used to give the same physical
+ * asset one shared id across documents so the composite editor auto-links them.
+ *
+ * The rename is its own inverse, so undo simply renames back — no snapshot
+ * capture. Callers should ensure `to` is non-empty and free (e.g. via
+ * `doc.getElement(to)`); on a conflict `do` no-ops harmlessly.
+ */
+export class RenameElementCommand implements Command {
+  readonly label = 'Rename element';
+
+  constructor(
+    private from: ElementId,
+    private to: ElementId
+  ) {}
+
+  do(doc: SldDocument): void {
+    doc.renameElement(this.from, this.to);
+  }
+
+  undo(doc: SldDocument): void {
+    doc.renameElement(this.to, this.from);
+  }
+}
+
+/**
  * Insert a bus bar. Bars always live in their own row, so this composite
  * inserts a new row at `at` and places the bar there.
  */

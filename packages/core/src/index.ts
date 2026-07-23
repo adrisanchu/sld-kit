@@ -40,6 +40,7 @@ export {
   DeleteElementsCommand,
   MoveElementCommand,
   UpdateElementCommand,
+  RenameElementCommand,
   AddBusBarCommand,
   SnapshotCommand,
   AddLaneCommand,

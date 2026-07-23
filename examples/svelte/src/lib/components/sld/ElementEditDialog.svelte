@@ -37,6 +37,7 @@
   ];
 
   let label = '';
+  let elId = '';
   let posType: PositionType = 'line';
   let extAsset: ExternalAssetKind = 'line';
   let extLabel = '';
@@ -49,6 +50,7 @@
   // Seed the working fields once when a new element opens.
   $: if (element && element.id !== seededId) {
     seededId = element.id;
+    elId = element.id;
     label = element.label;
     externalSide = null;
     extTap = 'auto';
@@ -83,6 +85,7 @@
   function save() {
     if (!element) return;
     const json = element.toJSON();
+    json.id = elId.trim() || element.id;
     json.label = label;
     if (json.kind === 'position') {
       json.type = posType;
@@ -117,6 +120,15 @@
     <Dialog.Header>
       <Dialog.Title>{title}</Dialog.Title>
     </Dialog.Header>
+
+    <div class="space-y-1.5 pt-2">
+      <Label for="sld-id">Identifier</Label>
+      <Input id="sld-id" bind:value={elId} placeholder="e.g. cn-atp1-400-220" />
+      <p class="text-xs text-muted-foreground">
+        Unique within the diagram. Two diagrams sharing the same identifier become connected in the
+        composite model.
+      </p>
+    </div>
 
     {#if kind === 'position'}
       <div class="space-y-3 py-2">

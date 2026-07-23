@@ -14,6 +14,7 @@
     DeleteElementsCommand,
     MoveElementCommand,
     UpdateElementCommand,
+    RenameElementCommand,
     SnapshotCommand,
     AddLaneCommand,
     RemoveLaneCommand,
@@ -294,7 +295,20 @@
 
   function handleEditSave(e: CustomEvent<{ json: ElementJson }>) {
     if (!editElement) return;
-    run(new UpdateElementCommand(editElement.toJSON(), e.detail.json));
+    const before = editElement.toJSON();
+    const after = e.detail.json;
+    const newId = after.id.trim();
+    // An empty or already-taken id can't be applied, so keep the original.
+    const renaming = !!newId && newId !== before.id && !doc.getElement(newId);
+
+    // Apply the field edits (label/type/external) in place first, under the
+    // current id; then, if the id changed, let the core rename the element and
+    // repoint every connection that referenced it (UpdateElementCommand's
+    // replaceElement is keyed by id and can't rename).
+    after.id = before.id;
+    run(new UpdateElementCommand(before, after));
+    if (renaming) run(new RenameElementCommand(before.id, newId));
+
     editElement = null;
   }
 
