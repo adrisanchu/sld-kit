@@ -542,10 +542,8 @@ export class LayoutEngine {
       // Place the symbol in the clear zone beyond the bus-bar overhangs —
       // all crossing hops occur inside the content grid, so the symbol
       // never overlaps a hop arc.
-      const clearX =
-        dir === 'right' ? leftMargin + innerWidth + cfg.busBarOverhang : leftMargin - cfg.busBarOverhang;
-      const symCenterX =
-        dir === 'right' ? clearX + cfg.externalStemLength / 2 : clearX - cfg.externalStemLength / 2;
+      const clearX = dir === 'right' ? leftMargin + innerWidth + cfg.busBarOverhang : leftMargin - cfg.busBarOverhang;
+      const symCenterX = dir === 'right' ? clearX + cfg.externalStemLength / 2 : clearX - cfg.externalStemLength / 2;
       geo.symbol = {
         key: `external:${external.asset}`,
         box: {

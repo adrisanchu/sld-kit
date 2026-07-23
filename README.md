@@ -6,10 +6,11 @@ several npm packages under the `@sld-kit` scope.
 
 ## Packages
 
-| Package                          | npm               | Status                                                         |
-| -------------------------------- | ----------------- | -------------------------------------------------------------- |
-| [`packages/core`](packages/core) | `@sld-kit/core`   | ✅ document model, layout, commands, serialization, SVG export |
-| `packages/svelte`                | `@sld-kit/svelte` | 🚧 reserved slot — headless Svelte views over the core         |
+| Package                              | npm                        | Status                                                         |
+| ------------------------------------ | -------------------------- | -------------------------------------------------------------- |
+| [`packages/core`](packages/core)     | `@sld-kit/core`            | ✅ document model, layout, commands, serialization, SVG export |
+| [`packages/svelte`](packages/svelte) | `@sld-kit/svelte`          | ✅ headless Svelte 4 views + event-dispatching editor chrome   |
+| [`examples/svelte`](examples/svelte) | _(private, not published)_ | ✅ SvelteKit + shadcn-svelte demo editor using both packages   |
 
 The core is framework-agnostic and has zero runtime dependencies. Adapters
 (Svelte first, then React/Vue) will wrap it with framework-native views and
@@ -17,6 +18,18 @@ declare `@sld-kit/core` as a peer dependency, so consumers install both:
 
 ```bash
 npm install @sld-kit/core @sld-kit/svelte
+```
+
+## Try it
+
+A full example editor (SvelteKit + shadcn-svelte, localStorage-backed, seeded with a
+fictional demo substation) lives in [`examples/svelte`](examples/svelte). It is the best
+way to see both packages working together:
+
+```bash
+pnpm install
+pnpm run build          # build core → svelte first (the example consumes their dist)
+pnpm run dev:example    # open the printed localhost URL
 ```
 
 ## Development
@@ -32,7 +45,11 @@ pnpm -r build         # build every package
 pnpm --filter @sld-kit/core test
 pnpm --filter @sld-kit/core build
 pnpm --filter @sld-kit/core verify:pack   # build + publint + attw
-pnpm --filter @sld-kit/core demo > /tmp/braz.svg   # smoke render
+pnpm --filter @sld-kit/core demo > /tmp/example.svg   # smoke render
+
+# example editor
+pnpm run dev:example      # SvelteKit dev server
+pnpm run build:example    # adapter-static SPA → examples/svelte/build
 ```
 
 ## Docs
