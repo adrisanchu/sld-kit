@@ -15,7 +15,9 @@
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,js,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,js,json,md}\"",
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run test"
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run test",
+    "dev:example": "pnpm --filter @sld-kit-examples/svelte dev",
+    "build:example": "pnpm --filter @sld-kit-examples/svelte build"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
