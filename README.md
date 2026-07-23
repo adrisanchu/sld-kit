@@ -22,6 +22,8 @@ npm install @sld-kit/core @sld-kit/svelte
 
 ## Try it
 
+**[▶ Live demo](https://adrisanchu.github.io/sld-kit/)** — the example editor running in your browser.
+
 A full example editor (SvelteKit + shadcn-svelte, localStorage-backed, seeded with a
 fictional demo substation) lives in [`examples/svelte`](examples/svelte). It is the best
 way to see both packages working together:
