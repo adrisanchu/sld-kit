@@ -1,6 +1,6 @@
 {
   "name": "@sld-kit-examples/svelte",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Example SvelteKit editor built on @sld-kit/core + @sld-kit/svelte (not published).",
   "type": "module",
