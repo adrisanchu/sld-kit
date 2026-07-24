@@ -5,6 +5,7 @@
     CompositeSerializer,
     CompositeSvgExporter,
     CommandStack,
+    LayoutEngine,
     AddChildCommand,
     RemoveChildCommand,
     TransformChildCommand,
@@ -12,16 +13,20 @@
     newId,
     type CompositeDocument,
     type Command,
-    type Point
+    type Point,
+    type ChildLayout
   } from '@sld-kit/core';
   import { sldLibrary } from '$lib/stores/sldLibrary';
+  import { sldEditorSettings } from '$lib/stores/sldEditorSettings';
   import { CompositeCanvas, CompositeToolbar, createDocStore, downloadText, slugify } from '@sld-kit/svelte';
   import ImportDiagramDialog from './ImportDiagramDialog.svelte';
   import {
     POSITION_TYPE_TOKENS,
     SLD_COMPOSITE_TOOLBAR_LABELS,
     SLD_EXPORT_LABELS,
-    SLD_CHILD_NOT_FOUND
+    SLD_CHILD_NOT_FOUND,
+    COMPACT_LAYOUT,
+    voltageToken
   } from '$lib/components/sld/theme';
 
   /**
@@ -34,12 +39,24 @@
   export let doc: CompositeDocument;
   export let userRole: string = 'viewer';
 
-  const engine = new CompositeLayoutEngine();
   const svgExporter = new CompositeSvgExporter();
   const stack = new CommandStack<CompositeDocument>();
 
   $: docStore = createDocStore(doc);
+  // Hiding position labels compacts each child (and re-packs the composite).
+  $: engine = new CompositeLayoutEngine(
+    new LayoutEngine($sldEditorSettings.labelMode === 'all' ? undefined : COMPACT_LAYOUT)
+  );
   $: layout = engine.layout($docStore);
+
+  // Display toggles (shared with the single-diagram editor, persisted).
+  $: childColorClass = (child: ChildLayout): string | null =>
+    $sldEditorSettings.colorMode === 'by-voltage'
+      ? voltageToken(child.instance.resolved?.meta.voltageKv)
+      : null;
+  $: showPositionLabels = $sldEditorSettings.labelMode === 'all';
+  $: showBusBarLabels = $sldEditorSettings.labelMode !== 'none';
+  $: showConnectionLabels = $sldEditorSettings.labelMode !== 'none';
 
   let canvas: CompositeCanvas;
   let selectedId: string | null = null;
@@ -251,6 +268,10 @@
     {selectedId}
     interactive={canEdit}
     tokens={POSITION_TYPE_TOKENS}
+    {childColorClass}
+    {showPositionLabels}
+    {showBusBarLabels}
+    {showConnectionLabels}
     notFoundLabel={SLD_CHILD_NOT_FOUND}
     on:childdown={handleChildDown}
     on:rotatestart={handleRotateStart}
@@ -262,6 +283,8 @@
     {canUndo}
     {canRedo}
     hasSelection={selectedId !== null}
+    colorMode={$sldEditorSettings.colorMode}
+    labelMode={$sldEditorSettings.labelMode}
     labels={SLD_COMPOSITE_TOOLBAR_LABELS}
     exportLabels={SLD_EXPORT_LABELS}
     on:import={() => (importOpen = true)}
@@ -271,6 +294,8 @@
     on:fit={() => canvas?.zoomToFit()}
     on:exportJson={exportJson}
     on:exportSvg={exportSvg}
+    on:setcolormode={(e) => sldEditorSettings.update((s) => ({ ...s, colorMode: e.detail }))}
+    on:setlabelmode={(e) => sldEditorSettings.update((s) => ({ ...s, labelMode: e.detail }))}
   />
 </div>
 

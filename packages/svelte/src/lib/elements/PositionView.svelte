@@ -18,6 +18,14 @@
   export let labelAngleDeg: number = 0;
   /** CSS class per position type; the consumer's stylesheet supplies the colors. */
   export let tokens: PositionTokens = DEFAULT_POSITION_TOKENS;
+  /**
+   * Overrides the type token with a caller-supplied color class (e.g. a
+   * voltage bucket). The class must set `--sld-pos`; the view stays agnostic
+   * about what it means.
+   */
+  export let colorClass: string | null = null;
+  /** Hide the position's inside-box label (e.g. to compact the diagram). */
+  export let showLabel: boolean = true;
 
   const dispatch = createEventDispatcher<{
     select: { id: string; shiftKey: boolean };
@@ -27,7 +35,7 @@
 
   let hovered = false;
 
-  $: token = tokens[pos.type];
+  $: token = colorClass ?? tokens[pos.type];
   $: fontSize = pos.label.length > 13 ? SLD_LAYOUT.labelFontSize - 2 : SLD_LAYOUT.labelFontSize;
 
   function handlePointerDown(e: PointerEvent) {
@@ -70,7 +78,7 @@
     style="fill: hsl(var(--sld-pos) / {hovered && interactive ? 0.3 : 0.15}); stroke: hsl(var(--sld-pos));"
     stroke-width="1.5"
   />
-  {#if pos.label}
+  {#if showLabel && pos.label}
     <g
       transform={labelAngleDeg
         ? `rotate(${labelAngleDeg} ${geo.rect.x + geo.rect.width / 2} ${geo.rect.y + geo.rect.height / 2})`

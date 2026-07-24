@@ -9,6 +9,14 @@
   export let interactive: boolean = true;
   /** Counter-rotation (deg) applied to the label; see PositionView. */
   export let labelAngleDeg: number = 0;
+  /**
+   * Caller-supplied color class (e.g. a voltage bucket) that sets `--sld-pos`.
+   * When set, the connection's `currentColor` strokes/arrowheads/dots resolve
+   * to that color; otherwise it inherits the neutral slate color.
+   */
+  export let colorClass: string | null = null;
+  /** Hide the connection's (external endpoint) label. */
+  export let showLabel: boolean = true;
 
   const dispatch = createEventDispatcher<{
     select: { id: string; shiftKey: boolean };
@@ -38,7 +46,8 @@
 
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <g
-  class="text-slate-600 dark:text-slate-300"
+  class={colorClass ?? 'text-slate-600 dark:text-slate-300'}
+  style={colorClass ? 'color: hsl(var(--sld-pos))' : ''}
   class:cursor-pointer={interactive}
   on:pointerdown={handlePointerDown}
   on:pointerenter={() => (hovered = true)}
@@ -94,7 +103,7 @@
       {/each}
     </g>
   {/if}
-  {#if geo.labelAt && label}
+  {#if showLabel && geo.labelAt && label}
     <g transform={labelAngleDeg ? `rotate(${labelAngleDeg} ${geo.labelAt.at.x} ${geo.labelAt.at.y})` : undefined}>
       <text
         x={geo.labelAt.at.x}
