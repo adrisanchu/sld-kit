@@ -18,6 +18,15 @@
   export let interactive: boolean = true;
   /** CSS class per position type; the consumer's stylesheet supplies the colors. */
   export let tokens: PositionTokens = DEFAULT_POSITION_TOKENS;
+  /**
+   * Overrides the per-type token with a single color class for this child (e.g.
+   * a voltage bucket). The class must set `--sld-pos`.
+   */
+  export let colorClass: string | null = null;
+  /** Label-visibility toggles, forwarded to each element view. */
+  export let showPositionLabels: boolean = true;
+  export let showBusBarLabels: boolean = true;
+  export let showConnectionLabels: boolean = true;
   /** Fallback text when a child diagram can't be resolved. */
   export let notFoundLabel: string = DEFAULT_CHILD_NOT_FOUND;
 
@@ -62,13 +71,35 @@
 <g transform={child.transform.toSvgTransform()}>
   {#if resolved && layout}
     {#each connectionItems as item (item.el.id)}
-      <ConnectionView conn={item.el} geo={item.geo} interactive={false} {labelAngleDeg} />
+      <ConnectionView
+        conn={item.el}
+        geo={item.geo}
+        interactive={false}
+        {labelAngleDeg}
+        {colorClass}
+        showLabel={showConnectionLabels}
+      />
     {/each}
     {#each busBarItems as item (item.el.id)}
-      <BusBarView bar={item.el} geo={item.geo} interactive={false} {labelAngleDeg} />
+      <BusBarView
+        bar={item.el}
+        geo={item.geo}
+        interactive={false}
+        {labelAngleDeg}
+        {colorClass}
+        showLabel={showBusBarLabels}
+      />
     {/each}
     {#each positionItems as item (item.el.id)}
-      <PositionView pos={item.el} geo={item.geo} interactive={false} {labelAngleDeg} {tokens} />
+      <PositionView
+        pos={item.el}
+        geo={item.geo}
+        interactive={false}
+        {labelAngleDeg}
+        {tokens}
+        {colorClass}
+        showLabel={showPositionLabels}
+      />
     {/each}
   {:else}
     <!-- Placeholder for a missing/corrupt child -->

@@ -137,7 +137,14 @@ export const SLD_COMPOSITE_TOOLBAR_LABELS: CompositeToolbarLabels = {
   import: 'Import diagram',
   delete: 'Delete selected (Del)',
   undo: 'Undo (Ctrl+Z)',
-  redo: 'Redo (Ctrl+Shift+Z)'
+  redo: 'Redo (Ctrl+Shift+Z)',
+  colorMode: 'Color by voltage',
+  labelMode: (mode) =>
+    mode === 'all'
+      ? 'Labels: all (click to hide names)'
+      : mode === 'topology'
+        ? 'Labels: bus bars & lines (click to hide all)'
+        : 'Labels: hidden (click to show all)'
 };
 
 /** Fallback text for an unresolved composite child. */

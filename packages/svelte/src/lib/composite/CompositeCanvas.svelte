@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, createEventDispatcher } from 'svelte';
-  import { SLD_LAYOUT, type CompositeLayout, type Point } from '@sld-kit/core';
+  import { SLD_LAYOUT, type CompositeLayout, type ChildLayout, type Point } from '@sld-kit/core';
   import { createPanZoom } from '../panzoom';
   import { DEFAULT_POSITION_TOKENS, DEFAULT_CHILD_NOT_FOUND, type PositionTokens } from '../labels';
   import ChildDiagramView from './ChildDiagramView.svelte';
@@ -17,6 +17,15 @@
   export let interactive: boolean = true;
   /** CSS class per position type; the consumer's stylesheet supplies the colors. */
   export let tokens: PositionTokens = DEFAULT_POSITION_TOKENS;
+  /**
+   * Per-child color class override (e.g. a voltage bucket). Stays agnostic: the
+   * consumer decides the class from the child's resolved document.
+   */
+  export let childColorClass: (child: ChildLayout) => string | null = () => null;
+  /** Label-visibility toggles, forwarded to every child. */
+  export let showPositionLabels: boolean = true;
+  export let showBusBarLabels: boolean = true;
+  export let showConnectionLabels: boolean = true;
   /** Fallback text when a child diagram can't be resolved. */
   export let notFoundLabel: string = DEFAULT_CHILD_NOT_FOUND;
 
@@ -106,7 +115,17 @@
 
   <!-- Children in z-order. -->
   {#each layout.children as child (child.instance.id)}
-    <ChildDiagramView {child} {interactive} {tokens} {notFoundLabel} on:childdown />
+    <ChildDiagramView
+      {child}
+      {interactive}
+      {tokens}
+      colorClass={childColorClass(child)}
+      {showPositionLabels}
+      {showBusBarLabels}
+      {showConnectionLabels}
+      {notFoundLabel}
+      on:childdown
+    />
   {/each}
 
   <!-- Selection + rotation chrome on top. -->

@@ -175,6 +175,10 @@ export interface CompositeToolbarLabels {
   delete: string;
   undo: string;
   redo: string;
+  /** Color-mode toggle (by type ↔ by voltage). */
+  colorMode: string;
+  /** Label-visibility cycle button; receives the active mode. */
+  labelMode: (mode: 'all' | 'topology' | 'none') => string;
 }
 
 export const DEFAULT_COMPOSITE_TOOLBAR_LABELS: CompositeToolbarLabels = {
@@ -184,7 +188,14 @@ export const DEFAULT_COMPOSITE_TOOLBAR_LABELS: CompositeToolbarLabels = {
   import: 'Import diagram',
   delete: 'Delete selected (Del)',
   undo: 'Undo (Ctrl+Z)',
-  redo: 'Redo (Ctrl+Shift+Z)'
+  redo: 'Redo (Ctrl+Shift+Z)',
+  colorMode: 'Color by voltage',
+  labelMode: (mode) =>
+    mode === 'all'
+      ? 'Labels: all (click to hide names)'
+      : mode === 'topology'
+        ? 'Labels: bus bars & lines (click to hide all)'
+        : 'Labels: hidden (click to show all)'
 };
 
 /** Fallback text for a composite child whose diagram can't be resolved. */
