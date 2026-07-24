@@ -14,6 +14,32 @@ import type {
   LaneActionChipLabels,
   CompositeToolbarLabels
 } from '@sld-kit/svelte';
+import { SLD_LAYOUT, type SldLayoutConfig } from '@sld-kit/core';
+
+/**
+ * Maps a document's voltage (kV) to a CSS class from `app.css` used in the
+ * "by-voltage" color mode. Thresholds are intentionally simple for now:
+ * ≥ 400 kV reads red, 200–< 400 kV green, everything else gray.
+ */
+export function voltageToken(kv?: number): string {
+  if (kv == null) return 'sld-volt-unknown';
+  if (kv >= 400) return 'sld-volt-hv';
+  if (kv >= 200) return 'sld-volt-mv';
+  return 'sld-volt-unknown';
+}
+
+/**
+ * Tighter layout used when position labels are hidden: with no name to read
+ * inside a box, columns and boxes can shrink so a whole site fits at a glance.
+ */
+export const COMPACT_LAYOUT: SldLayoutConfig = {
+  ...SLD_LAYOUT,
+  cellWidth: 64,
+  positionBoxWidth: 44,
+  positionBoxHeight: 36,
+  cellGapX: 16,
+  cellHeight: 64
+};
 
 /**
  * CSS class per position type, used by the live Svelte views. The classes are
@@ -53,6 +79,13 @@ export const SLD_TOOLBAR_LABELS: SldToolbarLabels = {
   undo: 'Undo (Ctrl+Z)',
   redo: 'Redo (Ctrl+Shift+Z)',
   escKey: 'Esc',
+  colorMode: 'Color by voltage',
+  labelMode: (mode) =>
+    mode === 'all'
+      ? 'Labels: all (click to hide names)'
+      : mode === 'topology'
+        ? 'Labels: bus bars & lines (click to hide all)'
+        : 'Labels: hidden (click to show all)',
   hintBusBar: 'Add bus bar: click a row edge',
   hintConnection: 'Connection: click source then target (or click the margin from a position for an external asset)',
   hintPosition: (typeLabel) => `Add position (${typeLabel}): click an empty cell`
