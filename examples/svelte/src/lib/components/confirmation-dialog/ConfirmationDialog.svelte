@@ -1,7 +1,7 @@
 <script lang="ts">
   import { cn } from '$lib/utils.js';
   import * as Dialog from '$lib/components/ui/dialog';
-  import { Button } from '$lib/components/ui/button';
+  import { Button, type ButtonProps } from '$lib/components/ui/button';
   import { createEventDispatcher } from 'svelte';
 
   const dispatch = createEventDispatcher();
@@ -12,6 +12,12 @@
 
   export let confirmText: string = 'Confirm';
   export let cancelText: string = 'Cancel';
+
+  // Button styling is chosen by the parent so the visually dangerous button can
+  // be the *action* (e.g. confirmVariant="destructive" for a delete), not the
+  // cancel. Defaults keep confirm primary and cancel neutral.
+  export let confirmVariant: ButtonProps['variant'] = 'default';
+  export let cancelVariant: ButtonProps['variant'] = 'outline';
 
   // Used to customize the CSS from the parent
   let className: string | undefined | null = undefined;
@@ -38,10 +44,10 @@
     <slot />
     <Dialog.Footer class="flex flex-col-reverse sm:flex-row sm:justify-between">
       <Dialog.Close class="grid">
-        <Button type="button" variant="destructive" on:click={handleCancel}>{cancelText}</Button>
+        <Button type="button" variant={cancelVariant} on:click={handleCancel}>{cancelText}</Button>
       </Dialog.Close>
 
-      <Button type="button" on:click={handleConfirm}>{confirmText}</Button>
+      <Button type="button" variant={confirmVariant} on:click={handleConfirm}>{confirmText}</Button>
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
