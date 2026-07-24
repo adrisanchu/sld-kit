@@ -41,10 +41,12 @@
 
   function handleCreate() {
     open = false;
+    // make sure to parse the voltage as a number, and only include it in the event if it's a valid number
+    const kv = Number(voltageKv);
     dispatch('create', {
       name: name.trim() || 'New diagram',
       substation: substation.trim() || undefined,
-      voltageKv: voltageKv == null || Number.isNaN(voltageKv) ? undefined : voltageKv
+      voltageKv: voltageKv === null || Number.isNaN(kv) ? undefined : kv
     });
   }
 
