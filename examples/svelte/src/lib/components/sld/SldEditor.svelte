@@ -97,6 +97,13 @@
   let editMode = false;
   let tool: 'select' | 'busbar' | 'position' | 'connection' = 'select';
 
+  // Entering edit mode reveals all labels (and un-compacts) so the user can see
+  // and edit them; the label toggle stays usable to hide them again afterwards.
+  // Driven by the toolbar's `entereditmode` event — no edge-tracking needed.
+  function showAllLabels() {
+    sldEditorSettings.update((s) => (s.labelMode === 'all' ? s : { ...s, labelMode: 'all' }));
+  }
+
   // Command-stack availability (drives toolbar button states).
   let canUndo = false;
   let canRedo = false;
@@ -610,6 +617,7 @@
     on:settype={(e) => sldEditorSettings.update((s) => ({ ...s, positionType: e.detail }))}
     on:setcolormode={(e) => sldEditorSettings.update((s) => ({ ...s, colorMode: e.detail }))}
     on:setlabelmode={(e) => sldEditorSettings.update((s) => ({ ...s, labelMode: e.detail }))}
+    on:entereditmode={showAllLabels}
     on:matrix={requestMatrix}
     on:delete={handleDelete}
     on:undo={() => stack.undo(doc)}
