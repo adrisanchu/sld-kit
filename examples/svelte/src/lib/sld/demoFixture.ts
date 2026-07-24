@@ -142,11 +142,11 @@ export function buildExampleMv(): SldDocument {
   return doc;
 }
 
-/** Composite of the two voltage levels, both rotated 90°. */
+/** Composite of the two voltage levels, both rotated a bit to showcase that it's possible. */
 export function buildExampleComposite(): CompositeDocument {
   const doc = new CompositeDocument({ id: EXAMPLE_COMPOSITE_ID, name: 'Example — overview' });
-  doc.addChild(new DiagramInstance(newId(), EXAMPLE_HV_ID, 0, 0, 90));
-  doc.addChild(new DiagramInstance(newId(), EXAMPLE_MV_ID, 400, 60, 90));
+  doc.addChild(new DiagramInstance(newId(), EXAMPLE_HV_ID, 250, 230, 222));
+  doc.addChild(new DiagramInstance(newId(), EXAMPLE_MV_ID, 400, -300, 40));
   return doc;
 }
 
