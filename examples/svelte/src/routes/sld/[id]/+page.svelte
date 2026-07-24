@@ -20,6 +20,13 @@
   let doc: SldDocument | null = null;
   let compositeDoc: CompositeDocument | null = null;
   let name = '';
+  // Editable single-diagram metadata (mirrors doc.meta; committed on blur/change).
+  let substation = '';
+  let voltage: number | null = null;
+  // Informative, non-editable timestamps. createdAt is fixed; updatedAt is
+  // refreshed on every mutation (see scheduleSave) since doc mutates in place.
+  let createdAt = '';
+  let updatedAt = '';
   let saving = false;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
   let unsubDoc: (() => void) | undefined;
@@ -54,6 +61,8 @@
         loaded.resolveChildren(sldLibrary.resolver);
         compositeDoc = loaded;
         name = loaded.meta.name;
+        createdAt = loaded.meta.createdAt;
+        updatedAt = loaded.meta.updatedAt;
         unsubDoc = loaded.subscribe(scheduleSave);
       } catch {
         return notFound();
@@ -65,6 +74,10 @@
     if (!loaded) return notFound();
     doc = loaded;
     name = doc.meta.name;
+    substation = doc.meta.substation ?? '';
+    voltage = doc.meta.voltageKv ?? null;
+    createdAt = doc.meta.createdAt;
+    updatedAt = doc.meta.updatedAt;
     // Autosave: every document mutation (command or rename) schedules a
     // debounced write back to the localStorage library.
     unsubDoc = doc.subscribe(scheduleSave);
@@ -80,8 +93,14 @@
     clearTimeout(saveTimer);
   });
 
+  function fmtDate(iso: string): string {
+    return iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '-';
+  }
+
   function scheduleSave() {
     saving = true;
+    // Mutations bump meta.updatedAt in place; mirror it so the display reacts.
+    updatedAt = (doc ?? compositeDoc)?.meta.updatedAt ?? updatedAt;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       if (doc) sldLibrary.saveDoc(doc);
@@ -95,6 +114,15 @@
     name = next;
     // emits → scheduleSave via subscription
     (doc ?? compositeDoc)?.updateMeta({ name: next });
+  }
+
+  // Substation / voltage are single-diagram only; commit both on any edit.
+  // Empty values clear the field; a non-numeric/blank voltage stays unset.
+  function commitMeta() {
+    doc?.updateMeta({
+      substation: substation.trim() || undefined,
+      voltageKv: voltage == null || Number.isNaN(voltage) ? undefined : voltage
+    });
   }
 </script>
 
@@ -125,7 +153,40 @@
       </span>
     {/if}
   </div>
-
+  {#if doc || compositeDoc}
+    <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 pl-11 text-sm text-muted-foreground">
+      {#if doc}
+        <label class="flex items-center gap-1.5">
+          Substation:
+          <input
+            class="w-36 rounded border border-transparent bg-transparent px-1.5 py-0.5 text-foreground outline-none hover:border-input focus:border-input"
+            bind:value={substation}
+            on:change={commitMeta}
+            on:blur={commitMeta}
+            placeholder="-"
+          />
+        </label>
+        <label class="flex items-center gap-1.5">
+          Voltage:
+          <input
+            type="number"
+            min="0"
+            step="any"
+            class="w-20 rounded border border-transparent bg-transparent px-1.5 py-0.5 text-right text-foreground outline-none hover:border-input focus:border-input"
+            bind:value={voltage}
+            on:change={commitMeta}
+            on:blur={commitMeta}
+            placeholder="-"
+          />
+          kV
+        </label>
+      {/if}
+      <div class="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-0.5 text-xs">
+        <span title={createdAt}>Created: {fmtDate(createdAt)}</span>
+        <span title={updatedAt}>Modified: {fmtDate(updatedAt)}</span>
+      </div>
+    </div>
+  {/if}
   <div class="relative mt-2 w-full flex-1 overflow-hidden rounded-lg border bg-background">
     {#if compositeDoc}
       <CompositeEditor doc={compositeDoc} {userRole} />

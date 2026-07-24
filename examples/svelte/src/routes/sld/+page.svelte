@@ -7,6 +7,7 @@
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
   import ConfirmationDialog from '$lib/components/confirmation-dialog/ConfirmationDialog.svelte';
+  import NewDiagramDialog from '$lib/components/new-diagram-dialog/NewDiagramDialog.svelte';
   import Workflow from 'lucide-svelte/icons/workflow';
   import Layers from 'lucide-svelte/icons/layers';
   import CirclePlus from 'lucide-svelte/icons/circle-plus';
@@ -20,6 +21,7 @@
   let fileInput: HTMLInputElement;
   let deleteTarget: SldLibraryEntry | null = null;
   let deleteOpen = false;
+  let newDiagramOpen = false;
 
   onMount(() => {
     // Ensure each demo diagram exists, so newly added demos reach returning
@@ -38,8 +40,9 @@
     sldLibrary.refresh();
   });
 
-  function createNew() {
-    const doc = new SldDocument({ name: 'New diagram' }, { rows: 0, cols: 0 });
+  function createNew(e: CustomEvent<{ name: string; substation?: string; voltageKv?: number }>) {
+    const { name, substation, voltageKv } = e.detail;
+    const doc = new SldDocument({ name, substation, voltageKv }, { rows: 0, cols: 0 });
     sldLibrary.saveDoc(doc);
     goto(`${base}/sld/${doc.meta.id}`);
   }
@@ -113,7 +116,7 @@
         <Layers class="mr-2 h-4 w-4" />
         New composition
       </Button>
-      <Button size="sm" on:click={createNew}>
+      <Button size="sm" on:click={() => (newDiagramOpen = true)}>
         <CirclePlus class="mr-2 h-4 w-4" />
         New diagram
       </Button>
@@ -126,7 +129,7 @@
     <div class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed py-16 text-center">
       <Workflow class="h-10 w-10 text-muted-foreground" />
       <p class="text-sm text-muted-foreground">No diagrams yet. Create a new one or import a JSON file.</p>
-      <Button size="sm" on:click={createNew}>
+      <Button size="sm" on:click={() => (newDiagramOpen = true)}>
         <CirclePlus class="mr-2 h-4 w-4" />
         New diagram
       </Button>
@@ -179,12 +182,15 @@
   {/if}
 </div>
 
+<NewDiagramDialog bind:open={newDiagramOpen} on:create={createNew} />
+
 <ConfirmationDialog
   bind:open={deleteOpen}
   title="Delete diagram"
   description={`Delete "${deleteTarget?.name ?? ''}"? This action cannot be undone.`}
   confirmText="Delete"
   cancelText="Cancel"
+  confirmVariant="destructive"
   on:confirm={confirmDelete}
   on:cancel={() => {
     deleteOpen = false;
