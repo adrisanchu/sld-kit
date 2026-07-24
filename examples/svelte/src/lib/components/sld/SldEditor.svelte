@@ -665,6 +665,7 @@
   description="This will replace the current grid and delete all elements. Continue?"
   confirmText="Replace"
   cancelText="Cancel"
+  confirmVariant="destructive"
   on:confirm={applyMatrix}
   on:cancel={() => {
     matrixConfirmOpen = false;
