@@ -56,7 +56,9 @@
     SLD_EXPORT_LABELS,
     SLD_EXTERNAL_ASSET_LABELS,
     SLD_LANE_OVERLAY_LABELS,
-    SLD_LANE_ACTION_CHIP_LABELS
+    SLD_LANE_ACTION_CHIP_LABELS,
+    COMPACT_LAYOUT,
+    voltageToken
   } from '$lib/components/sld/theme';
 
   /**
@@ -69,13 +71,22 @@
   export let doc: SldDocument;
   export let userRole: string = 'viewer';
 
-  const engine = new LayoutEngine();
   const svgExporter = new SvgExporter();
   const stack = new CommandStack();
 
   $: docStore = createDocStore(doc);
+  // Hiding position labels compacts the layout (no name to read inside a box).
+  $: engine = new LayoutEngine($sldEditorSettings.labelMode === 'all' ? undefined : COMPACT_LAYOUT);
   $: layout = engine.layout($docStore);
   $: grid = new Grid($docStore);
+
+  // Display toggles (persisted). `colorClass` recolors the whole diagram by its
+  // document voltage; the label flags drive which labels each view renders.
+  $: colorClass =
+    $sldEditorSettings.colorMode === 'by-voltage' ? voltageToken($docStore.meta.voltageKv) : null;
+  $: showPositionLabels = $sldEditorSettings.labelMode === 'all';
+  $: showBusBarLabels = $sldEditorSettings.labelMode !== 'none';
+  $: showConnectionLabels = $sldEditorSettings.labelMode !== 'none';
 
   let canvas: SldCanvas;
   let containerEl: HTMLDivElement;
@@ -85,6 +96,13 @@
   let selectedLane: { kind: LaneKind; index: number } | null = null;
   let editMode = false;
   let tool: 'select' | 'busbar' | 'position' | 'connection' = 'select';
+
+  // Entering edit mode reveals all labels (and un-compacts) so the user can see
+  // and edit them; the label toggle stays usable to hide them again afterwards.
+  // Driven by the toolbar's `entereditmode` event — no edge-tracking needed.
+  function showAllLabels() {
+    sldEditorSettings.update((s) => (s.labelMode === 'all' ? s : { ...s, labelMode: 'all' }));
+  }
 
   // Command-stack availability (drives toolbar button states).
   let canUndo = false;
@@ -532,6 +550,10 @@
     cursor={canvasCursor}
     interactive={true}
     tokens={POSITION_TYPE_TOKENS}
+    {colorClass}
+    {showPositionLabels}
+    {showBusBarLabels}
+    {showConnectionLabels}
     on:select={handleSelect}
     on:clearselection={clearSelection}
     on:elementdragstart={handleElementDragStart}
@@ -585,12 +607,17 @@
     {canRedo}
     hasSelection={selectedIds.size > 0 || selectedLane !== null}
     positionType={$sldEditorSettings.positionType}
+    colorMode={$sldEditorSettings.colorMode}
+    labelMode={$sldEditorSettings.labelMode}
     positionTypeLabels={POSITION_TYPE_LABELS}
     labels={SLD_TOOLBAR_LABELS}
     exportLabels={SLD_EXPORT_LABELS}
     matrixLabels={SLD_MATRIX_LABELS}
     on:settool={(e) => (tool = e.detail)}
     on:settype={(e) => sldEditorSettings.update((s) => ({ ...s, positionType: e.detail }))}
+    on:setcolormode={(e) => sldEditorSettings.update((s) => ({ ...s, colorMode: e.detail }))}
+    on:setlabelmode={(e) => sldEditorSettings.update((s) => ({ ...s, labelMode: e.detail }))}
+    on:entereditmode={showAllLabels}
     on:matrix={requestMatrix}
     on:delete={handleDelete}
     on:undo={() => stack.undo(doc)}

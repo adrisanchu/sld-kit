@@ -9,6 +9,14 @@
   export let interactive: boolean = true;
   /** Counter-rotation (deg) applied to the label; see PositionView. */
   export let labelAngleDeg: number = 0;
+  /**
+   * Caller-supplied color class (e.g. a voltage bucket) that sets `--sld-pos`.
+   * When set, the bar's `currentColor` fills resolve to that color; otherwise
+   * it inherits the neutral foreground.
+   */
+  export let colorClass: string | null = null;
+  /** Hide the bar's label (e.g. to compact the diagram). */
+  export let showLabel: boolean = true;
 
   const dispatch = createEventDispatcher<{
     select: { id: string; shiftKey: boolean };
@@ -26,7 +34,8 @@
 
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <g
-  class="text-foreground"
+  class={colorClass ?? 'text-foreground'}
+  style={colorClass ? 'color: hsl(var(--sld-pos))' : ''}
   class:cursor-pointer={interactive}
   on:pointerdown={handlePointerDown}
   on:pointerenter={() => (hovered = true)}
@@ -53,7 +62,7 @@
     fill="currentColor"
     opacity={hovered && interactive ? 0.75 : 1}
   />
-  {#if bar.label}
+  {#if showLabel && bar.label}
     <g transform={labelAngleDeg ? `rotate(${labelAngleDeg} ${geo.labelAt.x} ${geo.labelAt.y})` : undefined}>
       <text
         x={geo.labelAt.x}

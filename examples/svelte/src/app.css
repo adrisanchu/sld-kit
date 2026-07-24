@@ -41,6 +41,11 @@
     --sld-pos-central: 258 90% 66%;
     --sld-pos-renewable: 142 71% 45%;
     --sld-pos-reserve: 215 20% 65%;
+
+    /* SLD voltage-level colours (by-voltage color mode) */
+    --sld-volt-hv: 0 84% 60%; /* ≥ 400 kV — tailwind red-500 */
+    --sld-volt-mv: 142 71% 45%; /* 200–< 400 kV — tailwind green-600 */
+    --sld-volt-unknown: 215 20% 55%; /* unresolved kV — gray */
   }
 
   .dark {
@@ -79,6 +84,11 @@
     --sld-pos-central: 258 90% 74%;
     --sld-pos-renewable: 142 69% 58%;
     --sld-pos-reserve: 215 16% 57%;
+
+    /* SLD voltage-level colours — brightened for dark backgrounds */
+    --sld-volt-hv: 0 84% 68%;
+    --sld-volt-mv: 142 69% 55%;
+    --sld-volt-unknown: 215 16% 60%;
   }
 }
 
@@ -101,6 +111,21 @@
 }
 .sld-pos-reserve {
   --sld-pos: var(--sld-pos-reserve);
+}
+
+/*
+  SLD voltage-level classes: in "by-voltage" color mode the editor passes one of
+  these as `colorClass`; each maps its voltage token onto the same `--sld-pos`
+  slot, so boxes, bus bars and connections all colour uniformly.
+*/
+.sld-volt-hv {
+  --sld-pos: var(--sld-volt-hv);
+}
+.sld-volt-mv {
+  --sld-pos: var(--sld-volt-mv);
+}
+.sld-volt-unknown {
+  --sld-pos: var(--sld-volt-unknown);
 }
 
 @layer base {
