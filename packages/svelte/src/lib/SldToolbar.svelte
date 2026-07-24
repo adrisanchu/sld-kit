@@ -12,6 +12,8 @@
   import Undo2 from 'lucide-svelte/icons/undo-2';
   import Redo2 from 'lucide-svelte/icons/redo-2';
   import Download from 'lucide-svelte/icons/download';
+  import Zap from 'lucide-svelte/icons/zap';
+  import Tag from 'lucide-svelte/icons/tag';
   import X from 'lucide-svelte/icons/x';
   import type { PositionType } from '@sld-kit/core';
   import MatrixCreatorFlyout from './MatrixCreatorFlyout.svelte';
@@ -33,6 +35,10 @@
   export let hasSelection: boolean = false;
   /** Position type of the "add position" tool, owned by the editor. */
   export let positionType: PositionType = 'line';
+  /** Color mode, owned by the editor. */
+  export let colorMode: 'by-type' | 'by-voltage' = 'by-type';
+  /** Label-visibility mode, owned by the editor. */
+  export let labelMode: 'all' | 'topology' | 'none' = 'all';
   /** Selectable position types for the type flyout. */
   export let positionTypes: PositionType[] = ['line', 'transformer', 'central', 'renewable', 'reserve'];
   /** Label per position type (hint bar + type flyout). */
@@ -56,7 +62,12 @@
     fit: void;
     exportJson: void;
     exportSvg: void;
+    setcolormode: 'by-type' | 'by-voltage';
+    setlabelmode: 'all' | 'topology' | 'none';
   }>();
+
+  // Label visibility cycles all → topology → none → all.
+  const NEXT_LABEL_MODE = { all: 'topology', topology: 'none', none: 'all' } as const;
 
   $: canEdit = userRole !== 'viewer';
 
@@ -199,6 +210,26 @@
     <button title={L.export} class="{btnBase} {showExport ? btnActive : btnIdle}" on:click={toggleExport}>
       <span class="sr-only">{L.export}</span>
       <Download class="h-4 w-4" />
+    </button>
+
+    <!-- Color mode (by type ↔ by voltage) — always available -->
+    <button
+      title={L.colorMode}
+      class="{btnBase} {colorMode === 'by-voltage' ? btnActive : btnIdle}"
+      on:click={() => dispatch('setcolormode', colorMode === 'by-voltage' ? 'by-type' : 'by-voltage')}
+    >
+      <span class="sr-only">{L.colorMode}</span>
+      <Zap class="h-4 w-4" />
+    </button>
+
+    <!-- Label visibility cycle — always available -->
+    <button
+      title={L.labelMode(labelMode)}
+      class="{btnBase} {labelMode !== 'all' ? btnActive : btnIdle}"
+      on:click={() => dispatch('setlabelmode', NEXT_LABEL_MODE[labelMode])}
+    >
+      <span class="sr-only">{L.labelMode(labelMode)}</span>
+      <Tag class="h-4 w-4" />
     </button>
 
     {#if canEdit}
