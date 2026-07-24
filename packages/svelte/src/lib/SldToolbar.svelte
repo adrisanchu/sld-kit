@@ -226,14 +226,23 @@
       <Zap class="h-4 w-4" />
     </button>
 
-    <!-- Label visibility cycle — always available -->
+    <!-- Label visibility cycle — always available. Kept visually neutral in all
+         three states; the glyph alone conveys the state. -->
     <button
       title={L.labelMode(labelMode)}
-      class="{btnBase} {labelMode !== 'all' ? btnActive : btnIdle}"
+      class="{btnBase} {btnIdle}"
       on:click={() => dispatch('setlabelmode', NEXT_LABEL_MODE[labelMode])}
     >
       <span class="sr-only">{L.labelMode(labelMode)}</span>
-      <Tag class="h-4 w-4" />
+      <Tag class="h-4 w-4">
+        <!-- `all` shows the plain tag; `topology` adds a corner dot for "some
+             labels" (position labels hidden); `none` adds a lucide-style slash. -->
+        {#if labelMode === 'topology'}
+          <circle cx="18.5" cy="18.5" r="4.5" fill="currentColor" stroke="none" />
+        {:else if labelMode === 'none'}
+          <path d="m2 22 20 -20" stroke-width="2.5" />
+        {/if}
+      </Tag>
     </button>
 
     {#if canEdit}
