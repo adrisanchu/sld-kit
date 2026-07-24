@@ -64,6 +64,8 @@
     exportSvg: void;
     setcolormode: 'by-type' | 'by-voltage';
     setlabelmode: 'all' | 'topology' | 'none';
+    /** Fired when the user switches into edit mode (not on exit). */
+    entereditmode: void;
   }>();
 
   // Label visibility cycles all → topology → none → all.
@@ -78,7 +80,9 @@
 
   function toggleEdit() {
     editMode = !editMode;
-    if (!editMode) {
+    if (editMode) {
+      dispatch('entereditmode');
+    } else {
       showMatrix = false;
       dispatch('settool', 'select');
     }
