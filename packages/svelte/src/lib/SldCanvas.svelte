@@ -24,6 +24,15 @@
   export let cursor: string = '';
   /** CSS class per position type; the consumer's stylesheet supplies the colors. */
   export let tokens: PositionTokens = DEFAULT_POSITION_TOKENS;
+  /**
+   * Overrides the per-type token with a single color class for the whole
+   * diagram (e.g. a voltage bucket). The class must set `--sld-pos`.
+   */
+  export let colorClass: string | null = null;
+  /** Label-visibility toggles, mapped to each element view's `showLabel`. */
+  export let showPositionLabels: boolean = true;
+  export let showConnectionLabels: boolean = true;
+  export let showBusBarLabels: boolean = true;
 
   const dispatch = createEventDispatcher<{
     select: { id: string; shiftKey: boolean };
@@ -146,6 +155,8 @@
       geo={item.geo}
       selected={selectedIds.has(item.el.id)}
       {interactive}
+      {colorClass}
+      showLabel={showConnectionLabels}
       on:select
       on:editlabel
     />
@@ -156,6 +167,8 @@
       geo={item.geo}
       selected={selectedIds.has(item.el.id)}
       {interactive}
+      {colorClass}
+      showLabel={showBusBarLabels}
       on:select
       on:editlabel
     />
@@ -168,6 +181,8 @@
       dragging={draggingId === item.el.id}
       {interactive}
       {tokens}
+      {colorClass}
+      showLabel={showPositionLabels}
       on:select
       on:dragstart={(e) => dispatch('elementdragstart', e.detail)}
       on:editlabel={(e) => dispatch('editlabel', e.detail)}

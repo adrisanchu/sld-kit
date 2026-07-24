@@ -45,6 +45,10 @@ export interface SldToolbarLabels {
   undo: string;
   redo: string;
   escKey: string;
+  /** Color-mode toggle (by type ↔ by voltage). */
+  colorMode: string;
+  /** Label-visibility cycle button; receives the active mode. */
+  labelMode: (mode: 'all' | 'topology' | 'none') => string;
   hintBusBar: string;
   hintConnection: string;
   /** Receives the active position type's label. */
@@ -65,6 +69,13 @@ export const DEFAULT_TOOLBAR_LABELS: SldToolbarLabels = {
   undo: 'Undo (Ctrl+Z)',
   redo: 'Redo (Ctrl+Shift+Z)',
   escKey: 'Esc',
+  colorMode: 'Color by voltage',
+  labelMode: (mode) =>
+    mode === 'all'
+      ? 'Labels: all (click to hide names)'
+      : mode === 'topology'
+        ? 'Labels: bus bars & lines (click to hide all)'
+        : 'Labels: hidden (click to show all)',
   hintBusBar: 'Add bus bar: click a row edge',
   hintConnection: 'Connection: click source then target (or the margin from a position for an external asset)',
   hintPosition: (typeLabel) => `Add position (${typeLabel}): click an empty slot`
