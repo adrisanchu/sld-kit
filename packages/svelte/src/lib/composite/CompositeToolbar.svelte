@@ -8,6 +8,8 @@
   import Undo2 from 'lucide-svelte/icons/undo-2';
   import Redo2 from 'lucide-svelte/icons/redo-2';
   import Download from 'lucide-svelte/icons/download';
+  import Zap from 'lucide-svelte/icons/zap';
+  import Tag from 'lucide-svelte/icons/tag';
   import ExportFlyout from '../ExportFlyout.svelte';
   import { DEFAULT_COMPOSITE_TOOLBAR_LABELS, type CompositeToolbarLabels, type ExportFlyoutLabels } from '../labels';
 
@@ -20,6 +22,10 @@
   export let canUndo: boolean = false;
   export let canRedo: boolean = false;
   export let hasSelection: boolean = false;
+  /** Color mode, owned by the editor. */
+  export let colorMode: 'by-type' | 'by-voltage' = 'by-type';
+  /** Label-visibility mode, owned by the editor. */
+  export let labelMode: 'all' | 'topology' | 'none' = 'all';
   export let labels: Partial<CompositeToolbarLabels> = {};
   export let exportLabels: Partial<ExportFlyoutLabels> = {};
 
@@ -33,7 +39,12 @@
     fit: void;
     exportJson: void;
     exportSvg: void;
+    setcolormode: 'by-type' | 'by-voltage';
+    setlabelmode: 'all' | 'topology' | 'none';
   }>();
+
+  // Label visibility cycles all → topology → none → all.
+  const NEXT_LABEL_MODE = { all: 'topology', topology: 'none', none: 'all' } as const;
 
   $: canEdit = userRole !== 'viewer';
 
@@ -96,6 +107,26 @@
     <button title={L.export} class="{btnBase} {showExport ? btnActive : btnIdle}" on:click={() => (showExport = !showExport)}>
       <span class="sr-only">{L.export}</span>
       <Download class="h-4 w-4" />
+    </button>
+
+    <!-- Color mode (by type ↔ by voltage) — always available -->
+    <button
+      title={L.colorMode}
+      class="{btnBase} {colorMode === 'by-voltage' ? btnActive : btnIdle}"
+      on:click={() => dispatch('setcolormode', colorMode === 'by-voltage' ? 'by-type' : 'by-voltage')}
+    >
+      <span class="sr-only">{L.colorMode}</span>
+      <Zap class="h-4 w-4" />
+    </button>
+
+    <!-- Label visibility cycle — always available -->
+    <button
+      title={L.labelMode(labelMode)}
+      class="{btnBase} {labelMode !== 'all' ? btnActive : btnIdle}"
+      on:click={() => dispatch('setlabelmode', NEXT_LABEL_MODE[labelMode])}
+    >
+      <span class="sr-only">{L.labelMode(labelMode)}</span>
+      <Tag class="h-4 w-4" />
     </button>
 
     {#if canEdit}
