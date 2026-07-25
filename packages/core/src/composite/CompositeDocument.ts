@@ -1,4 +1,5 @@
 import { newId } from '../ids';
+import { CompositeLine, type LineVertexJson } from './CompositeLine';
 import { DiagramInstance } from './DiagramInstance';
 import type { DocumentResolver } from './DocumentResolver';
 
@@ -9,7 +10,11 @@ export interface CompositeMeta {
   updatedAt: string;
 }
 
-export type CompositeChange = { type: 'children'; ids: string[] } | { type: 'meta' } | { type: 'replace' };
+export type CompositeChange =
+  | { type: 'children'; ids: string[] }
+  | { type: 'lines'; ids: string[] }
+  | { type: 'meta' }
+  | { type: 'replace' };
 
 /**
  * Root aggregate of a composite ("diagram of diagrams"): meta + an ordered map
@@ -21,6 +26,7 @@ export type CompositeChange = { type: 'children'; ids: string[] } | { type: 'met
 export class CompositeDocument {
   meta: CompositeMeta;
   private children = new Map<string, DiagramInstance>();
+  private lines = new Map<string, CompositeLine>();
   private listeners = new Set<(change: CompositeChange) => void>();
 
   constructor(meta: Partial<CompositeMeta> = {}) {
@@ -45,8 +51,17 @@ export class CompositeDocument {
     return [...this.children.values()];
   }
 
+  getLine(id: string): CompositeLine | undefined {
+    return this.lines.get(id);
+  }
+
+  /** Insertion order. */
+  allLines(): CompositeLine[] {
+    return [...this.lines.values()];
+  }
+
   isEmpty(): boolean {
-    return this.children.size === 0;
+    return this.children.size === 0 && this.lines.size === 0;
   }
 
   // ── Open-time resolution ─────────────────────────────────────────────────
@@ -83,6 +98,26 @@ export class CompositeDocument {
     child.y = y;
     child.angleDeg = ((angleDeg % 360) + 360) % 360;
     this.emit({ type: 'children', ids: [id] });
+  }
+
+  addLine(line: CompositeLine): void {
+    this.lines.set(line.id, line);
+    this.emit({ type: 'lines', ids: [line.id] });
+  }
+
+  removeLine(id: string): CompositeLine | null {
+    const line = this.lines.get(id);
+    if (!line) return null;
+    this.lines.delete(id);
+    this.emit({ type: 'lines', ids: [id] });
+    return line;
+  }
+
+  setLineVertices(id: string, vertices: LineVertexJson[]): void {
+    const line = this.lines.get(id);
+    if (!line) return;
+    line.vertices = vertices;
+    this.emit({ type: 'lines', ids: [id] });
   }
 
   updateMeta(patch: Partial<Omit<CompositeMeta, 'id' | 'createdAt' | 'updatedAt'>>): void {
