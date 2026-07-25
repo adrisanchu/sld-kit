@@ -1,6 +1,12 @@
 <script lang="ts">
   import { onMount, createEventDispatcher } from 'svelte';
-  import { SLD_LAYOUT, type CompositeLayout, type ChildLayout, type Point } from '@sld-kit/core';
+  import {
+    SLD_LAYOUT,
+    type CompositeLayout,
+    type ChildLayout,
+    type ExternalConnectionTip,
+    type Point
+  } from '@sld-kit/core';
   import { createPanZoom } from '../panzoom';
   import { DEFAULT_POSITION_TOKENS, DEFAULT_CHILD_NOT_FOUND, type PositionTokens } from '../labels';
   import ChildDiagramView from './ChildDiagramView.svelte';
@@ -14,7 +20,19 @@
    */
   export let layout: CompositeLayout;
   export let selectedId: string | null = null;
+  /** Currently selected manual line (shows its draggable bend handles). */
+  export let selectedLineId: string | null = null;
   export let interactive: boolean = true;
+  /**
+   * Draw mode: clicking the canvas emits `canvaspoint` (snapped to the nearest
+   * connection dot when close) instead of clearing the selection. The consumer
+   * accumulates the points and commits a line; a double-click emits `drawcommit`.
+   */
+  export let drawMode: boolean = false;
+  /** Connection dots a drawn end can snap to (from `engine.externalConnectionTips`). */
+  export let snapTargets: ExternalConnectionTip[] = [];
+  /** In-progress polyline being drawn, in composite coordinates. */
+  export let draftPoints: Point[] = [];
   /** CSS class per position type; the consumer's stylesheet supplies the colors. */
   export let tokens: PositionTokens = DEFAULT_POSITION_TOKENS;
   /**
@@ -33,10 +51,52 @@
     childdown: { id: string; event: PointerEvent };
     rotatestart: { event: PointerEvent };
     clearselection: void;
+    linkdown: { connectionId: string; event: PointerEvent };
+    linedown: { id: string; event: PointerEvent };
+    linevertexdown: { id: string; index: number; event: PointerEvent };
+    canvaspoint: { point: Point; snap: { instanceId: string; connectionId: string } | null };
+    drawcommit: void;
   }>();
+
+  /** Snap distance for drawn ends, in composite (SVG) units. */
+  const SNAP_RADIUS = 16;
 
   let svgEl: SVGSVGElement;
   let suppressNextClick = false;
+
+  $: selectedLine = selectedLineId ? layout.lines.find((l) => l.line.id === selectedLineId) ?? null : null;
+
+  function nearestSnap(p: Point): ExternalConnectionTip | null {
+    let best: ExternalConnectionTip | null = null;
+    let bestDist = SNAP_RADIUS;
+    for (const t of snapTargets) {
+      const d = Math.hypot(t.point.x - p.x, t.point.y - p.y);
+      if (d <= bestDist) {
+        bestDist = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  function handleLinkDown(connectionId: string, e: PointerEvent) {
+    if (!interactive) return;
+    e.stopPropagation();
+    dispatch('linkdown', { connectionId, event: e });
+  }
+
+  function handleLineDown(id: string, e: PointerEvent) {
+    if (!interactive) return;
+    e.stopPropagation();
+    dispatch('linedown', { id, event: e });
+  }
+
+  function handleVertexDown(id: string, index: number, e: PointerEvent) {
+    if (!interactive) return;
+    e.stopPropagation();
+    e.preventDefault();
+    dispatch('linevertexdown', { id, index, event: e });
+  }
 
   const pz = createPanZoom(
     () => svgEl,
@@ -74,10 +134,29 @@
       suppressNextClick = false;
       return;
     }
+    if (drawMode && interactive) {
+      const p = pz.clientToSvg(e.clientX, e.clientY);
+      const snap = nearestSnap(p);
+      dispatch('canvaspoint', {
+        point: snap ? snap.point : p,
+        snap: snap ? { instanceId: snap.instanceId, connectionId: snap.connectionId } : null
+      });
+      return;
+    }
     if (e.target === svgEl) dispatch('clearselection');
   }
 
-  $: cursorClass = $panning ? 'cursor-grabbing' : $spaceDown ? 'cursor-grab' : '';
+  function handleDblClick() {
+    if (drawMode && interactive) dispatch('drawcommit');
+  }
+
+  $: cursorClass = $panning
+    ? 'cursor-grabbing'
+    : $spaceDown
+      ? 'cursor-grab'
+      : drawMode && interactive
+        ? 'cursor-crosshair'
+        : '';
 
   onMount(() => {
     pz.zoomToFit();
@@ -98,8 +177,9 @@
   on:pointerenter={() => pz.setPointerInside(true)}
   on:pointerleave={() => pz.setPointerInside(false)}
   on:click={handleClick}
+  on:dblclick={handleDblClick}
 >
-  <!-- Inter-diagram links, underneath the children. -->
+  <!-- Inter-diagram auto-links (dashed), underneath the children. -->
   {#each layout.links as link (link.connectionId)}
     <polyline
       points={link.points.map((p) => `${p.x},${p.y}`).join(' ')}
@@ -111,6 +191,26 @@
     {#each link.points as p}
       <circle cx={p.x} cy={p.y} r={SLD_LAYOUT.nodeDotRadius} class="fill-primary/70" />
     {/each}
+    <!-- Wide transparent hit target: select an auto-link to convert it to a manual line. -->
+    <polyline
+      points={link.points.map((p) => `${p.x},${p.y}`).join(' ')}
+      fill="none"
+      stroke="transparent"
+      stroke-width="12"
+      class:pointer-events-auto={interactive && !drawMode}
+      class:cursor-pointer={interactive && !drawMode}
+      on:pointerdown={(e) => handleLinkDown(link.connectionId, e)}
+    />
+  {/each}
+
+  <!-- Manual lines (solid), underneath the children — matches the SVG export. -->
+  {#each layout.lines as ln (ln.line.id)}
+    <polyline
+      points={ln.points.map((p) => `${p.x},${p.y}`).join(' ')}
+      fill="none"
+      class="stroke-primary"
+      stroke-width={ln.line.id === selectedLineId ? 3 : 2}
+    />
   {/each}
 
   <!-- Children in z-order. -->
@@ -131,6 +231,59 @@
   <!-- Selection + rotation chrome on top. -->
   {#if selectedChild}
     <SelectionFrame child={selectedChild} {interactive} on:rotatestart />
+  {/if}
+
+  <!-- Manual-line chrome on top: hit targets for selection + bend handles. -->
+  {#if !drawMode}
+    {#each layout.lines as ln (ln.line.id)}
+      <polyline
+        points={ln.points.map((p) => `${p.x},${p.y}`).join(' ')}
+        fill="none"
+        stroke="transparent"
+        stroke-width="12"
+        class:pointer-events-auto={interactive}
+        class:cursor-pointer={interactive}
+        on:pointerdown={(e) => handleLineDown(ln.line.id, e)}
+      />
+    {/each}
+  {/if}
+
+  {#if selectedLine && interactive && !drawMode}
+    <!-- Only free bend vertices are draggable; anchored ends follow their child. -->
+    {#each selectedLine.line.vertices as v, i}
+      {#if v.kind === 'point'}
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
+        <circle
+          cx={v.x}
+          cy={v.y}
+          r="5"
+          class="fill-background stroke-primary pointer-events-auto cursor-grab"
+          stroke-width="1.5"
+          on:pointerdown={(e) => handleVertexDown(selectedLine.line.id, i, e)}
+        />
+      {/if}
+    {/each}
+  {/if}
+
+  <!-- Draw-mode overlay: snap targets + in-progress polyline. -->
+  {#if drawMode && interactive}
+    {#each snapTargets as t}
+      <circle cx={t.point.x} cy={t.point.y} r="5" class="fill-background stroke-primary/60" stroke-width="1.5" />
+    {/each}
+    {#if draftPoints.length > 0}
+      {#if draftPoints.length > 1}
+        <polyline
+          points={draftPoints.map((p) => `${p.x},${p.y}`).join(' ')}
+          fill="none"
+          class="stroke-primary"
+          stroke-width="2"
+          stroke-dasharray="4 4"
+        />
+      {/if}
+      {#each draftPoints as p}
+        <circle cx={p.x} cy={p.y} r="4" class="fill-primary" />
+      {/each}
+    {/if}
   {/if}
 
   <slot />

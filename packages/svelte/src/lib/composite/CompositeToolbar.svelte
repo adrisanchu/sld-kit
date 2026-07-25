@@ -4,6 +4,7 @@
   import Maximize from 'lucide-svelte/icons/maximize';
   import MousePointer2 from 'lucide-svelte/icons/mouse-pointer-2';
   import ImagePlus from 'lucide-svelte/icons/image-plus';
+  import Spline from 'lucide-svelte/icons/spline';
   import Trash2 from 'lucide-svelte/icons/trash-2';
   import Undo2 from 'lucide-svelte/icons/undo-2';
   import Redo2 from 'lucide-svelte/icons/redo-2';
@@ -15,13 +16,15 @@
 
   /**
    * Deliberately poorer than `SldToolbar`: the composite editor has no
-   * position/bus-bar/connection drawing tools. Only Import, Select (the sole
-   * tool), Remove selected, Undo/Redo, Zoom-to-fit and Export.
+   * position/bus-bar/connection drawing tools. Only Import, Select, Draw line,
+   * Remove selected, Undo/Redo, Zoom-to-fit and Export.
    */
   export let userRole: string = 'viewer';
   export let canUndo: boolean = false;
   export let canRedo: boolean = false;
   export let hasSelection: boolean = false;
+  /** Whether the draw-line tool is active (owned by the editor). */
+  export let drawActive: boolean = false;
   /** Color mode, owned by the editor. */
   export let colorMode: 'by-type' | 'by-voltage' = 'by-type';
   /** Label-visibility mode, owned by the editor. */
@@ -33,6 +36,7 @@
 
   const dispatch = createEventDispatcher<{
     import: void;
+    drawline: void;
     delete: void;
     undo: void;
     redo: void;
@@ -141,10 +145,24 @@
     {#if canEdit}
       <div class="mx-1 h-5 w-px shrink-0 bg-border" />
 
-      <!-- Select — the only tool, always active -->
-      <button title={L.select} class="{btnBase} {btnActive}">
+      <!-- Select — the default tool; active unless the draw tool is engaged -->
+      <button
+        title={L.select}
+        class="{btnBase} {drawActive ? btnIdle : btnActive}"
+        on:click={() => drawActive && dispatch('drawline')}
+      >
         <span class="sr-only">{L.select}</span>
         <MousePointer2 class="h-4 w-4" />
+      </button>
+
+      <!-- Draw a manual line between substations -->
+      <button
+        title={L.drawLine}
+        class="{btnBase} {drawActive ? btnActive : btnIdle}"
+        on:click={() => dispatch('drawline')}
+      >
+        <span class="sr-only">{L.drawLine}</span>
+        <Spline class="h-4 w-4" />
       </button>
 
       <!-- Import a diagram -->
