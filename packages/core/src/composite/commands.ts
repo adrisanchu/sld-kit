@@ -1,6 +1,7 @@
 import type { Command } from '../commands/Command';
 import type { SldDocument } from '../SldDocument';
 import { CompositeDocument } from './CompositeDocument';
+import { CompositeLine, type CompositeLineJson, type LineVertexJson } from './CompositeLine';
 import { DiagramInstance, type DiagramInstanceJson } from './DiagramInstance';
 
 /** Add a placed child to the composite. */
@@ -67,5 +68,62 @@ export class TransformChildCommand implements Command<CompositeDocument> {
 
   undo(doc: CompositeDocument): void {
     doc.setChildTransform(this.id, this.before.x, this.before.y, this.before.angleDeg);
+  }
+}
+
+/** Add a manually-drawn line to the composite. */
+export class AddLineCommand implements Command<CompositeDocument> {
+  readonly label = 'Add line';
+
+  constructor(private line: CompositeLine) {}
+
+  do(doc: CompositeDocument): void {
+    doc.addLine(this.line);
+  }
+
+  undo(doc: CompositeDocument): void {
+    doc.removeLine(this.line.id);
+  }
+}
+
+/** Remove a line, snapshotting its JSON on the first `do` so undo restores it exactly. */
+export class RemoveLineCommand implements Command<CompositeDocument> {
+  readonly label = 'Remove line';
+  private snapshot: CompositeLineJson | null = null;
+
+  constructor(private id: string) {}
+
+  do(doc: CompositeDocument): void {
+    const line = doc.getLine(this.id);
+    if (!line) return;
+    this.snapshot = line.toJSON();
+    doc.removeLine(this.id);
+  }
+
+  undo(doc: CompositeDocument): void {
+    if (!this.snapshot) return;
+    doc.addLine(CompositeLine.fromJSON(this.snapshot));
+  }
+}
+
+/**
+ * Replace a line's vertices via before/after snapshots — covers adding a bend,
+ * moving a vertex, and re-anchoring an endpoint; the label distinguishes them.
+ * Committed once at pointer-up after the gesture is applied transiently.
+ */
+export class UpdateLineCommand implements Command<CompositeDocument> {
+  constructor(
+    readonly label: string,
+    private id: string,
+    private before: LineVertexJson[],
+    private after: LineVertexJson[]
+  ) {}
+
+  do(doc: CompositeDocument): void {
+    doc.setLineVertices(this.id, this.after);
+  }
+
+  undo(doc: CompositeDocument): void {
+    doc.setLineVertices(this.id, this.before);
   }
 }
