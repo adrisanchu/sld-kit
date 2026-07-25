@@ -60,6 +60,7 @@ export { SvgExporter, type SvgExportOptions } from './export/SvgExporter';
 export { Transform2D } from './layout/Transform2D';
 export { type DocumentResolver, MapResolver } from './composite/DocumentResolver';
 export { DiagramInstance, type DiagramInstanceJson } from './composite/DiagramInstance';
+export { CompositeLine, type CompositeLineJson, type LineVertexJson } from './composite/CompositeLine';
 export { CompositeDocument, type CompositeMeta, type CompositeChange } from './composite/CompositeDocument';
 export {
   CompositeLayoutEngine,
@@ -67,6 +68,8 @@ export {
   PLACEHOLDER_FRAME,
   type ChildLayout,
   type CompositeLink,
+  type CompositeLineLayout,
+  type ExternalConnectionTip,
   type CompositeLayout
 } from './composite/CompositeLayoutEngine';
 export {
@@ -75,4 +78,11 @@ export {
   type CompositeDocumentJson
 } from './composite/CompositeSerializer';
 export { CompositeSvgExporter, type CompositeSvgExportOptions } from './composite/CompositeSvgExporter';
-export { AddChildCommand, RemoveChildCommand, TransformChildCommand } from './composite/commands';
+export {
+  AddChildCommand,
+  RemoveChildCommand,
+  TransformChildCommand,
+  AddLineCommand,
+  RemoveLineCommand,
+  UpdateLineCommand
+} from './composite/commands';
