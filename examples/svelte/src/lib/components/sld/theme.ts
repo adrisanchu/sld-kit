@@ -135,6 +135,7 @@ export const SLD_COMPOSITE_TOOLBAR_LABELS: CompositeToolbarLabels = {
   export: 'Export',
   select: 'Select',
   import: 'Import diagram',
+  drawLine: 'Draw line (double-click to finish)',
   delete: 'Delete selected (Del)',
   undo: 'Undo (Ctrl+Z)',
   redo: 'Redo (Ctrl+Shift+Z)',
