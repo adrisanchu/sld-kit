@@ -4,6 +4,7 @@
     SLD_LAYOUT,
     type CompositeLayout,
     type ChildLayout,
+    type CompositeLineLayout,
     type ExternalConnectionTip,
     type Point
   } from '@sld-kit/core';
@@ -40,6 +41,12 @@
    * consumer decides the class from the child's resolved document.
    */
   export let childColorClass: (child: ChildLayout) => string | null = () => null;
+  /**
+   * Per-line color class override (e.g. a voltage bucket, set only when both
+   * ends share a voltage). Same contract as `childColorClass`: the class must
+   * set `--sld-pos`; `null` falls back to the neutral primary stroke.
+   */
+  export let lineColorClass: (line: CompositeLineLayout) => string | null = () => null;
   /** Label-visibility toggles, forwarded to every child. */
   export let showPositionLabels: boolean = true;
   export let showBusBarLabels: boolean = true;
@@ -54,6 +61,8 @@
     linkdown: { connectionId: string; event: PointerEvent };
     linedown: { id: string; event: PointerEvent };
     linevertexdown: { id: string; index: number; event: PointerEvent };
+    /** Add a bend: `index` is the segment (between vertex `index` and `index+1`). */
+    linesegmentdown: { id: string; index: number; point: Point; event: PointerEvent };
     canvaspoint: { point: Point; snap: { instanceId: string; connectionId: string } | null };
     drawcommit: void;
   }>();
@@ -96,6 +105,13 @@
     e.stopPropagation();
     e.preventDefault();
     dispatch('linevertexdown', { id, index, event: e });
+  }
+
+  function handleSegmentDown(id: string, index: number, point: Point, e: PointerEvent) {
+    if (!interactive) return;
+    e.stopPropagation();
+    e.preventDefault();
+    dispatch('linesegmentdown', { id, index, point, event: e });
   }
 
   const pz = createPanZoom(
@@ -203,12 +219,17 @@
     />
   {/each}
 
-  <!-- Manual lines (solid), underneath the children — matches the SVG export. -->
+  <!-- Manual lines (solid), underneath the children — matches the SVG export.
+       Colored by the consumer's `lineColorClass` (e.g. a voltage bucket) exactly
+       like a child's connections; falls back to the neutral primary stroke. -->
   {#each layout.lines as ln (ln.line.id)}
+    {@const cls = lineColorClass(ln)}
     <polyline
       points={ln.points.map((p) => `${p.x},${p.y}`).join(' ')}
       fill="none"
-      class="stroke-primary"
+      stroke={cls ? 'currentColor' : undefined}
+      class={cls ?? 'stroke-primary'}
+      style={cls ? 'color: hsl(var(--sld-pos))' : ''}
       stroke-width={ln.line.id === selectedLineId ? 3 : 2}
     />
   {/each}
@@ -249,6 +270,30 @@
   {/if}
 
   {#if selectedLine && interactive && !drawMode}
+    <!-- Hollow "add" handles at each segment midpoint: click-drag to insert a
+         new bend. Shown only when every vertex resolved (points ↔ vertices 1:1),
+         so the segment index maps straight to a vertex insert position. -->
+    {#if selectedLine.points.length === selectedLine.line.vertices.length}
+      {#each selectedLine.points.slice(0, -1) as p, i}
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
+        <circle
+          cx={(p.x + selectedLine.points[i + 1].x) / 2}
+          cy={(p.y + selectedLine.points[i + 1].y) / 2}
+          r="4"
+          class="fill-background stroke-primary/50 pointer-events-auto cursor-copy"
+          stroke-width="1.5"
+          stroke-dasharray="2 2"
+          on:pointerdown={(e) =>
+            handleSegmentDown(
+              selectedLine.line.id,
+              i,
+              { x: (p.x + selectedLine.points[i + 1].x) / 2, y: (p.y + selectedLine.points[i + 1].y) / 2 },
+              e
+            )}
+        />
+      {/each}
+    {/if}
+
     <!-- Only free bend vertices are draggable; anchored ends follow their child. -->
     {#each selectedLine.line.vertices as v, i}
       {#if v.kind === 'point'}
