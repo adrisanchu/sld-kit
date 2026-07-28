@@ -343,6 +343,10 @@
     const { id, index, point, event } = e.detail;
     const line = doc.getLine(id);
     if (!line) return;
+    // Keep the line selected so the new dot is visibly part of the selection.
+    selectedLineId = id;
+    selectedId = null;
+    selectedLinkId = null;
     const commitBefore = line.vertices.map((v) => ({ ...v }));
     const inserted: LineVertexJson = { kind: 'point', x: point.x, y: point.y };
     const base = [...commitBefore.slice(0, index + 1), inserted, ...commitBefore.slice(index + 1)];
@@ -384,6 +388,18 @@
       if (line) run(new UpdateLineCommand(lineDrag.label, lineDrag.id, lineDrag.commitBefore, line.vertices));
     }
     lineDrag = null;
+  }
+
+  /** Delete an intermediate bend (a free `point` vertex), keeping the line valid (≥ 2 vertices). */
+  function handleLineVertexDelete(e: CustomEvent<{ id: string; index: number }>) {
+    if (!canEdit) return;
+    const { id, index } = e.detail;
+    const line = doc.getLine(id);
+    if (!line || line.vertices[index]?.kind !== 'point' || line.vertices.length <= 2) return;
+    const before = line.vertices.map((v) => ({ ...v }));
+    const after = before.filter((_, i) => i !== index);
+    run(new UpdateLineCommand('Delete line vertex', id, before, after));
+    selectedLineId = id;
   }
 
   onDestroy(() => {
@@ -485,6 +501,7 @@
     on:linkdown={handleLinkDown}
     on:linevertexdown={handleLineVertexDown}
     on:linesegmentdown={handleLineSegmentDown}
+    on:linevertexdelete={handleLineVertexDelete}
     on:canvaspoint={handleCanvasPoint}
     on:drawcommit={handleDrawCommit}
   />

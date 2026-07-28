@@ -36,6 +36,37 @@ const layout = new CompositeLayoutEngine().layout(composite);
    220 kV level connect through a shared autotransformer without any manual
    wiring.
 
+## Manual lines
+
+Auto-links are convenient but always straight and dashed — they can't express a
+real interconnection's route (bends, crossings, parallel runs sharing towers).
+A **`CompositeLine`** is a first-class, command-driven entity (a sibling of
+`DiagramInstance`) that draws that route explicitly: a straight-segment polyline
+of `vertices`, each either a free `point` (fixed in composite coordinates) or an
+`anchor` that references a child's external connection dot by
+`(instanceId, connectionId)`.
+
+- **Anchors follow their child.** An `anchor` vertex is resolved at layout time
+  to the same world point the auto-link would use (`transform.apply` of the
+  connection's arrow tip), so moving or rotating a child drags its anchored line
+  ends along while free bends stay put — the "reference by id, never geometry"
+  invariant, applied to lines.
+- **Manual takes precedence.** Any connection id claimed by a line's anchor is
+  removed from the auto-link pass, so a manual line replaces the dashed link for
+  that id. Everything else still auto-links.
+- **Commands only.** `AddLineCommand` / `RemoveLineCommand` / `UpdateLineCommand`
+  keep undo/redo intact, exactly like the child commands.
+- **Export.** `CompositeSvgExporter` renders each line as a plain solid `<path>`
+  (via the shared `connectionPath`), under the same Office-safe constraints —
+  presentation attributes only, no markers/classes/`<style>`.
+- Unresolvable anchors (missing child/connection) are dropped; a line left with
+  fewer than two points is simply not drawn (the model still keeps it), mirroring
+  how dangling `libraryId`s render as placeholders.
+
+`CompositeLayoutEngine.externalConnectionTips(children)` lists every child's
+external connection dots in world coordinates — the snap/convert targets an
+editor uses to draw an anchored end or turn an existing auto-link into a line.
+
 ## `Transform2D`
 
 A rigid transform: rotate `angleDeg` about a child-local `pivot` (typically the
@@ -54,6 +85,7 @@ single-diagram exporter (a rotated `<g>` of plain shapes is safe; no nested
 ## Serialization
 
 `CompositeSerializer` is a sibling of `Serializer` with its own version
-(currently **1**) and `kind: 'composite'`, reusing `SldParseError`. Dangling
-`libraryId`s are legal — they render as placeholders rather than failing the
-parse.
+(currently **2**; v1 — before manual lines — upgrades transparently via a
+migration that adds an empty line list) and `kind: 'composite'`, reusing
+`SldParseError`. Dangling `libraryId`s (and dangling line anchors) are legal —
+they render as placeholders / are dropped rather than failing the parse.
