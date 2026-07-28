@@ -264,6 +264,7 @@
       {showChildNames}
       {notFoundLabel}
       on:childdown
+      on:labeldown
     />
   {/each}
 

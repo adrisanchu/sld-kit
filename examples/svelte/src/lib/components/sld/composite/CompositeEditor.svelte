@@ -9,6 +9,7 @@
     AddChildCommand,
     RemoveChildCommand,
     TransformChildCommand,
+    SetChildLabelCommand,
     AddLineCommand,
     RemoveLineCommand,
     UpdateLineCommand,
@@ -20,12 +21,14 @@
     type Point,
     type ChildLayout,
     type CompositeLineLayout,
-    type LineVertexJson
+    type LineVertexJson,
+    type LabelAnchor
   } from '@sld-kit/core';
   import { sldLibrary } from '$lib/stores/sldLibrary';
   import { sldEditorSettings } from '$lib/stores/sldEditorSettings';
   import { CompositeCanvas, CompositeToolbar, createDocStore, downloadText, slugify } from '@sld-kit/svelte';
   import ImportDiagramDialog from './ImportDiagramDialog.svelte';
+  import DiagramLabelDialog from './DiagramLabelDialog.svelte';
   import {
     POSITION_TYPE_TOKENS,
     SLD_COMPOSITE_TOOLBAR_LABELS,
@@ -121,6 +124,27 @@
     selectedLinkId = e.detail.connectionId;
     selectedId = null;
     selectedLineId = null;
+  }
+
+  // ── Diagram-name label ───────────────────────────────────────────────────────
+  // Placement is edited from the toolbar: with a child selected, the name button
+  // opens a dialog (dropdown of the six slots + a rotate-90° button). Every change
+  // runs a SetChildLabelCommand against the live instance, so it stays undoable.
+  let labelDialogOpen = false;
+
+  $: labelChild = selectedId ? ($docStore.getChild(selectedId) ?? null) : null;
+
+  function applyLabelPlacement(e: CustomEvent<{ anchor: LabelAnchor; direction: number }>) {
+    if (!canEdit || !selectedId) return;
+    const inst = doc.getChild(selectedId);
+    if (!inst) return;
+    run(
+      new SetChildLabelCommand(
+        selectedId,
+        { anchor: inst.labelAnchor, direction: inst.labelDirection },
+        { anchor: e.detail.anchor, direction: e.detail.direction }
+      )
+    );
   }
 
   // ── Drag-move ──────────────────────────────────────────────────────────────
@@ -518,11 +542,13 @@
     </div>
   {/if}
 
+
   <CompositeToolbar
     {userRole}
     {canUndo}
     {canRedo}
     {hasSelection}
+    childSelected={selectedId !== null}
     {drawActive}
     colorMode={$sldEditorSettings.colorMode}
     labelMode={$sldEditorSettings.labelMode}
@@ -531,6 +557,7 @@
     on:import={() => (importOpen = true)}
     on:drawline={toggleDraw}
     on:delete={deleteSelection}
+    on:editlabel={() => (labelDialogOpen = true)}
     on:undo={() => stack.undo(doc)}
     on:redo={() => stack.redo(doc)}
     on:fit={() => canvas?.zoomToFit()}
@@ -542,3 +569,13 @@
 </div>
 
 <ImportDiagramDialog bind:open={importOpen} on:import={handleImport} />
+
+{#if labelChild}
+  <DiagramLabelDialog
+    bind:open={labelDialogOpen}
+    name={labelChild.resolved?.meta.name ?? labelChild.libraryId}
+    anchor={labelChild.labelAnchor}
+    direction={labelChild.labelDirection}
+    on:change={applyLabelPlacement}
+  />
+{/if}

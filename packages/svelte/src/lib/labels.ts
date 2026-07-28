@@ -175,6 +175,8 @@ export interface CompositeToolbarLabels {
   /** Draw-line tool toggle. */
   drawLine: string;
   delete: string;
+  /** Opens the selected diagram's name-placement dialog (enabled with a child selected). */
+  editLabel: string;
   undo: string;
   redo: string;
   /** Color-mode toggle (by type ↔ by voltage). */
@@ -190,6 +192,7 @@ export const DEFAULT_COMPOSITE_TOOLBAR_LABELS: CompositeToolbarLabels = {
   import: 'Import diagram',
   drawLine: 'Draw line (double-click to finish)',
   delete: 'Delete selected (Del)',
+  editLabel: 'Diagram name position',
   undo: 'Undo (Ctrl+Z)',
   redo: 'Redo (Ctrl+Shift+Z)',
   colorMode: 'Color by voltage',

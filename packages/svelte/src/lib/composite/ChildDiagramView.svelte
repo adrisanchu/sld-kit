@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { SLD_LAYOUT, type ChildLayout } from '@sld-kit/core';
+  import type { ChildLayout } from '@sld-kit/core';
   import BusBarView from '../elements/BusBarView.svelte';
   import PositionView from '../elements/PositionView.svelte';
   import ConnectionView from '../elements/ConnectionView.svelte';
@@ -139,17 +139,19 @@
     </text>
   {/if}
 
-  <!-- Always-on diagram name at the top-left, riding with the child's
-       orientation via the same {0,180} flip the element labels use. Independent
-       of the label-visibility toggles (issue #17). -->
+  <!-- Always-on diagram name at its chosen slot, larger + bold so it stands
+       apart from the element labels. Rides with the child's orientation plus the
+       label's own rotation (direction + {0,180} readability flip). Independent
+       of the label-visibility toggles (issue #17). Placement is edited from the
+       toolbar (pointer-transparent so clicking it just selects the diagram). -->
   {#if showChildNames}
     <text
       x={child.nameLabel.x}
       y={child.nameLabel.y}
-      text-anchor="start"
-      font-size={SLD_LAYOUT.labelFontSize}
-      transform="rotate({labelAngleDeg} {child.nameLabel.x} {child.nameLabel.y})"
-      class="pointer-events-none select-none fill-foreground font-semibold"
+      text-anchor={child.nameLabel.textAnchor}
+      font-size={child.nameLabel.fontSize}
+      transform="rotate({child.nameLabel.rotation} {child.nameLabel.x} {child.nameLabel.y})"
+      class="pointer-events-none select-none fill-foreground font-bold"
     >
       {child.name}
     </text>
