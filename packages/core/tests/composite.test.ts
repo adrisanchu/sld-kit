@@ -10,6 +10,7 @@ import {
   TransformChildCommand,
   SetChildLabelCommand,
   LABEL_ANCHORS,
+  resolveNameLabelLayout,
   MapResolver,
   Transform2D,
   type CompositeDocument,
@@ -263,6 +264,22 @@ describe('SetChildLabelCommand', () => {
     doc.setChildLabel(child.id, 'top-left', 100);
     expect(child.labelDirection).toBe(90);
     expect(LABEL_ANCHORS).toContain(child.labelAnchor);
+  });
+
+  it('keeps the label anchor inside the frame for every slot, direction and tilt', () => {
+    const frame = { x: 0, y: 0, width: 360, height: 240 };
+    for (const anchor of LABEL_ANCHORS) {
+      for (const direction of [0, 90, 180, 270]) {
+        // Sample tilts including the ones that trip the readability flip.
+        for (const angleDeg of [0, 20, 90, 135, 200, 340]) {
+          const { x, y } = resolveNameLabelLayout(frame, anchor, direction, angleDeg);
+          expect(x).toBeGreaterThanOrEqual(frame.x);
+          expect(x).toBeLessThanOrEqual(frame.x + frame.width);
+          expect(y).toBeGreaterThanOrEqual(frame.y);
+          expect(y).toBeLessThanOrEqual(frame.y + frame.height);
+        }
+      }
+    }
   });
 });
 

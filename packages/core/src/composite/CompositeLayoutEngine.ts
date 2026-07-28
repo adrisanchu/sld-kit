@@ -4,19 +4,13 @@ import { Transform2D } from '../layout/Transform2D';
 import type { Point, Rect } from '../layout/geometry';
 import { CompositeDocument } from './CompositeDocument';
 import { CompositeLine } from './CompositeLine';
-import { DiagramInstance, type LabelAnchor } from './DiagramInstance';
+import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
 
 /** Fixed frame for an unresolved child, so it stays selectable and movable. */
 export const PLACEHOLDER_FRAME = { width: 360, height: 240 } as const;
 
-/**
- * Inset of the always-on diagram-name label from the child's frame edges, in
- * child-local units. `x` insets left/right anchors horizontally; `top` is the
- * text baseline below the top edge, `bottom` the baseline above the bottom edge.
- * Shared by the view and the exporter through `ChildLayout.nameLabel`, so they
- * can never drift.
- */
-export const NAME_LABEL_INSET = { x: 8, top: 20, bottom: 8 } as const;
+/** Gap kept between the name label and the frame edge it hugs, in child-local units. */
+export const NAME_LABEL_PAD = 6;
 
 /** Name-label font size — larger than element labels, rendered bold, so the
  *  diagram name stands out from the position/bus/connection labels. */
@@ -67,20 +61,75 @@ export interface NameLabelLayout {
 }
 
 /**
- * Local anchor point + `text-anchor` for one of the six name-label slots on a
- * child's frame. Slots are semantic to the child's own frame, so they ride the
- * child's rotation.
+ * Resolve a name label to a placement that stays **inside** the child's frame at
+ * any rotation. Slots are semantic to the child's own frame (they ride its
+ * rotation); `direction` (quarter turns) plus a `{0, 180}` readability flip give
+ * the on-screen rotation. Because the frame and label rotate together, staying
+ * inside is a purely local problem: the anchor is pinned to the slot's edge and
+ * the `text-anchor` is chosen so the text grows *into* the frame rather than out
+ * of the corner. (Very long names may still overflow the far edge, exactly as a
+ * horizontal label does today.)
  */
-export function nameLabelSlot(
+export function resolveNameLabelLayout(
   frame: Rect,
-  anchor: LabelAnchor
-): { x: number; y: number; textAnchor: 'start' | 'middle' | 'end' } {
-  const y = anchor.startsWith('bottom')
-    ? frame.y + frame.height - NAME_LABEL_INSET.bottom
-    : frame.y + NAME_LABEL_INSET.top;
-  if (anchor.endsWith('left')) return { x: frame.x + NAME_LABEL_INSET.x, y, textAnchor: 'start' };
-  if (anchor.endsWith('right')) return { x: frame.x + frame.width - NAME_LABEL_INSET.x, y, textAnchor: 'end' };
-  return { x: frame.x + frame.width / 2, y, textAnchor: 'middle' };
+  anchor: LabelAnchor,
+  direction: number,
+  angleDeg: number
+): NameLabelLayout {
+  const fontSize = NAME_LABEL_FONT_SIZE;
+  const capH = fontSize; // generous cap height incl. padding
+  const desc = fontSize * 0.25; // descender / far-side breathing room
+  const pad = NAME_LABEL_PAD;
+  const ix = NAME_LABEL_PAD + 2; // slightly larger horizontal inset for left/right slots
+
+  const dir = normalizeQuarterTurn(direction);
+  const rotation = (dir + labelFlipDeg(angleDeg + dir)) % 360; // 0 | 90 | 180 | 270
+
+  const top = anchor.startsWith('top');
+  const horiz = anchor.endsWith('left') ? 'left' : anchor.endsWith('right') ? 'right' : 'center';
+
+  // Advance (text flow for anchor `start`) and up (baseline→cap) unit vectors
+  // after applying `rotation`, in the child-local axes (y points down).
+  const A = ({ 0: [1, 0], 90: [0, 1], 180: [-1, 0], 270: [0, -1] } as const)[rotation as 0 | 90 | 180 | 270];
+  const U = ({ 0: [0, -1], 90: [1, 0], 180: [0, 1], 270: [-1, 0] } as const)[rotation as 0 | 90 | 180 | 270];
+
+  const left = frame.x;
+  const right = frame.x + frame.width;
+  const topY = frame.y;
+  const botY = frame.y + frame.height;
+
+  let x: number;
+  let y: number;
+  let textAnchor: 'start' | 'middle' | 'end';
+
+  if (A[1] === 0) {
+    // Horizontal text: advance along x (pinned by slot), caps along y.
+    if (horiz === 'center') {
+      textAnchor = 'middle';
+      x = (left + right) / 2;
+    } else if (horiz === 'left') {
+      textAnchor = A[0] > 0 ? 'start' : 'end';
+      x = left + ix;
+    } else {
+      textAnchor = A[0] > 0 ? 'end' : 'start';
+      x = right - ix;
+    }
+    y = top ? topY + pad + (U[1] < 0 ? capH : desc) : botY - pad - (U[1] > 0 ? capH : desc);
+  } else {
+    // Vertical text: advance along y (pinned by slot), caps along x.
+    if (top) {
+      textAnchor = A[1] > 0 ? 'start' : 'end';
+      y = topY + pad;
+    } else {
+      textAnchor = A[1] > 0 ? 'end' : 'start';
+      y = botY - pad;
+    }
+    if (horiz === 'center') x = (left + right) / 2 - (U[0] * capH) / 2;
+    else if (horiz === 'left') x = left + ix + (U[0] > 0 ? desc : capH);
+    else x = right - ix - (U[0] > 0 ? capH : desc);
+  }
+
+  return { x, y, textAnchor, rotation, fontSize };
 }
 
 /**
@@ -158,7 +207,7 @@ export class CompositeLayoutEngine {
         worldCorners: transform.applyRect(frame),
         labelAngleDeg: labelFlipDeg(instance.angleDeg),
         name: resolved?.meta.name || instance.libraryId,
-        nameLabel: this.nameLabelLayout(instance, frame)
+        nameLabel: resolveNameLabelLayout(frame, instance.labelAnchor, instance.labelDirection, instance.angleDeg)
       });
     }
 
@@ -169,18 +218,6 @@ export class CompositeLayoutEngine {
     const links = this.detectLinks(children, claimed);
     const bounds = this.unionBounds(children, links, lines);
     return { children, links, lines, bounds };
-  }
-
-  /**
-   * Resolve a child's name-label placement: the chosen slot on its frame plus
-   * the extra rotation (`labelDirection` + a `{0, 180}` readability flip so the
-   * text stays upright once the child's own rotation and the direction combine).
-   */
-  private nameLabelLayout(instance: DiagramInstance, frame: Rect): NameLabelLayout {
-    const slot = nameLabelSlot(frame, instance.labelAnchor);
-    const dir = instance.labelDirection;
-    const rotation = dir + labelFlipDeg(instance.angleDeg + dir);
-    return { ...slot, rotation, fontSize: NAME_LABEL_FONT_SIZE };
   }
 
   /**

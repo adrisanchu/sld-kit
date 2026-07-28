@@ -102,11 +102,18 @@ so it rides every move and rotation:
   (0/90/180/270) of the label relative to the child, so the name can read along
   a different axis than the diagram (e.g. vertical). Default 0.
 
-`CompositeLayoutEngine` resolves both into `nameLabel` (`{ x, y, textAnchor,
-rotation, fontSize }`), where `rotation = labelDirection +` a `{0, 180}`
-readability flip so the text never reads upside-down once the child's own
-rotation and the direction combine. The label is drawn inside the child's
-transform group and additionally rotated by `rotation` about its anchor.
+`CompositeLayoutEngine.resolveNameLabelLayout` resolves both into `nameLabel`
+(`{ x, y, textAnchor, rotation, fontSize }`), where `rotation = labelDirection +`
+a `{0, 180}` readability flip so the text never reads upside-down once the
+child's own rotation and the direction combine. The label is drawn inside the
+child's transform group and additionally rotated by `rotation` about its anchor.
+
+Because the frame and label rotate together, keeping the label **inside** the
+frame is a purely local problem: the anchor is pinned to the slot's edge and the
+`text-anchor` is chosen so the text grows *into* the frame rather than out of the
+corner — at any `rotation`, including when the readability flip would otherwise
+sweep it out. (A very long name may still overflow the far edge, exactly as a
+horizontal element label does.)
 
 Placement is edited through **`SetChildLabelCommand`** (before/after slot +
 direction snapshots), so it is undoable and serialized. The label is

@@ -71,9 +71,9 @@ export { CompositeDocument, type CompositeMeta, type CompositeChange } from './c
 export {
   CompositeLayoutEngine,
   labelFlipDeg,
-  nameLabelSlot,
+  resolveNameLabelLayout,
   PLACEHOLDER_FRAME,
-  NAME_LABEL_INSET,
+  NAME_LABEL_PAD,
   NAME_LABEL_FONT_SIZE,
   type ChildLayout,
   type NameLabelLayout,
