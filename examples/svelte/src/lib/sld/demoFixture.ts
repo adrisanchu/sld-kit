@@ -14,6 +14,7 @@ import {
   Position,
   Connection,
   CompositeDocument,
+  CompositeLine,
   DiagramInstance,
   newId,
   type Endpoint,
@@ -142,11 +143,25 @@ export function buildExampleMv(): SldDocument {
   return doc;
 }
 
-/** Composite of the two voltage levels, both rotated a bit to showcase that it's possible. */
+/**
+ * Composite of the two voltage levels, both rotated a bit to showcase that it's
+ * possible. The shared transformer tie is drawn as a manual line (anchored to
+ * both levels with one free bend) instead of the default straight dashed
+ * auto-link — showing off the manual/automatic line ends.
+ */
 export function buildExampleComposite(): CompositeDocument {
+  const hvInstanceId = newId();
+  const mvInstanceId = newId();
   const doc = new CompositeDocument({ id: EXAMPLE_COMPOSITE_ID, name: 'Example — overview' });
-  doc.addChild(new DiagramInstance(newId(), EXAMPLE_HV_ID, 250, 230, 222));
-  doc.addChild(new DiagramInstance(newId(), EXAMPLE_MV_ID, 400, -300, 40));
+  doc.addChild(new DiagramInstance(hvInstanceId, EXAMPLE_HV_ID, 250, 230, 222));
+  doc.addChild(new DiagramInstance(mvInstanceId, EXAMPLE_MV_ID, 400, -300, 40));
+  doc.addLine(
+    new CompositeLine(newId(), [
+      { kind: 'anchor', instanceId: hvInstanceId, connectionId: SHARED_LINK_ID },
+      { kind: 'point', x: 520, y: 60 },
+      { kind: 'anchor', instanceId: mvInstanceId, connectionId: SHARED_LINK_ID }
+    ])
+  );
   return doc;
 }
 

@@ -61,6 +61,8 @@
     linkdown: { connectionId: string; event: PointerEvent };
     linedown: { id: string; event: PointerEvent };
     linevertexdown: { id: string; index: number; event: PointerEvent };
+    /** Remove an intermediate bend (double-click a vertex handle). */
+    linevertexdelete: { id: string; index: number };
     /** Add a bend: `index` is the segment (between vertex `index` and `index+1`). */
     linesegmentdown: { id: string; index: number; point: Point; event: PointerEvent };
     canvaspoint: { point: Point; snap: { instanceId: string; connectionId: string } | null };
@@ -104,13 +106,23 @@
     if (!interactive) return;
     e.stopPropagation();
     e.preventDefault();
+    // A handle gesture re-renders the chrome; swallow the trailing background
+    // click so it can't clear the current line selection.
+    suppressNextClick = true;
     dispatch('linevertexdown', { id, index, event: e });
+  }
+
+  function handleVertexDblClick(id: string, index: number, e: MouseEvent) {
+    if (!interactive) return;
+    e.stopPropagation();
+    dispatch('linevertexdelete', { id, index });
   }
 
   function handleSegmentDown(id: string, index: number, point: Point, e: PointerEvent) {
     if (!interactive) return;
     e.stopPropagation();
     e.preventDefault();
+    suppressNextClick = true;
     dispatch('linesegmentdown', { id, index, point, event: e });
   }
 
@@ -290,11 +302,14 @@
               { x: (p.x + selectedLine.points[i + 1].x) / 2, y: (p.y + selectedLine.points[i + 1].y) / 2 },
               e
             )}
-        />
+        >
+          <title>Click to add a bend</title>
+        </circle>
       {/each}
     {/if}
 
-    <!-- Only free bend vertices are draggable; anchored ends follow their child. -->
+    <!-- Only free bend vertices are draggable; anchored ends follow their child.
+         Double-click removes the bend. -->
     {#each selectedLine.line.vertices as v, i}
       {#if v.kind === 'point'}
         <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -305,7 +320,10 @@
           class="fill-background stroke-primary pointer-events-auto cursor-grab"
           stroke-width="1.5"
           on:pointerdown={(e) => handleVertexDown(selectedLine.line.id, i, e)}
-        />
+          on:dblclick={(e) => handleVertexDblClick(selectedLine.line.id, i, e)}
+        >
+          <title>Drag to move · double-click to delete</title>
+        </circle>
       {/if}
     {/each}
   {/if}
