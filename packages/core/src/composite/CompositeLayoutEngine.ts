@@ -9,6 +9,14 @@ import { DiagramInstance } from './DiagramInstance';
 /** Fixed frame for an unresolved child, so it stays selectable and movable. */
 export const PLACEHOLDER_FRAME = { width: 360, height: 240 } as const;
 
+/**
+ * Inset of the always-on diagram-name label from the child's top-left corner,
+ * in child-local units. `x` shifts the anchor right; `y` is the text baseline
+ * offset below the top edge. Shared by the view and the exporter through
+ * `ChildLayout.nameLabel`, so they can never drift.
+ */
+export const NAME_LABEL_INSET = { x: 8, y: 20 } as const;
+
 export interface ChildLayout {
   instance: DiagramInstance;
   /** Child-local layout; null when the child is unresolved (placeholder). */
@@ -28,6 +36,17 @@ export interface ChildLayout {
    * only flipping to be read from the other side. See `labelFlipDeg`.
    */
   labelAngleDeg: number;
+  /**
+   * Always-on identifying label: the resolved diagram's `meta.name`, or the
+   * `libraryId` when unresolved so a placeholder frame stays identifiable.
+   */
+  name: string;
+  /**
+   * Top-left anchor for `name` in child-local coordinates (frame corner +
+   * `NAME_LABEL_INSET`). Drawn inside the child's transform and flipped by
+   * `labelAngleDeg`, so it rides with the diagram's own orientation.
+   */
+  nameLabel: Point;
 }
 
 /**
@@ -103,7 +122,9 @@ export class CompositeLayoutEngine {
         frame,
         worldBounds: transform.boundsOf(frame),
         worldCorners: transform.applyRect(frame),
-        labelAngleDeg: labelFlipDeg(instance.angleDeg)
+        labelAngleDeg: labelFlipDeg(instance.angleDeg),
+        name: resolved?.meta.name || instance.libraryId,
+        nameLabel: { x: frame.x + NAME_LABEL_INSET.x, y: frame.y + NAME_LABEL_INSET.y }
       });
     }
 

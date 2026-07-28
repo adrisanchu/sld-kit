@@ -165,6 +165,25 @@ describe('CompositeLayoutEngine', () => {
     expect(layout.children.every((c) => c.layout === null)).toBe(true);
     expect(layout.links).toHaveLength(0);
   });
+
+  it('labels each child with its resolved meta.name at the frame top-left', () => {
+    const doc = buildExampleComposite();
+    doc.resolveChildren(resolver());
+    const layout = new CompositeLayoutEngine().layout(doc);
+    const hv = layout.children.find((c) => c.instance.libraryId === EXAMPLE_HV_ID)!;
+    expect(hv.name).toBe('Example 400 kV');
+    // Anchor is the top-left frame corner plus a small inset (child-local).
+    expect(hv.nameLabel.x).toBeGreaterThan(hv.frame.x);
+    expect(hv.nameLabel.y).toBeGreaterThan(hv.frame.y);
+    expect(hv.nameLabel.x).toBeLessThan(hv.frame.x + hv.frame.width);
+  });
+
+  it('falls back to the libraryId when the child is unresolved', () => {
+    const doc = buildExampleComposite();
+    doc.resolveChildren(new MapResolver(new Map()));
+    const layout = new CompositeLayoutEngine().layout(doc);
+    expect(layout.children.map((c) => c.name)).toContain(EXAMPLE_HV_ID);
+  });
 });
 
 describe('CompositeSvgExporter', () => {
@@ -186,6 +205,21 @@ describe('CompositeSvgExporter', () => {
     expect(svg).not.toContain('class=');
     expect(svg).not.toContain('<style');
     expect(svg).not.toContain('<foreignObject');
+  });
+
+  it('renders each child diagram name into the export', () => {
+    const doc = buildExampleComposite();
+    doc.resolveChildren(resolver());
+    const svg = new CompositeSvgExporter().export(doc);
+    expect(svg).toContain('Example 400 kV');
+    expect(svg).toContain('Example 220 kV');
+  });
+
+  it('renders the libraryId as the name for an unresolved child', () => {
+    const doc = buildExampleComposite();
+    doc.resolveChildren(new MapResolver(new Map()));
+    const svg = new CompositeSvgExporter().export(doc);
+    expect(svg).toContain(EXAMPLE_HV_ID);
   });
 });
 

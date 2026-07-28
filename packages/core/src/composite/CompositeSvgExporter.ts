@@ -85,11 +85,38 @@ export class CompositeSvgExporter {
       } else {
         this.renderPlaceholder(b, child, theme);
       }
+      this.renderNameLabel(b, child, theme);
       b.close();
     }
 
     b.close();
     return b.toString();
+  }
+
+  /**
+   * Always-on diagram name at the child's top-left, riding with the child's
+   * orientation via the same {0,180} flip the element labels use (never
+   * upside-down). Independent of the labels-visibility toggle. Office-safe:
+   * plain `<text>`, presentation attributes only.
+   */
+  private renderNameLabel(b: SvgBuilder, child: ChildLayout, theme: SldTheme): void {
+    const { x, y } = child.nameLabel;
+    const attrs = {
+      x,
+      y,
+      'text-anchor': 'start',
+      'font-family': this.cfg.fontFamily,
+      'font-size': this.cfg.labelFontSize,
+      'font-weight': 600,
+      fill: theme.structure.label
+    };
+    if (child.labelAngleDeg % 360 === 0) {
+      b.textElement('text', attrs, child.name);
+      return;
+    }
+    b.open('g', { transform: `rotate(${child.labelAngleDeg} ${x} ${y})` });
+    b.textElement('text', attrs, child.name);
+    b.close();
   }
 
   private renderPlaceholder(b: SvgBuilder, child: ChildLayout, theme: SldTheme): void {

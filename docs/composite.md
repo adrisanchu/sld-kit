@@ -80,7 +80,20 @@ export, so a child renders identically on screen and exported.
 `CompositeSvgExporter` renders each child inside a rotated `<g>` via
 `SvgExporter.renderContent`, under the same Office-safe constraints as the
 single-diagram exporter (a rotated `<g>` of plain shapes is safe; no nested
-`<svg>`). Labels counter-rotate so names stay horizontal under a rotated child.
+`<svg>`). Labels ride with the child transform, applying a local `{0, 180}`
+flip (`labelFlipDeg`) so they stay aligned with the rotated diagram's own axis
+yet never read upside-down — they do not counter-rotate to horizontal.
+
+### Diagram name label
+
+Each child carries an always-on identifying label at its top-left
+(`ChildLayout.name` / `nameLabel`): the resolved diagram's `meta.name`, or the
+`libraryId` for an unresolved placeholder. It is drawn inside the child's
+transform group and flipped by the same `{0, 180}` `labelAngleDeg`, so it reads
+along the diagram's own orientation. It is **independent of the
+labels-visibility toggle** (on by default; the Svelte view exposes
+`showChildNames`) and renders identically on screen and in the Office-safe
+export (plain `<text>`, presentation attributes only).
 
 ## Serialization
 

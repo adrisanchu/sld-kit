@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { ChildLayout } from '@sld-kit/core';
+  import { SLD_LAYOUT, type ChildLayout } from '@sld-kit/core';
   import BusBarView from '../elements/BusBarView.svelte';
   import PositionView from '../elements/PositionView.svelte';
   import ConnectionView from '../elements/ConnectionView.svelte';
@@ -27,6 +27,11 @@
   export let showPositionLabels: boolean = true;
   export let showBusBarLabels: boolean = true;
   export let showConnectionLabels: boolean = true;
+  /**
+   * The always-on diagram name at the child's top-left. Independent of the
+   * label-visibility toggles above (issue #17); on by default.
+   */
+  export let showChildNames: boolean = true;
   /** Fallback text when a child diagram can't be resolved. */
   export let notFoundLabel: string = DEFAULT_CHILD_NOT_FOUND;
 
@@ -131,6 +136,22 @@
       class="select-none fill-muted-foreground"
     >
       {instance.libraryId}
+    </text>
+  {/if}
+
+  <!-- Always-on diagram name at the top-left, riding with the child's
+       orientation via the same {0,180} flip the element labels use. Independent
+       of the label-visibility toggles (issue #17). -->
+  {#if showChildNames}
+    <text
+      x={child.nameLabel.x}
+      y={child.nameLabel.y}
+      text-anchor="start"
+      font-size={SLD_LAYOUT.labelFontSize}
+      transform="rotate({labelAngleDeg} {child.nameLabel.x} {child.nameLabel.y})"
+      class="pointer-events-none select-none fill-foreground font-semibold"
+    >
+      {child.name}
     </text>
   {/if}
 
