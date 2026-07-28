@@ -14,6 +14,7 @@ import {
   Position,
   Connection,
   CompositeDocument,
+  CompositeLine,
   DiagramInstance,
   newId,
   type Endpoint,
@@ -146,5 +147,28 @@ export function buildExampleComposite(): CompositeDocument {
   const doc = new CompositeDocument({ id: EXAMPLE_COMPOSITE_ID, name: 'Example — overview' });
   doc.addChild(new DiagramInstance(newId(), EXAMPLE_HV_ID, 0, 0, 90));
   doc.addChild(new DiagramInstance(newId(), EXAMPLE_MV_ID, 400, 60, 90));
+  return doc;
+}
+
+/** Stable instance ids so line-anchor tests can reference the two children. */
+export const HV_INSTANCE_ID = 'inst-hv';
+export const MV_INSTANCE_ID = 'inst-mv';
+
+/**
+ * Same composite but with a manual line whose two ends are anchored to the
+ * shared transformer connection on each child, plus one free bend between them.
+ * The line claims `SHARED_LINK_ID`, so it replaces the auto-link for that id.
+ */
+export function buildExampleCompositeWithLine(): CompositeDocument {
+  const doc = new CompositeDocument({ id: EXAMPLE_COMPOSITE_ID, name: 'Example — overview' });
+  doc.addChild(new DiagramInstance(HV_INSTANCE_ID, EXAMPLE_HV_ID, 0, 0, 90));
+  doc.addChild(new DiagramInstance(MV_INSTANCE_ID, EXAMPLE_MV_ID, 400, 60, 90));
+  doc.addLine(
+    new CompositeLine('line-1', [
+      { kind: 'anchor', instanceId: HV_INSTANCE_ID, connectionId: SHARED_LINK_ID },
+      { kind: 'point', x: 250, y: 400 },
+      { kind: 'anchor', instanceId: MV_INSTANCE_ID, connectionId: SHARED_LINK_ID }
+    ])
+  );
   return doc;
 }

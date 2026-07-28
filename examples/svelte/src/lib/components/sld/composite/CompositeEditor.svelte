@@ -9,12 +9,18 @@
     AddChildCommand,
     RemoveChildCommand,
     TransformChildCommand,
+    AddLineCommand,
+    RemoveLineCommand,
+    UpdateLineCommand,
     DiagramInstance,
+    CompositeLine,
     newId,
     type CompositeDocument,
     type Command,
     type Point,
-    type ChildLayout
+    type ChildLayout,
+    type CompositeLineLayout,
+    type LineVertexJson
   } from '@sld-kit/core';
   import { sldLibrary } from '$lib/stores/sldLibrary';
   import { sldEditorSettings } from '$lib/stores/sldEditorSettings';
@@ -54,13 +60,34 @@
     $sldEditorSettings.colorMode === 'by-voltage'
       ? voltageToken(child.instance.resolved?.meta.voltageKv)
       : null;
+  // A manual line is a physical asset at one voltage: color it like a
+  // connection when every anchored end shares the same voltage level.
+  $: lineColorClass = (line: CompositeLineLayout): string | null => {
+    if ($sldEditorSettings.colorMode !== 'by-voltage') return null;
+    const volts = new Set<number | undefined>();
+    for (const v of line.line.vertices) {
+      if (v.kind === 'anchor') volts.add(doc.getChild(v.instanceId)?.resolved?.meta.voltageKv);
+    }
+    if (volts.size !== 1) return null;
+    const kv = [...volts][0];
+    return kv == null ? null : voltageToken(kv);
+  };
   $: showPositionLabels = $sldEditorSettings.labelMode === 'all';
   $: showBusBarLabels = $sldEditorSettings.labelMode !== 'none';
   $: showConnectionLabels = $sldEditorSettings.labelMode !== 'none';
 
   let canvas: CompositeCanvas;
   let selectedId: string | null = null;
+  let selectedLineId: string | null = null;
+  let selectedLinkId: string | null = null;
   let importOpen = false;
+
+  // ── Draw-line tool ──────────────────────────────────────────────────────────
+  let drawActive = false;
+  let draftVertices: LineVertexJson[] = [];
+  let draftPoints: Point[] = [];
+  // Connection dots a drawn/converted end can snap to (only computed while drawing).
+  $: snapTargets = drawActive ? engine.externalConnectionTips(layout.children) : [];
 
   let canUndo = false;
   let canRedo = false;
@@ -71,6 +98,7 @@
   onDestroy(unsubStack);
 
   $: canEdit = userRole !== 'viewer';
+  $: hasSelection = selectedId !== null || selectedLineId !== null;
 
   function run(cmd: Command<CompositeDocument>) {
     stack.execute(cmd, doc);
@@ -79,6 +107,20 @@
   // ── Selection ──────────────────────────────────────────────────────────────
   function clearSelection() {
     selectedId = null;
+    selectedLineId = null;
+    selectedLinkId = null;
+  }
+
+  function handleLineDown(e: CustomEvent<{ id: string; event: PointerEvent }>) {
+    selectedLineId = e.detail.id;
+    selectedId = null;
+    selectedLinkId = null;
+  }
+
+  function handleLinkDown(e: CustomEvent<{ connectionId: string; event: PointerEvent }>) {
+    selectedLinkId = e.detail.connectionId;
+    selectedId = null;
+    selectedLineId = null;
   }
 
   // ── Drag-move ──────────────────────────────────────────────────────────────
@@ -94,6 +136,8 @@
     // The topmost child's capture rect is hit first (later = higher z-order),
     // so selection picks the top diagram for free.
     selectedId = id;
+    selectedLineId = null;
+    selectedLinkId = null;
     if (!canEdit) return;
     const inst = doc.getChild(id);
     if (!inst) return;
@@ -199,11 +243,172 @@
     rotate = null;
   }
 
+  // ── Draw line ────────────────────────────────────────────────────────────
+  function toggleDraw() {
+    drawActive = !drawActive;
+    draftVertices = [];
+    draftPoints = [];
+    clearSelection();
+  }
+
+  function handleCanvasPoint(
+    e: CustomEvent<{ point: Point; snap: { instanceId: string; connectionId: string } | null }>
+  ) {
+    if (!drawActive) return;
+    const { point, snap } = e.detail;
+    draftPoints = [...draftPoints, point];
+    draftVertices = [
+      ...draftVertices,
+      snap ? { kind: 'anchor', instanceId: snap.instanceId, connectionId: snap.connectionId } : { kind: 'point', x: point.x, y: point.y }
+    ];
+  }
+
+  function sameVertex(a: LineVertexJson, b: LineVertexJson): boolean {
+    if (a.kind !== b.kind) return false;
+    return a.kind === 'point' && b.kind === 'point'
+      ? a.x === b.x && a.y === b.y
+      : a.kind === 'anchor' && b.kind === 'anchor'
+        ? a.instanceId === b.instanceId && a.connectionId === b.connectionId
+        : false;
+  }
+
+  function handleDrawCommit() {
+    // The double-click that finishes drawing also fires two clicks at the same
+    // spot; collapse consecutive duplicate vertices before committing.
+    const vertices = draftVertices.filter((v, i) => i === 0 || !sameVertex(v, draftVertices[i - 1]));
+    if (vertices.length >= 2) {
+      const line = new CompositeLine(newId(), vertices);
+      run(new AddLineCommand(line));
+      selectedLineId = line.id;
+      selectedId = null;
+    }
+    drawActive = false;
+    draftVertices = [];
+    draftPoints = [];
+  }
+
+  /** Convert the selected auto-link into an editable manual line (with one bend to drag). */
+  function convertSelectedLink() {
+    const link = layout.links.find((l) => l.connectionId === selectedLinkId);
+    if (!link) return;
+    const mid = { x: (link.a.point.x + link.b.point.x) / 2, y: (link.a.point.y + link.b.point.y) / 2 };
+    const line = new CompositeLine(newId(), [
+      { kind: 'anchor', instanceId: link.a.instanceId, connectionId: link.connectionId },
+      { kind: 'point', x: mid.x, y: mid.y },
+      { kind: 'anchor', instanceId: link.b.instanceId, connectionId: link.connectionId }
+    ]);
+    run(new AddLineCommand(line));
+    selectedLinkId = null;
+    selectedLineId = line.id;
+  }
+
+  // ── Line vertex drag / add ─────────────────────────────────────────────────
+  // `base` is what the drag deltas apply to (vertices at gesture start);
+  // `commitBefore` is what undo restores (pre-insert when adding a bend, so the
+  // whole add-and-position gesture is a single undoable step).
+  let lineDrag: {
+    id: string;
+    index: number;
+    startClient: { x: number; y: number };
+    base: LineVertexJson[];
+    commitBefore: LineVertexJson[];
+    moved: boolean;
+    added: boolean;
+    label: string;
+  } | null = null;
+
+  function handleLineVertexDown(e: CustomEvent<{ id: string; index: number; event: PointerEvent }>) {
+    if (!canEdit) return;
+    const { id, index, event } = e.detail;
+    const line = doc.getLine(id);
+    if (!line) return;
+    const snapshot = line.vertices.map((v) => ({ ...v }));
+    lineDrag = {
+      id,
+      index,
+      startClient: { x: event.clientX, y: event.clientY },
+      base: snapshot,
+      commitBefore: snapshot,
+      moved: false,
+      added: false,
+      label: 'Move line vertex'
+    };
+    window.addEventListener('pointermove', onLineVertexMove);
+    window.addEventListener('pointerup', onLineVertexUp);
+  }
+
+  /** Insert a new bend at a segment midpoint, then drag it — one undoable step. */
+  function handleLineSegmentDown(e: CustomEvent<{ id: string; index: number; point: Point; event: PointerEvent }>) {
+    if (!canEdit) return;
+    const { id, index, point, event } = e.detail;
+    const line = doc.getLine(id);
+    if (!line) return;
+    // Keep the line selected so the new dot is visibly part of the selection.
+    selectedLineId = id;
+    selectedId = null;
+    selectedLinkId = null;
+    const commitBefore = line.vertices.map((v) => ({ ...v }));
+    const inserted: LineVertexJson = { kind: 'point', x: point.x, y: point.y };
+    const base = [...commitBefore.slice(0, index + 1), inserted, ...commitBefore.slice(index + 1)];
+    doc.setLineVertices(id, base.map((v) => ({ ...v }))); // transient insert
+    lineDrag = {
+      id,
+      index: index + 1,
+      startClient: { x: event.clientX, y: event.clientY },
+      base,
+      commitBefore,
+      moved: false,
+      added: true,
+      label: 'Add line vertex'
+    };
+    window.addEventListener('pointermove', onLineVertexMove);
+    window.addEventListener('pointerup', onLineVertexUp);
+  }
+
+  function onLineVertexMove(e: PointerEvent) {
+    if (!lineDrag) return;
+    const dx = e.clientX - lineDrag.startClient.x;
+    const dy = e.clientY - lineDrag.startClient.y;
+    if (!lineDrag.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+    lineDrag.moved = true;
+    const p0 = canvas.clientToSvg(lineDrag.startClient.x, lineDrag.startClient.y);
+    const p1 = canvas.clientToSvg(e.clientX, e.clientY);
+    const next = lineDrag.base.map((v, i) =>
+      i === lineDrag!.index && v.kind === 'point' ? { kind: 'point' as const, x: v.x + (p1.x - p0.x), y: v.y + (p1.y - p0.y) } : v
+    );
+    doc.setLineVertices(lineDrag.id, next);
+  }
+
+  function onLineVertexUp() {
+    window.removeEventListener('pointermove', onLineVertexMove);
+    window.removeEventListener('pointerup', onLineVertexUp);
+    // Commit when the vertex actually moved, or a bend was added (even if not dragged).
+    if (lineDrag && (lineDrag.moved || lineDrag.added)) {
+      const line = doc.getLine(lineDrag.id);
+      if (line) run(new UpdateLineCommand(lineDrag.label, lineDrag.id, lineDrag.commitBefore, line.vertices));
+    }
+    lineDrag = null;
+  }
+
+  /** Delete an intermediate bend (a free `point` vertex), keeping the line valid (≥ 2 vertices). */
+  function handleLineVertexDelete(e: CustomEvent<{ id: string; index: number }>) {
+    if (!canEdit) return;
+    const { id, index } = e.detail;
+    const line = doc.getLine(id);
+    if (!line || line.vertices[index]?.kind !== 'point' || line.vertices.length <= 2) return;
+    const before = line.vertices.map((v) => ({ ...v }));
+    const after = before.filter((_, i) => i !== index);
+    run(new UpdateLineCommand('Delete line vertex', id, before, after));
+    selectedLineId = id;
+  }
+
   onDestroy(() => {
     window.removeEventListener('pointermove', onDragMove);
     window.removeEventListener('pointerup', onDragUp);
     window.removeEventListener('pointermove', onRotateMove);
     window.removeEventListener('pointerup', onRotateUp);
+    window.removeEventListener('pointermove', onLineVertexMove);
+    window.removeEventListener('pointerup', onLineVertexUp);
   });
 
   // ── Import ─────────────────────────────────────────────────────────────────
@@ -220,6 +425,11 @@
 
   // ── Delete ─────────────────────────────────────────────────────────────────
   function deleteSelection() {
+    if (selectedLineId) {
+      run(new RemoveLineCommand(selectedLineId));
+      selectedLineId = null;
+      return;
+    }
     if (!selectedId) return;
     run(new RemoveChildCommand(selectedId));
     selectedId = null;
@@ -248,7 +458,13 @@
       return;
 
     if (e.key === 'Escape') {
-      clearSelection();
+      if (drawActive) {
+        drawActive = false;
+        draftVertices = [];
+        draftPoints = [];
+      } else {
+        clearSelection();
+      }
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && canEdit) {
       e.preventDefault();
       deleteSelection();
@@ -266,9 +482,14 @@
     bind:this={canvas}
     {layout}
     {selectedId}
+    {selectedLineId}
+    drawMode={drawActive}
+    {snapTargets}
+    {draftPoints}
     interactive={canEdit}
     tokens={POSITION_TYPE_TOKENS}
     {childColorClass}
+    {lineColorClass}
     {showPositionLabels}
     {showBusBarLabels}
     {showConnectionLabels}
@@ -276,18 +497,39 @@
     on:childdown={handleChildDown}
     on:rotatestart={handleRotateStart}
     on:clearselection={clearSelection}
+    on:linedown={handleLineDown}
+    on:linkdown={handleLinkDown}
+    on:linevertexdown={handleLineVertexDown}
+    on:linesegmentdown={handleLineSegmentDown}
+    on:linevertexdelete={handleLineVertexDelete}
+    on:canvaspoint={handleCanvasPoint}
+    on:drawcommit={handleDrawCommit}
   />
+
+  {#if canEdit && selectedLinkId}
+    <!-- Contextual action: turn the selected auto-link into an editable manual line. -->
+    <div class="absolute left-1/2 top-6 z-10 -translate-x-1/2">
+      <button
+        class="rounded-full border border-border bg-background/90 px-4 py-1.5 text-sm font-medium shadow-lg backdrop-blur-sm hover:bg-accent"
+        on:click={convertSelectedLink}
+      >
+        Draw this link manually
+      </button>
+    </div>
+  {/if}
 
   <CompositeToolbar
     {userRole}
     {canUndo}
     {canRedo}
-    hasSelection={selectedId !== null}
+    {hasSelection}
+    {drawActive}
     colorMode={$sldEditorSettings.colorMode}
     labelMode={$sldEditorSettings.labelMode}
     labels={SLD_COMPOSITE_TOOLBAR_LABELS}
     exportLabels={SLD_EXPORT_LABELS}
     on:import={() => (importOpen = true)}
+    on:drawline={toggleDraw}
     on:delete={deleteSelection}
     on:undo={() => stack.undo(doc)}
     on:redo={() => stack.redo(doc)}

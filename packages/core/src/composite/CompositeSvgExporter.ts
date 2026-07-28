@@ -1,6 +1,7 @@
 import { SvgBuilder } from '../export/SvgBuilder';
 import { SvgExporter } from '../export/SvgExporter';
 import { SLD_LAYOUT, type SldLayoutConfig } from '../layout';
+import { connectionPath } from '../layout/paths';
 import { DEFAULT_THEME, resolveTheme, type SldTheme } from '../theme';
 import { CompositeDocument } from './CompositeDocument';
 import { CompositeLayoutEngine, type ChildLayout } from './CompositeLayoutEngine';
@@ -63,6 +64,16 @@ export class CompositeSvgExporter {
       for (const p of link.points) {
         b.element('circle', { cx: p.x, cy: p.y, r: this.cfg.nodeDotRadius, fill: theme.structure.connection });
       }
+    }
+
+    // Manual lines: plain solid stroked paths (distinct from the dashed auto-links).
+    for (const line of layout.lines) {
+      b.element('path', {
+        d: connectionPath(line.points, undefined, this.cfg.hopRadius),
+        fill: 'none',
+        stroke: theme.structure.connection,
+        'stroke-width': 2
+      });
     }
 
     // Each child inside its rigid transform.
