@@ -1,9 +1,15 @@
 import { SldParseError } from '../serialization/Serializer';
 import { CompositeDocument, type CompositeMeta } from './CompositeDocument';
 import { CompositeLine, type CompositeLineJson, type LineVertexJson } from './CompositeLine';
-import { DiagramInstance, type DiagramInstanceJson } from './DiagramInstance';
+import {
+  DiagramInstance,
+  LABEL_ANCHORS,
+  normalizeQuarterTurn,
+  type DiagramInstanceJson,
+  type LabelAnchor
+} from './DiagramInstance';
 
-export const COMPOSITE_SCHEMA_VERSION = 2;
+export const COMPOSITE_SCHEMA_VERSION = 3;
 
 export interface CompositeDocumentJson {
   version: number;
@@ -45,7 +51,9 @@ export class CompositeSerializer {
         libraryId: c.libraryId,
         x: round2(c.x),
         y: round2(c.y),
-        angleDeg: normalizeAngle(c.angleDeg)
+        angleDeg: normalizeAngle(c.angleDeg),
+        labelAnchor: c.labelAnchor,
+        labelDirection: normalizeQuarterTurn(c.labelDirection)
       })),
       lines: doc.allLines().map((l) => l.toJSON())
     };
@@ -101,12 +109,20 @@ export class CompositeSerializer {
       if (!isFinite(child.x) || !isFinite(child.y) || !isFinite(child.angleDeg)) {
         throw new SldParseError(`Child ${child.id}: invalid transform`);
       }
+      if (child.labelAnchor !== undefined && !LABEL_ANCHORS.includes(child.labelAnchor as LabelAnchor)) {
+        throw new SldParseError(`Child ${child.id}: invalid labelAnchor`);
+      }
+      if (child.labelDirection !== undefined && !isFinite(child.labelDirection)) {
+        throw new SldParseError(`Child ${child.id}: invalid labelDirection`);
+      }
       children.push({
         id: child.id,
         libraryId: child.libraryId,
         x: round2(child.x as number),
         y: round2(child.y as number),
-        angleDeg: normalizeAngle(child.angleDeg as number)
+        angleDeg: normalizeAngle(child.angleDeg as number),
+        labelAnchor: (child.labelAnchor as LabelAnchor | undefined) ?? 'top-left',
+        labelDirection: normalizeQuarterTurn((child.labelDirection as number | undefined) ?? 0)
       });
     }
 
@@ -170,3 +186,5 @@ function isFinite(v: unknown): v is number {
 
 // v1 → v2 added the manual-line list; older documents simply have none.
 CompositeSerializer.registerMigration(1, (json) => ({ ...json, version: 2, lines: [] }));
+// v2 → v3 added per-child name-label placement; children default to `top-left` / 0.
+CompositeSerializer.registerMigration(2, (json) => ({ ...json, version: 3 }));

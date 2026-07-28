@@ -4,18 +4,23 @@ import { Transform2D } from '../layout/Transform2D';
 import type { Point, Rect } from '../layout/geometry';
 import { CompositeDocument } from './CompositeDocument';
 import { CompositeLine } from './CompositeLine';
-import { DiagramInstance } from './DiagramInstance';
+import { DiagramInstance, type LabelAnchor } from './DiagramInstance';
 
 /** Fixed frame for an unresolved child, so it stays selectable and movable. */
 export const PLACEHOLDER_FRAME = { width: 360, height: 240 } as const;
 
 /**
- * Inset of the always-on diagram-name label from the child's top-left corner,
- * in child-local units. `x` shifts the anchor right; `y` is the text baseline
- * offset below the top edge. Shared by the view and the exporter through
- * `ChildLayout.nameLabel`, so they can never drift.
+ * Inset of the always-on diagram-name label from the child's frame edges, in
+ * child-local units. `x` insets left/right anchors horizontally; `top` is the
+ * text baseline below the top edge, `bottom` the baseline above the bottom edge.
+ * Shared by the view and the exporter through `ChildLayout.nameLabel`, so they
+ * can never drift.
  */
-export const NAME_LABEL_INSET = { x: 8, y: 20 } as const;
+export const NAME_LABEL_INSET = { x: 8, top: 20, bottom: 8 } as const;
+
+/** Name-label font size — larger than element labels, rendered bold, so the
+ *  diagram name stands out from the position/bus/connection labels. */
+export const NAME_LABEL_FONT_SIZE = 20;
 
 export interface ChildLayout {
   instance: DiagramInstance;
@@ -41,12 +46,41 @@ export interface ChildLayout {
    * `libraryId` when unresolved so a placeholder frame stays identifiable.
    */
   name: string;
-  /**
-   * Top-left anchor for `name` in child-local coordinates (frame corner +
-   * `NAME_LABEL_INSET`). Drawn inside the child's transform and flipped by
-   * `labelAngleDeg`, so it rides with the diagram's own orientation.
-   */
-  nameLabel: Point;
+  /** Resolved geometry of the `name` label — anchor slot, extra rotation, size. */
+  nameLabel: NameLabelLayout;
+}
+
+/**
+ * Placement of a child's `name` label, in child-local coordinates. Drawn inside
+ * the child's transform (so it rides the child's rotation) and additionally
+ * rotated by `rotation` about `(x, y)`: the user's quarter-turn `labelDirection`
+ * plus a `{0, 180}` readability flip so the text never reads upside-down.
+ */
+export interface NameLabelLayout {
+  x: number;
+  y: number;
+  /** SVG `text-anchor` for the chosen slot (left→start, center→middle, right→end). */
+  textAnchor: 'start' | 'middle' | 'end';
+  /** Extra rotation about `(x, y)`, in degrees: `labelDirection` + readability flip. */
+  rotation: number;
+  fontSize: number;
+}
+
+/**
+ * Local anchor point + `text-anchor` for one of the six name-label slots on a
+ * child's frame. Slots are semantic to the child's own frame, so they ride the
+ * child's rotation.
+ */
+export function nameLabelSlot(
+  frame: Rect,
+  anchor: LabelAnchor
+): { x: number; y: number; textAnchor: 'start' | 'middle' | 'end' } {
+  const y = anchor.startsWith('bottom')
+    ? frame.y + frame.height - NAME_LABEL_INSET.bottom
+    : frame.y + NAME_LABEL_INSET.top;
+  if (anchor.endsWith('left')) return { x: frame.x + NAME_LABEL_INSET.x, y, textAnchor: 'start' };
+  if (anchor.endsWith('right')) return { x: frame.x + frame.width - NAME_LABEL_INSET.x, y, textAnchor: 'end' };
+  return { x: frame.x + frame.width / 2, y, textAnchor: 'middle' };
 }
 
 /**
@@ -124,7 +158,7 @@ export class CompositeLayoutEngine {
         worldCorners: transform.applyRect(frame),
         labelAngleDeg: labelFlipDeg(instance.angleDeg),
         name: resolved?.meta.name || instance.libraryId,
-        nameLabel: { x: frame.x + NAME_LABEL_INSET.x, y: frame.y + NAME_LABEL_INSET.y }
+        nameLabel: this.nameLabelLayout(instance, frame)
       });
     }
 
@@ -135,6 +169,18 @@ export class CompositeLayoutEngine {
     const links = this.detectLinks(children, claimed);
     const bounds = this.unionBounds(children, links, lines);
     return { children, links, lines, bounds };
+  }
+
+  /**
+   * Resolve a child's name-label placement: the chosen slot on its frame plus
+   * the extra rotation (`labelDirection` + a `{0, 180}` readability flip so the
+   * text stays upright once the child's own rotation and the direction combine).
+   */
+  private nameLabelLayout(instance: DiagramInstance, frame: Rect): NameLabelLayout {
+    const slot = nameLabelSlot(frame, instance.labelAnchor);
+    const dir = instance.labelDirection;
+    const rotation = dir + labelFlipDeg(instance.angleDeg + dir);
+    return { ...slot, rotation, fontSize: NAME_LABEL_FONT_SIZE };
   }
 
   /**

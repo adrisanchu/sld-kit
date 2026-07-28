@@ -59,14 +59,24 @@ export { SvgExporter, type SvgExportOptions } from './export/SvgExporter';
 // ── Composite ("diagram of diagrams") ────────────────────────────────────────
 export { Transform2D } from './layout/Transform2D';
 export { type DocumentResolver, MapResolver } from './composite/DocumentResolver';
-export { DiagramInstance, type DiagramInstanceJson } from './composite/DiagramInstance';
+export {
+  DiagramInstance,
+  LABEL_ANCHORS,
+  normalizeQuarterTurn,
+  type DiagramInstanceJson,
+  type LabelAnchor
+} from './composite/DiagramInstance';
 export { CompositeLine, type CompositeLineJson, type LineVertexJson } from './composite/CompositeLine';
 export { CompositeDocument, type CompositeMeta, type CompositeChange } from './composite/CompositeDocument';
 export {
   CompositeLayoutEngine,
   labelFlipDeg,
+  nameLabelSlot,
   PLACEHOLDER_FRAME,
+  NAME_LABEL_INSET,
+  NAME_LABEL_FONT_SIZE,
   type ChildLayout,
+  type NameLabelLayout,
   type CompositeLink,
   type CompositeLineLayout,
   type ExternalConnectionTip,
@@ -82,7 +92,9 @@ export {
   AddChildCommand,
   RemoveChildCommand,
   TransformChildCommand,
+  SetChildLabelCommand,
   AddLineCommand,
   RemoveLineCommand,
-  UpdateLineCommand
+  UpdateLineCommand,
+  type LabelPlacement
 } from './composite/commands';
