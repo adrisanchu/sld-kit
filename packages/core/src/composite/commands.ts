@@ -2,7 +2,13 @@ import type { Command } from '../commands/Command';
 import type { SldDocument } from '../SldDocument';
 import { CompositeDocument } from './CompositeDocument';
 import { CompositeLine, type CompositeLineJson, type LineVertexJson } from './CompositeLine';
-import { DiagramInstance, type DiagramInstanceJson } from './DiagramInstance';
+import { DiagramInstance, type DiagramInstanceJson, type LabelAnchor } from './DiagramInstance';
+
+/** Slot + quarter-turn direction of a child's name label. */
+export interface LabelPlacement {
+  anchor: LabelAnchor;
+  direction: number;
+}
 
 /** Add a placed child to the composite. */
 export class AddChildCommand implements Command<CompositeDocument> {
@@ -68,6 +74,28 @@ export class TransformChildCommand implements Command<CompositeDocument> {
 
   undo(doc: CompositeDocument): void {
     doc.setChildTransform(this.id, this.before.x, this.before.y, this.before.angleDeg);
+  }
+}
+
+/**
+ * Reposition a child's name label (slot + quarter-turn direction) via
+ * before/after snapshots — a discrete, single-step edit, undoable like a move.
+ */
+export class SetChildLabelCommand implements Command<CompositeDocument> {
+  readonly label = 'Move diagram name';
+
+  constructor(
+    private id: string,
+    private before: LabelPlacement,
+    private after: LabelPlacement
+  ) {}
+
+  do(doc: CompositeDocument): void {
+    doc.setChildLabel(this.id, this.after.anchor, this.after.direction);
+  }
+
+  undo(doc: CompositeDocument): void {
+    doc.setChildLabel(this.id, this.before.anchor, this.before.direction);
   }
 }
 

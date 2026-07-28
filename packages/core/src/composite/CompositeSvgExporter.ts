@@ -85,11 +85,39 @@ export class CompositeSvgExporter {
       } else {
         this.renderPlaceholder(b, child, theme);
       }
+      this.renderNameLabel(b, child, theme);
       b.close();
     }
 
     b.close();
     return b.toString();
+  }
+
+  /**
+   * Always-on diagram name at its chosen slot, larger and bold so it stands out
+   * from the element labels. Rides with the child's orientation plus the label's
+   * own `rotation` (direction + {0,180} readability flip). Independent of the
+   * labels-visibility toggle. Office-safe: plain `<text>`, presentation
+   * attributes only.
+   */
+  private renderNameLabel(b: SvgBuilder, child: ChildLayout, theme: SldTheme): void {
+    const { x, y, textAnchor, rotation, fontSize } = child.nameLabel;
+    const attrs = {
+      x,
+      y,
+      'text-anchor': textAnchor,
+      'font-family': this.cfg.fontFamily,
+      'font-size': fontSize,
+      'font-weight': 700,
+      fill: theme.structure.label
+    };
+    if (rotation % 360 === 0) {
+      b.textElement('text', attrs, child.name);
+      return;
+    }
+    b.open('g', { transform: `rotate(${rotation} ${x} ${y})` });
+    b.textElement('text', attrs, child.name);
+    b.close();
   }
 
   private renderPlaceholder(b: SvgBuilder, child: ChildLayout, theme: SldTheme): void {

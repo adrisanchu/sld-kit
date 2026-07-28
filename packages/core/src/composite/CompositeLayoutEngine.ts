@@ -4,10 +4,17 @@ import { Transform2D } from '../layout/Transform2D';
 import type { Point, Rect } from '../layout/geometry';
 import { CompositeDocument } from './CompositeDocument';
 import { CompositeLine } from './CompositeLine';
-import { DiagramInstance } from './DiagramInstance';
+import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
 
 /** Fixed frame for an unresolved child, so it stays selectable and movable. */
 export const PLACEHOLDER_FRAME = { width: 360, height: 240 } as const;
+
+/** Gap kept between the name label and the frame edge it hugs, in child-local units. */
+export const NAME_LABEL_PAD = 6;
+
+/** Name-label font size — larger than element labels, rendered bold, so the
+ *  diagram name stands out from the position/bus/connection labels. */
+export const NAME_LABEL_FONT_SIZE = 20;
 
 export interface ChildLayout {
   instance: DiagramInstance;
@@ -28,6 +35,113 @@ export interface ChildLayout {
    * only flipping to be read from the other side. See `labelFlipDeg`.
    */
   labelAngleDeg: number;
+  /**
+   * Always-on identifying label: the resolved diagram's `meta.name`, or the
+   * `libraryId` when unresolved so a placeholder frame stays identifiable.
+   */
+  name: string;
+  /** Resolved geometry of the `name` label — anchor slot, extra rotation, size. */
+  nameLabel: NameLabelLayout;
+}
+
+/**
+ * Placement of a child's `name` label, in child-local coordinates. Drawn inside
+ * the child's transform (so it rides the child's rotation) and additionally
+ * rotated by `rotation` about `(x, y)`: the user's quarter-turn `labelDirection`
+ * plus a `{0, 180}` readability flip so the text never reads upside-down.
+ */
+export interface NameLabelLayout {
+  x: number;
+  y: number;
+  /** SVG `text-anchor` for the chosen slot (left→start, center→middle, right→end). */
+  textAnchor: 'start' | 'middle' | 'end';
+  /** Extra rotation about `(x, y)`, in degrees: `labelDirection` + readability flip. */
+  rotation: number;
+  fontSize: number;
+}
+
+/**
+ * Resolve a name label to a placement that stays **inside** the child's frame at
+ * any rotation. Slots are semantic to the child's own frame (they ride its
+ * rotation); `direction` (quarter turns) plus a `{0, 180}` readability flip give
+ * the on-screen rotation. Because the frame and label rotate together, staying
+ * inside is a purely local problem: the anchor is pinned to the slot's edge and
+ * the `text-anchor` is chosen so the text grows *into* the frame rather than out
+ * of the corner. (Very long names may still overflow the far edge, exactly as a
+ * horizontal label does today.)
+ */
+export function resolveNameLabelLayout(
+  frame: Rect,
+  anchor: LabelAnchor,
+  direction: number,
+  angleDeg: number
+): NameLabelLayout {
+  const fontSize = NAME_LABEL_FONT_SIZE;
+  const capH = fontSize; // generous cap height incl. padding
+  const desc = fontSize * 0.25; // descender / far-side breathing room
+  const pad = NAME_LABEL_PAD;
+  const ix = NAME_LABEL_PAD + 2; // slightly larger horizontal inset for left/right slots
+
+  const dir = normalizeQuarterTurn(direction);
+  const rotation = (dir + labelFlipDeg(angleDeg + dir)) % 360; // 0 | 90 | 180 | 270
+
+  const hpos = anchor.endsWith('left') ? 'left' : anchor.endsWith('right') ? 'right' : 'center';
+  const vpos = anchor.startsWith('top') ? 'top' : anchor.startsWith('bottom') ? 'bottom' : 'center';
+
+  // Advance (text flow for anchor `start`) and up (baseline→cap) unit vectors
+  // after applying `rotation`, in the child-local axes (y points down).
+  const A = ({ 0: [1, 0], 90: [0, 1], 180: [-1, 0], 270: [0, -1] } as const)[rotation as 0 | 90 | 180 | 270];
+  const U = ({ 0: [0, -1], 90: [1, 0], 180: [0, 1], 270: [-1, 0] } as const)[rotation as 0 | 90 | 180 | 270];
+
+  const left = frame.x;
+  const right = frame.x + frame.width;
+  const topY = frame.y;
+  const botY = frame.y + frame.height;
+  const midX = (left + right) / 2;
+  const midY = (topY + botY) / 2;
+
+  // Pin the anchor along the text's advance axis (grow inward from the slot's
+  // edge, or centered when the slot is centered on that axis) and center/inset
+  // it along the perpendicular cap axis.
+  let x: number;
+  let y: number;
+  let textAnchor: 'start' | 'middle' | 'end';
+
+  if (A[1] === 0) {
+    // Horizontal text: advance along x (pinned by hpos), caps along y (by vpos).
+    if (hpos === 'left') {
+      textAnchor = A[0] > 0 ? 'start' : 'end';
+      x = left + ix;
+    } else if (hpos === 'right') {
+      textAnchor = A[0] > 0 ? 'end' : 'start';
+      x = right - ix;
+    } else {
+      textAnchor = 'middle';
+      x = midX;
+    }
+
+    if (vpos === 'top') y = topY + pad + (U[1] < 0 ? capH : desc);
+    else if (vpos === 'bottom') y = botY - pad - (U[1] > 0 ? capH : desc);
+    else y = midY - (U[1] * capH) / 2;
+  } else {
+    // Vertical text: advance along y (pinned by vpos), caps along x (by hpos).
+    if (vpos === 'top') {
+      textAnchor = A[1] > 0 ? 'start' : 'end';
+      y = topY + pad;
+    } else if (vpos === 'bottom') {
+      textAnchor = A[1] > 0 ? 'end' : 'start';
+      y = botY - pad;
+    } else {
+      textAnchor = 'middle';
+      y = midY;
+    }
+
+    if (hpos === 'left') x = left + ix + (U[0] > 0 ? desc : capH);
+    else if (hpos === 'right') x = right - ix - (U[0] > 0 ? capH : desc);
+    else x = midX - (U[0] * capH) / 2;
+  }
+
+  return { x, y, textAnchor, rotation, fontSize };
 }
 
 /**
@@ -103,7 +217,9 @@ export class CompositeLayoutEngine {
         frame,
         worldBounds: transform.boundsOf(frame),
         worldCorners: transform.applyRect(frame),
-        labelAngleDeg: labelFlipDeg(instance.angleDeg)
+        labelAngleDeg: labelFlipDeg(instance.angleDeg),
+        name: resolved?.meta.name || instance.libraryId,
+        nameLabel: resolveNameLabelLayout(frame, instance.labelAnchor, instance.labelDirection, instance.angleDeg)
       });
     }
 

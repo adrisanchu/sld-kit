@@ -27,6 +27,11 @@
   export let showPositionLabels: boolean = true;
   export let showBusBarLabels: boolean = true;
   export let showConnectionLabels: boolean = true;
+  /**
+   * The always-on diagram name at the child's top-left. Independent of the
+   * label-visibility toggles above (issue #17); on by default.
+   */
+  export let showChildNames: boolean = true;
   /** Fallback text when a child diagram can't be resolved. */
   export let notFoundLabel: string = DEFAULT_CHILD_NOT_FOUND;
 
@@ -131,6 +136,24 @@
       class="select-none fill-muted-foreground"
     >
       {instance.libraryId}
+    </text>
+  {/if}
+
+  <!-- Always-on diagram name at its chosen slot, larger + bold so it stands
+       apart from the element labels. Rides with the child's orientation plus the
+       label's own rotation (direction + {0,180} readability flip). Independent
+       of the label-visibility toggles (issue #17). Placement is edited from the
+       toolbar (pointer-transparent so clicking it just selects the diagram). -->
+  {#if showChildNames}
+    <text
+      x={child.nameLabel.x}
+      y={child.nameLabel.y}
+      text-anchor={child.nameLabel.textAnchor}
+      font-size={child.nameLabel.fontSize}
+      transform="rotate({child.nameLabel.rotation} {child.nameLabel.x} {child.nameLabel.y})"
+      class="pointer-events-none select-none fill-foreground font-bold"
+    >
+      {child.name}
     </text>
   {/if}
 

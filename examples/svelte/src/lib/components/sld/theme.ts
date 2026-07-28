@@ -137,6 +137,7 @@ export const SLD_COMPOSITE_TOOLBAR_LABELS: CompositeToolbarLabels = {
   import: 'Import diagram',
   drawLine: 'Draw line (double-click to finish)',
   delete: 'Delete selected (Del)',
+  editLabel: 'Diagram name position',
   undo: 'Undo (Ctrl+Z)',
   redo: 'Redo (Ctrl+Shift+Z)',
   colorMode: 'Color by voltage',

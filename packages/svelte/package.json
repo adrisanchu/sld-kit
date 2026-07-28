@@ -1,6 +1,6 @@
 {
   "name": "@sld-kit/svelte",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Svelte 4 components for single-line (electrical) diagrams: a headless pan/zoom canvas, element views, and event-dispatching editor chrome built on @sld-kit/core.",
   "type": "module",
   "license": "MIT",
@@ -42,7 +42,7 @@
     "test": "echo \"no tests yet\" && exit 0"
   },
   "peerDependencies": {
-    "@sld-kit/core": "^0.3.0",
+    "@sld-kit/core": "^0.4.0",
     "lucide-svelte": ">=0.400.0",
     "svelte": "^4.0.0"
   },

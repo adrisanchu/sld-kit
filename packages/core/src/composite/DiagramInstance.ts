@@ -3,6 +3,42 @@ import { Serializer, SldParseError } from '../serialization/Serializer';
 import { newId } from '../ids';
 import type { DocumentResolver } from './DocumentResolver';
 
+/**
+ * One of eight discrete slots on the child's frame the always-on name label
+ * snaps to, named `{vertical}-{horizontal}`. Semantic to the child's *own* frame
+ * (top = the diagram's top edge), so the label rides with the child's rotation —
+ * "top-left" stays the diagram's own top-left corner whatever its `angleDeg`.
+ * (`center-center` is intentionally omitted — a name over the diagram body.)
+ */
+export type LabelAnchor =
+  | 'top-left'
+  | 'top-center'
+  | 'top-right'
+  | 'center-left'
+  | 'center-right'
+  | 'bottom-left'
+  | 'bottom-center'
+  | 'bottom-right';
+
+export const LABEL_ANCHORS: readonly LabelAnchor[] = [
+  'top-left',
+  'top-center',
+  'top-right',
+  'center-left',
+  'center-right',
+  'bottom-left',
+  'bottom-center',
+  'bottom-right'
+] as const;
+
+const DEFAULT_LABEL_ANCHOR: LabelAnchor = 'top-left';
+
+/** Normalize any number to the nearest quarter turn in [0, 360): 0 | 90 | 180 | 270. */
+export function normalizeQuarterTurn(deg: number): number {
+  if (!Number.isFinite(deg)) return 0;
+  return (((Math.round(deg / 90) * 90) % 360) + 360) % 360;
+}
+
 export interface DiagramInstanceJson {
   /** Instance id — unique within the composite (distinct from `libraryId`). */
   id: string;
@@ -11,6 +47,14 @@ export interface DiagramInstanceJson {
   y: number;
   /** Rotation about the child's center, normalized to [0, 360). */
   angleDeg: number;
+  /** Slot the name label snaps to on the child's frame (default `top-left`). */
+  labelAnchor?: LabelAnchor;
+  /**
+   * Extra rotation of the name label relative to the child, in quarter turns
+   * (0 | 90 | 180 | 270). Lets the name read along a different axis than the
+   * diagram (e.g. vertical). Default 0.
+   */
+  labelDirection?: number;
 }
 
 /**
@@ -30,7 +74,11 @@ export class DiagramInstance {
     public readonly libraryId: string,
     public x: number,
     public y: number,
-    public angleDeg: number
+    public angleDeg: number,
+    /** Name-label slot (default `top-left`). */
+    public labelAnchor: LabelAnchor = DEFAULT_LABEL_ANCHOR,
+    /** Name-label extra rotation in quarter turns (default 0). */
+    public labelDirection: number = 0
   ) {}
 
   /**
@@ -62,11 +110,21 @@ export class DiagramInstance {
       libraryId: this.libraryId,
       x: this.x,
       y: this.y,
-      angleDeg: this.angleDeg
+      angleDeg: this.angleDeg,
+      labelAnchor: this.labelAnchor,
+      labelDirection: this.labelDirection
     };
   }
 
   static fromJSON(json: DiagramInstanceJson): DiagramInstance {
-    return new DiagramInstance(json.id ?? newId(), json.libraryId, json.x, json.y, json.angleDeg);
+    return new DiagramInstance(
+      json.id ?? newId(),
+      json.libraryId,
+      json.x,
+      json.y,
+      json.angleDeg,
+      json.labelAnchor ?? DEFAULT_LABEL_ANCHOR,
+      normalizeQuarterTurn(json.labelDirection ?? 0)
+    );
   }
 }

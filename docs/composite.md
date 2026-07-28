@@ -80,12 +80,56 @@ export, so a child renders identically on screen and exported.
 `CompositeSvgExporter` renders each child inside a rotated `<g>` via
 `SvgExporter.renderContent`, under the same Office-safe constraints as the
 single-diagram exporter (a rotated `<g>` of plain shapes is safe; no nested
-`<svg>`). Labels counter-rotate so names stay horizontal under a rotated child.
+`<svg>`). Labels ride with the child transform, applying a local `{0, 180}`
+flip (`labelFlipDeg`) so they stay aligned with the rotated diagram's own axis
+yet never read upside-down — they do not counter-rotate to horizontal.
+
+### Diagram name label
+
+Each child carries an always-on identifying label (`ChildLayout.name` /
+`nameLabel`): the resolved diagram's `meta.name`, or the `libraryId` for an
+unresolved placeholder. It is rendered larger and **bold** so it stands apart
+from the element (position/bus/connection) labels.
+
+Its placement is stored **on the instance**, relative to the child's own frame,
+so it rides every move and rotation:
+
+- **`DiagramInstance.labelAnchor`** — one of eight discrete slots named
+  `{vertical}-{horizontal}` (`top-left`, `top-center`, `top-right`,
+  `center-left`, `center-right`, `bottom-left`, `bottom-center`,
+  `bottom-right` — `center-center` is omitted). Slots are semantic to the
+  child's *own* frame, so "top-left" stays the diagram's own top-left corner
+  whatever its `angleDeg`. Default `top-left`.
+- **`DiagramInstance.labelDirection`** — an extra quarter-turn rotation
+  (0/90/180/270) of the label relative to the child, so the name can read along
+  a different axis than the diagram (e.g. vertical). Default 0.
+
+`CompositeLayoutEngine.resolveNameLabelLayout` resolves both into `nameLabel`
+(`{ x, y, textAnchor, rotation, fontSize }`), where `rotation = labelDirection +`
+a `{0, 180}` readability flip so the text never reads upside-down once the
+child's own rotation and the direction combine. The label is drawn inside the
+child's transform group and additionally rotated by `rotation` about its anchor.
+
+Because the frame and label rotate together, keeping the label **inside** the
+frame is a purely local problem: the anchor is pinned to the slot's edge and the
+`text-anchor` is chosen so the text grows *into* the frame rather than out of the
+corner — at any `rotation`, including when the readability flip would otherwise
+sweep it out. (A very long name may still overflow the far edge, exactly as a
+horizontal element label does.)
+
+Placement is edited through **`SetChildLabelCommand`** (before/after slot +
+direction snapshots), so it is undoable and serialized. The label is
+**independent of the labels-visibility toggle** (on by default; the Svelte view
+exposes `showChildNames` and dispatches `labeldown` when the name is pressed so
+the consumer can cycle the slot / rotate it). It renders identically on screen
+and in the Office-safe export (plain `<text>`, presentation attributes only).
 
 ## Serialization
 
 `CompositeSerializer` is a sibling of `Serializer` with its own version
-(currently **2**; v1 — before manual lines — upgrades transparently via a
-migration that adds an empty line list) and `kind: 'composite'`, reusing
-`SldParseError`. Dangling `libraryId`s (and dangling line anchors) are legal —
-they render as placeholders / are dropped rather than failing the parse.
+(currently **3**) and `kind: 'composite'`, reusing `SldParseError`. Older
+documents upgrade transparently: v1 → v2 (before manual lines) adds an empty
+line list; v2 → v3 adds per-child name-label placement, defaulting each child to
+`labelAnchor: 'top-left'` / `labelDirection: 0`. Dangling `libraryId`s (and
+dangling line anchors) are legal — they render as placeholders / are dropped
+rather than failing the parse.

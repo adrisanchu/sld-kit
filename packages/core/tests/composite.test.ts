@@ -8,6 +8,9 @@ import {
   CompositeLine,
   CommandStack,
   TransformChildCommand,
+  SetChildLabelCommand,
+  LABEL_ANCHORS,
+  resolveNameLabelLayout,
   MapResolver,
   Transform2D,
   type CompositeDocument,
@@ -53,19 +56,43 @@ describe('CompositeSerializer', () => {
   it('roundtrips manual lines (point + anchor vertices)', () => {
     const doc = buildExampleCompositeWithLine();
     const json1 = CompositeSerializer.toJSON(doc);
-    expect(json1.version).toBe(2);
+    expect(json1.version).toBe(COMPOSITE_SCHEMA_VERSION);
     expect(json1.lines).toHaveLength(1);
     expect(json1.lines[0].vertices).toHaveLength(3);
     const json2 = CompositeSerializer.toJSON(CompositeSerializer.fromJSON(cycle(json1)));
     expect(json2).toEqual(json1);
   });
 
-  it('migrates a v1 document to v2 with an empty line list', () => {
+  it('migrates a v1 document up to the current version with an empty line list', () => {
     const v1 = { version: 1, kind: 'composite', meta: { id: 'm', name: 'old' }, children: [] };
     const doc = CompositeSerializer.fromJSON(v1);
     const json = CompositeSerializer.toJSON(doc);
     expect(json.version).toBe(COMPOSITE_SCHEMA_VERSION);
     expect(json.lines).toEqual([]);
+  });
+
+  it('defaults label placement when migrating a pre-v3 child', () => {
+    const v2 = {
+      version: 2,
+      kind: 'composite',
+      meta: { id: 'm', name: 'old' },
+      children: [{ id: 'c', libraryId: 'lib', x: 0, y: 0, angleDeg: 0 }],
+      lines: []
+    };
+    const json = CompositeSerializer.toJSON(CompositeSerializer.fromJSON(v2));
+    expect(json.children[0].labelAnchor).toBe('top-left');
+    expect(json.children[0].labelDirection).toBe(0);
+  });
+
+  it('roundtrips a non-default label placement', () => {
+    const doc = buildExampleComposite();
+    const child = doc.allChildren()[0];
+    doc.setChildLabel(child.id, 'bottom-right', 90);
+    const json1 = CompositeSerializer.toJSON(doc);
+    expect(json1.children[0].labelAnchor).toBe('bottom-right');
+    expect(json1.children[0].labelDirection).toBe(90);
+    const json2 = CompositeSerializer.toJSON(CompositeSerializer.fromJSON(cycle(json1)));
+    expect(json2).toEqual(json1);
   });
 
   it('rejects a line with fewer than two vertices', () => {
@@ -165,6 +192,95 @@ describe('CompositeLayoutEngine', () => {
     expect(layout.children.every((c) => c.layout === null)).toBe(true);
     expect(layout.links).toHaveLength(0);
   });
+
+  it('labels each child with its resolved meta.name at the frame top-left', () => {
+    const doc = buildExampleComposite();
+    doc.resolveChildren(resolver());
+    const layout = new CompositeLayoutEngine().layout(doc);
+    const hv = layout.children.find((c) => c.instance.libraryId === EXAMPLE_HV_ID)!;
+    expect(hv.name).toBe('Example 400 kV');
+    // Anchor is the top-left frame corner plus a small inset (child-local).
+    expect(hv.nameLabel.x).toBeGreaterThan(hv.frame.x);
+    expect(hv.nameLabel.y).toBeGreaterThan(hv.frame.y);
+    expect(hv.nameLabel.x).toBeLessThan(hv.frame.x + hv.frame.width);
+  });
+
+  it('falls back to the libraryId when the child is unresolved', () => {
+    const doc = buildExampleComposite();
+    doc.resolveChildren(new MapResolver(new Map()));
+    const layout = new CompositeLayoutEngine().layout(doc);
+    expect(layout.children.map((c) => c.name)).toContain(EXAMPLE_HV_ID);
+  });
+
+  it('places the name label at the chosen slot', () => {
+    const doc = buildExampleComposite();
+    doc.resolveChildren(resolver());
+    const child = doc.allChildren()[0];
+    doc.setChildLabel(child.id, 'bottom-right', 0);
+    const c = new CompositeLayoutEngine().layout(doc).children.find((x) => x.instance.id === child.id)!;
+    expect(c.nameLabel.textAnchor).toBe('end');
+    // Bottom slot sits in the lower half of the frame.
+    expect(c.nameLabel.y).toBeGreaterThan(c.frame.y + c.frame.height / 2);
+  });
+
+  it('adds labelDirection into the label rotation', () => {
+    const doc = buildExampleComposite();
+    doc.resolveChildren(resolver());
+    const child = doc.allChildren()[0];
+    doc.setChildTransform(child.id, child.x, child.y, 0); // angle 0 isolates direction
+    doc.setChildLabel(child.id, 'top-left', 90); // 0 + flip(0+90)=0 → 90
+    const c = new CompositeLayoutEngine().layout(doc).children.find((x) => x.instance.id === child.id)!;
+    expect(c.nameLabel.rotation).toBe(90);
+  });
+
+  it('flips the label 180 so it never reads upside-down', () => {
+    const doc = buildExampleComposite();
+    doc.resolveChildren(resolver());
+    const child = doc.allChildren()[0];
+    doc.setChildTransform(child.id, child.x, child.y, 180); // upside-down half
+    doc.setChildLabel(child.id, 'top-left', 0); // 0 + flip(180)=180
+    const c = new CompositeLayoutEngine().layout(doc).children.find((x) => x.instance.id === child.id)!;
+    expect(c.nameLabel.rotation).toBe(180);
+  });
+});
+
+describe('SetChildLabelCommand', () => {
+  it('sets and undoes a child label placement', () => {
+    const doc = buildExampleComposite();
+    const child = doc.allChildren()[0];
+    const stack = new CommandStack<CompositeDocument>();
+    const before = { anchor: child.labelAnchor, direction: child.labelDirection };
+    stack.execute(new SetChildLabelCommand(child.id, before, { anchor: 'bottom-center', direction: 270 }), doc);
+    expect(child.labelAnchor).toBe('bottom-center');
+    expect(child.labelDirection).toBe(270);
+    stack.undo(doc);
+    expect(child.labelAnchor).toBe(before.anchor);
+    expect(child.labelDirection).toBe(before.direction);
+  });
+
+  it('normalizes an off-quarter direction to the nearest quarter turn', () => {
+    const doc = buildExampleComposite();
+    const child = doc.allChildren()[0];
+    doc.setChildLabel(child.id, 'top-left', 100);
+    expect(child.labelDirection).toBe(90);
+    expect(LABEL_ANCHORS).toContain(child.labelAnchor);
+  });
+
+  it('keeps the label anchor inside the frame for every slot, direction and tilt', () => {
+    const frame = { x: 0, y: 0, width: 360, height: 240 };
+    for (const anchor of LABEL_ANCHORS) {
+      for (const direction of [0, 90, 180, 270]) {
+        // Sample tilts including the ones that trip the readability flip.
+        for (const angleDeg of [0, 20, 90, 135, 200, 340]) {
+          const { x, y } = resolveNameLabelLayout(frame, anchor, direction, angleDeg);
+          expect(x).toBeGreaterThanOrEqual(frame.x);
+          expect(x).toBeLessThanOrEqual(frame.x + frame.width);
+          expect(y).toBeGreaterThanOrEqual(frame.y);
+          expect(y).toBeLessThanOrEqual(frame.y + frame.height);
+        }
+      }
+    }
+  });
 });
 
 describe('CompositeSvgExporter', () => {
@@ -186,6 +302,30 @@ describe('CompositeSvgExporter', () => {
     expect(svg).not.toContain('class=');
     expect(svg).not.toContain('<style');
     expect(svg).not.toContain('<foreignObject');
+  });
+
+  it('renders each child diagram name into the export', () => {
+    const doc = buildExampleComposite();
+    doc.resolveChildren(resolver());
+    const svg = new CompositeSvgExporter().export(doc);
+    expect(svg).toContain('Example 400 kV');
+    expect(svg).toContain('Example 220 kV');
+  });
+
+  it('renders the libraryId as the name for an unresolved child', () => {
+    const doc = buildExampleComposite();
+    doc.resolveChildren(new MapResolver(new Map()));
+    const svg = new CompositeSvgExporter().export(doc);
+    expect(svg).toContain(EXAMPLE_HV_ID);
+  });
+
+  it('renders the diagram name bold and stays Office-safe', () => {
+    const doc = buildExampleComposite();
+    doc.resolveChildren(resolver());
+    const svg = new CompositeSvgExporter().export(doc);
+    expect(svg).toContain('font-weight="700"');
+    expect(svg).not.toContain('class=');
+    expect(svg).not.toContain('<style');
   });
 });
 

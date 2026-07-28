@@ -1,6 +1,6 @@
 import { newId } from '../ids';
 import { CompositeLine, type LineVertexJson } from './CompositeLine';
-import { DiagramInstance } from './DiagramInstance';
+import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
 import type { DocumentResolver } from './DocumentResolver';
 
 export interface CompositeMeta {
@@ -97,6 +97,15 @@ export class CompositeDocument {
     child.x = x;
     child.y = y;
     child.angleDeg = ((angleDeg % 360) + 360) % 360;
+    this.emit({ type: 'children', ids: [id] });
+  }
+
+  /** Reposition/re-orient a child's name label (slot + quarter-turn direction). */
+  setChildLabel(id: string, anchor: LabelAnchor, direction: number): void {
+    const child = this.children.get(id);
+    if (!child) return;
+    child.labelAnchor = anchor;
+    child.labelDirection = normalizeQuarterTurn(direction);
     this.emit({ type: 'children', ids: [id] });
   }
 

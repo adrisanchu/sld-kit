@@ -5,6 +5,7 @@
   import MousePointer2 from 'lucide-svelte/icons/mouse-pointer-2';
   import ImagePlus from 'lucide-svelte/icons/image-plus';
   import Spline from 'lucide-svelte/icons/spline';
+  import Type from 'lucide-svelte/icons/type';
   import Trash2 from 'lucide-svelte/icons/trash-2';
   import Undo2 from 'lucide-svelte/icons/undo-2';
   import Redo2 from 'lucide-svelte/icons/redo-2';
@@ -23,6 +24,8 @@
   export let canUndo: boolean = false;
   export let canRedo: boolean = false;
   export let hasSelection: boolean = false;
+  /** Whether a *child diagram* (not a line/link) is selected — gates the name button. */
+  export let childSelected: boolean = false;
   /** Whether the draw-line tool is active (owned by the editor). */
   export let drawActive: boolean = false;
   /** Color mode, owned by the editor. */
@@ -38,6 +41,8 @@
     import: void;
     drawline: void;
     delete: void;
+    /** Open the name-placement editor for the selected child. */
+    editlabel: void;
     undo: void;
     redo: void;
     fit: void;
@@ -172,6 +177,17 @@
       </button>
 
       <div class="mx-1 h-5 w-px shrink-0 bg-border" />
+
+      <!-- Diagram name position — enabled only when a child diagram is selected -->
+      <button
+        title={L.editLabel}
+        class="{btnBase} {btnIdle} disabled:opacity-40"
+        disabled={!childSelected}
+        on:click={() => dispatch('editlabel')}
+      >
+        <span class="sr-only">{L.editLabel}</span>
+        <Type class="h-4 w-4" />
+      </button>
 
       <!-- Delete selected -->
       <button

@@ -51,6 +51,11 @@
   export let showPositionLabels: boolean = true;
   export let showBusBarLabels: boolean = true;
   export let showConnectionLabels: boolean = true;
+  /**
+   * The always-on child diagram name (issue #17). Independent of the label
+   * toggles above; on by default.
+   */
+  export let showChildNames: boolean = true;
   /** Fallback text when a child diagram can't be resolved. */
   export let notFoundLabel: string = DEFAULT_CHILD_NOT_FOUND;
 
@@ -256,8 +261,10 @@
       {showPositionLabels}
       {showBusBarLabels}
       {showConnectionLabels}
+      {showChildNames}
       {notFoundLabel}
       on:childdown
+      on:labeldown
     />
   {/each}
 
