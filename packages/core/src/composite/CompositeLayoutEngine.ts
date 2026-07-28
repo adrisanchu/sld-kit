@@ -85,8 +85,8 @@ export function resolveNameLabelLayout(
   const dir = normalizeQuarterTurn(direction);
   const rotation = (dir + labelFlipDeg(angleDeg + dir)) % 360; // 0 | 90 | 180 | 270
 
-  const top = anchor.startsWith('top');
-  const horiz = anchor.endsWith('left') ? 'left' : anchor.endsWith('right') ? 'right' : 'center';
+  const hpos = anchor.endsWith('left') ? 'left' : anchor.endsWith('right') ? 'right' : 'center';
+  const vpos = anchor.startsWith('top') ? 'top' : anchor.startsWith('bottom') ? 'bottom' : 'center';
 
   // Advance (text flow for anchor `start`) and up (baseline→cap) unit vectors
   // after applying `rotation`, in the child-local axes (y points down).
@@ -97,36 +97,48 @@ export function resolveNameLabelLayout(
   const right = frame.x + frame.width;
   const topY = frame.y;
   const botY = frame.y + frame.height;
+  const midX = (left + right) / 2;
+  const midY = (topY + botY) / 2;
 
+  // Pin the anchor along the text's advance axis (grow inward from the slot's
+  // edge, or centered when the slot is centered on that axis) and center/inset
+  // it along the perpendicular cap axis.
   let x: number;
   let y: number;
   let textAnchor: 'start' | 'middle' | 'end';
 
   if (A[1] === 0) {
-    // Horizontal text: advance along x (pinned by slot), caps along y.
-    if (horiz === 'center') {
-      textAnchor = 'middle';
-      x = (left + right) / 2;
-    } else if (horiz === 'left') {
+    // Horizontal text: advance along x (pinned by hpos), caps along y (by vpos).
+    if (hpos === 'left') {
       textAnchor = A[0] > 0 ? 'start' : 'end';
       x = left + ix;
-    } else {
+    } else if (hpos === 'right') {
       textAnchor = A[0] > 0 ? 'end' : 'start';
       x = right - ix;
+    } else {
+      textAnchor = 'middle';
+      x = midX;
     }
-    y = top ? topY + pad + (U[1] < 0 ? capH : desc) : botY - pad - (U[1] > 0 ? capH : desc);
+
+    if (vpos === 'top') y = topY + pad + (U[1] < 0 ? capH : desc);
+    else if (vpos === 'bottom') y = botY - pad - (U[1] > 0 ? capH : desc);
+    else y = midY - (U[1] * capH) / 2;
   } else {
-    // Vertical text: advance along y (pinned by slot), caps along x.
-    if (top) {
+    // Vertical text: advance along y (pinned by vpos), caps along x (by hpos).
+    if (vpos === 'top') {
       textAnchor = A[1] > 0 ? 'start' : 'end';
       y = topY + pad;
-    } else {
+    } else if (vpos === 'bottom') {
       textAnchor = A[1] > 0 ? 'end' : 'start';
       y = botY - pad;
+    } else {
+      textAnchor = 'middle';
+      y = midY;
     }
-    if (horiz === 'center') x = (left + right) / 2 - (U[0] * capH) / 2;
-    else if (horiz === 'left') x = left + ix + (U[0] > 0 ? desc : capH);
-    else x = right - ix - (U[0] > 0 ? capH : desc);
+
+    if (hpos === 'left') x = left + ix + (U[0] > 0 ? desc : capH);
+    else if (hpos === 'right') x = right - ix - (U[0] > 0 ? capH : desc);
+    else x = midX - (U[0] * capH) / 2;
   }
 
   return { x, y, textAnchor, rotation, fontSize };

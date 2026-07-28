@@ -94,10 +94,12 @@ from the element (position/bus/connection) labels.
 Its placement is stored **on the instance**, relative to the child's own frame,
 so it rides every move and rotation:
 
-- **`DiagramInstance.labelAnchor`** — one of six discrete slots (`top-left`,
-  `top-center`, `top-right`, `bottom-left`, `bottom-center`, `bottom-right`).
-  Slots are semantic to the child's *own* frame, so "top-left" stays the
-  diagram's own top-left corner whatever its `angleDeg`. Default `top-left`.
+- **`DiagramInstance.labelAnchor`** — one of eight discrete slots named
+  `{vertical}-{horizontal}` (`top-left`, `top-center`, `top-right`,
+  `center-left`, `center-right`, `bottom-left`, `bottom-center`,
+  `bottom-right` — `center-center` is omitted). Slots are semantic to the
+  child's *own* frame, so "top-left" stays the diagram's own top-left corner
+  whatever its `angleDeg`. Default `top-left`.
 - **`DiagramInstance.labelDirection`** — an extra quarter-turn rotation
   (0/90/180/270) of the label relative to the child, so the name can read along
   a different axis than the diagram (e.g. vertical). Default 0.

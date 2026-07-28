@@ -22,6 +22,8 @@
     'top-left': 'Top · left',
     'top-center': 'Top · center',
     'top-right': 'Top · right',
+    'center-left': 'Middle · left',
+    'center-right': 'Middle · right',
     'bottom-left': 'Bottom · left',
     'bottom-center': 'Bottom · center',
     'bottom-right': 'Bottom · right'

@@ -4,15 +4,18 @@ import { newId } from '../ids';
 import type { DocumentResolver } from './DocumentResolver';
 
 /**
- * One of six discrete slots on the child's frame the always-on name label snaps
- * to. Semantic to the child's *own* frame (top = the diagram's top edge), so the
- * label rides with the child's rotation — "top-left" stays the diagram's own
- * top-left corner whatever its `angleDeg`.
+ * One of eight discrete slots on the child's frame the always-on name label
+ * snaps to, named `{vertical}-{horizontal}`. Semantic to the child's *own* frame
+ * (top = the diagram's top edge), so the label rides with the child's rotation —
+ * "top-left" stays the diagram's own top-left corner whatever its `angleDeg`.
+ * (`center-center` is intentionally omitted — a name over the diagram body.)
  */
 export type LabelAnchor =
   | 'top-left'
   | 'top-center'
   | 'top-right'
+  | 'center-left'
+  | 'center-right'
   | 'bottom-left'
   | 'bottom-center'
   | 'bottom-right';
@@ -21,9 +24,11 @@ export const LABEL_ANCHORS: readonly LabelAnchor[] = [
   'top-left',
   'top-center',
   'top-right',
-  'bottom-right',
+  'center-left',
+  'center-right',
+  'bottom-left',
   'bottom-center',
-  'bottom-left'
+  'bottom-right'
 ] as const;
 
 const DEFAULT_LABEL_ANCHOR: LabelAnchor = 'top-left';
