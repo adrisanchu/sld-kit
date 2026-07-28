@@ -1,14 +1,16 @@
 import { SldParseError } from '../serialization/Serializer';
 import { CompositeDocument, type CompositeMeta } from './CompositeDocument';
+import { CompositeLine, type CompositeLineJson, type LineVertexJson } from './CompositeLine';
 import { DiagramInstance, type DiagramInstanceJson } from './DiagramInstance';
 
-export const COMPOSITE_SCHEMA_VERSION = 1;
+export const COMPOSITE_SCHEMA_VERSION = 2;
 
 export interface CompositeDocumentJson {
   version: number;
   kind: 'composite';
   meta: CompositeMeta;
   children: DiagramInstanceJson[];
+  lines: CompositeLineJson[];
 }
 
 type Migration = (json: Record<string, unknown>) => Record<string, unknown>;
@@ -44,7 +46,8 @@ export class CompositeSerializer {
         x: round2(c.x),
         y: round2(c.y),
         angleDeg: normalizeAngle(c.angleDeg)
-      }))
+      })),
+      lines: doc.allLines().map((l) => l.toJSON())
     };
   }
 
@@ -52,6 +55,7 @@ export class CompositeSerializer {
     const json = this.validate(input);
     const doc = new CompositeDocument(json.meta);
     for (const child of json.children) doc.addChild(DiagramInstance.fromJSON(child));
+    for (const line of json.lines) doc.addLine(CompositeLine.fromJSON(line));
     doc.meta.updatedAt = json.meta.updatedAt;
     return doc;
   }
@@ -106,6 +110,8 @@ export class CompositeSerializer {
       });
     }
 
+    const lines = this.validateLines(json.lines);
+
     const now = new Date().toISOString();
     return {
       version: COMPOSITE_SCHEMA_VERSION,
@@ -116,11 +122,51 @@ export class CompositeSerializer {
         createdAt: typeof meta.createdAt === 'string' ? meta.createdAt : now,
         updatedAt: typeof meta.updatedAt === 'string' ? meta.updatedAt : now
       },
-      children
+      children,
+      lines
     };
+  }
+
+  /**
+   * Validate the manual-line list. Anchors may reference missing children —
+   * like dangling `libraryId`s, they simply don't resolve at layout time.
+   */
+  private static validateLines(input: unknown): CompositeLineJson[] {
+    if (input === undefined) return [];
+    if (!Array.isArray(input)) throw new SldParseError('Invalid line list');
+
+    const ids = new Set<string>();
+    const lines: CompositeLineJson[] = [];
+    for (const raw of input as Record<string, unknown>[]) {
+      if (typeof raw?.id !== 'string' || !raw.id) throw new SldParseError('Line without id');
+      if (ids.has(raw.id)) throw new SldParseError(`Duplicate line id: ${raw.id}`);
+      ids.add(raw.id);
+      if (!Array.isArray(raw.vertices) || raw.vertices.length < 2) {
+        throw new SldParseError(`Line ${raw.id}: needs at least two vertices`);
+      }
+      const vertices: LineVertexJson[] = [];
+      for (const v of raw.vertices as Record<string, unknown>[]) {
+        if (v?.kind === 'point') {
+          if (!isFinite(v.x) || !isFinite(v.y)) throw new SldParseError(`Line ${raw.id}: invalid point vertex`);
+          vertices.push({ kind: 'point', x: round2(v.x as number), y: round2(v.y as number) });
+        } else if (v?.kind === 'anchor') {
+          if (typeof v.instanceId !== 'string' || !v.instanceId || typeof v.connectionId !== 'string' || !v.connectionId) {
+            throw new SldParseError(`Line ${raw.id}: invalid anchor vertex`);
+          }
+          vertices.push({ kind: 'anchor', instanceId: v.instanceId, connectionId: v.connectionId });
+        } else {
+          throw new SldParseError(`Line ${raw.id}: unknown vertex kind`);
+        }
+      }
+      lines.push({ id: raw.id, vertices });
+    }
+    return lines;
   }
 }
 
 function isFinite(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
 }
+
+// v1 → v2 added the manual-line list; older documents simply have none.
+CompositeSerializer.registerMigration(1, (json) => ({ ...json, version: 2, lines: [] }));

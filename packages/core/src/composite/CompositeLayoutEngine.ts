@@ -1,7 +1,9 @@
+import { Connection } from '../elements/Connection';
 import { LayoutEngine, type DiagramLayout } from '../layout/LayoutEngine';
 import { Transform2D } from '../layout/Transform2D';
 import type { Point, Rect } from '../layout/geometry';
 import { CompositeDocument } from './CompositeDocument';
+import { CompositeLine } from './CompositeLine';
 import { DiagramInstance } from './DiagramInstance';
 
 /** Fixed frame for an unresolved child, so it stays selectable and movable. */
@@ -48,10 +50,29 @@ export interface CompositeLink {
   points: Point[];
 }
 
+export interface CompositeLineLayout {
+  line: CompositeLine;
+  /**
+   * Resolved world polyline. `point` vertices pass through; `anchor` vertices
+   * resolve to their child's connection tip. Anchors that can't be resolved are
+   * dropped; a line with fewer than two resolvable vertices is omitted entirely.
+   */
+  points: Point[];
+}
+
+/** An external connection tip in world coordinates — snap/convert targets for the UI. */
+export interface ExternalConnectionTip {
+  instanceId: string;
+  connectionId: string;
+  point: Point;
+}
+
 export interface CompositeLayout {
   children: ChildLayout[];
   links: CompositeLink[];
-  /** Union of every child's worldBounds and every link point. */
+  /** Manually-drawn lines, resolved to world polylines. */
+  lines: CompositeLineLayout[];
+  /** Union of every child's worldBounds, every link point and every line point. */
   bounds: Rect;
 }
 
@@ -86,9 +107,67 @@ export class CompositeLayoutEngine {
       });
     }
 
-    const links = this.detectLinks(children);
-    const bounds = this.unionBounds(children, links);
-    return { children, links, bounds };
+    const lines = this.resolveLines(doc.allLines(), children);
+    // A manual line for a shared id takes precedence: suppress its auto-link.
+    const claimed = new Set<string>();
+    for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
+    const links = this.detectLinks(children, claimed);
+    const bounds = this.unionBounds(children, links, lines);
+    return { children, links, lines, bounds };
+  }
+
+  /**
+   * World position of a child's external connection tip (the arrowhead `at`),
+   * or null when the connection is absent, not external, or has no arrow. Shared
+   * by auto-link detection and manual-line anchor resolution, so an anchored
+   * line end lands exactly where the auto-link would.
+   */
+  private externalTip(child: ChildLayout, connectionId: string): Point | null {
+    const { layout, instance, transform } = child;
+    if (!layout || !instance.resolved) return null;
+    const el = instance.resolved.getElement(connectionId);
+    if (!(el instanceof Connection)) return null;
+    const isExternal = el.from.kind === 'external' || el.to.kind === 'external';
+    if (!isExternal) return null;
+    const geo = layout.geometry.get(connectionId);
+    if (geo?.kind !== 'connection' || !geo.arrow) return null;
+    return transform.apply(geo.arrow.at);
+  }
+
+  /** Resolve every manual line's vertices to a world polyline (see `CompositeLineLayout`). */
+  private resolveLines(lines: CompositeLine[], children: ChildLayout[]): CompositeLineLayout[] {
+    const byId = new Map(children.map((c) => [c.instance.id, c]));
+    const out: CompositeLineLayout[] = [];
+    for (const line of lines) {
+      const points: Point[] = [];
+      for (const v of line.vertices) {
+        if (v.kind === 'point') {
+          points.push({ x: v.x, y: v.y });
+          continue;
+        }
+        const child = byId.get(v.instanceId);
+        const tip = child ? this.externalTip(child, v.connectionId) : null;
+        if (tip) points.push(tip);
+      }
+      if (points.length >= 2) out.push({ line, points });
+    }
+    return out;
+  }
+
+  /** Every child's external connection tips in world coordinates (UI snap/convert targets). */
+  externalConnectionTips(children: ChildLayout[]): ExternalConnectionTip[] {
+    const tips: ExternalConnectionTip[] = [];
+    for (const child of children) {
+      const { layout, instance } = child;
+      if (!layout || !instance.resolved) continue;
+      for (const conn of instance.resolved.connections()) {
+        const isExternal = conn.from.kind === 'external' || conn.to.kind === 'external';
+        if (!isExternal) continue;
+        const point = this.externalTip(child, conn.id);
+        if (point) tips.push({ instanceId: instance.id, connectionId: conn.id, point });
+      }
+    }
+    return tips;
   }
 
   /**
@@ -99,18 +178,18 @@ export class CompositeLayoutEngine {
    * instances. When more than two children share an id, the first two (in
    * insertion order) link, the rest are skipped (documented v1 limitation).
    */
-  private detectLinks(children: ChildLayout[]): CompositeLink[] {
+  private detectLinks(children: ChildLayout[], suppressed: Set<string> = new Set()): CompositeLink[] {
     const index = new Map<string, { instanceId: string; tip: Point }[]>();
 
     for (const child of children) {
-      const { layout, instance, transform } = child;
+      const { layout, instance } = child;
       if (!layout || !instance.resolved) continue;
       for (const conn of instance.resolved.connections()) {
+        if (suppressed.has(conn.id)) continue;
         const isExternal = conn.from.kind === 'external' || conn.to.kind === 'external';
         if (!isExternal) continue;
-        const geo = layout.geometry.get(conn.id);
-        if (geo?.kind !== 'connection' || !geo.arrow) continue;
-        const tip = transform.apply(geo.arrow.at);
+        const tip = this.externalTip(child, conn.id);
+        if (!tip) continue;
         const ends = index.get(conn.id) ?? [];
         ends.push({ instanceId: instance.id, tip });
         index.set(conn.id, ends);
@@ -131,7 +210,7 @@ export class CompositeLayoutEngine {
     return links;
   }
 
-  private unionBounds(children: ChildLayout[], links: CompositeLink[]): Rect {
+  private unionBounds(children: ChildLayout[], links: CompositeLink[], lines: CompositeLineLayout[]): Rect {
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
@@ -148,6 +227,7 @@ export class CompositeLayoutEngine {
       extend({ x: b.x + b.width, y: b.y + b.height });
     }
     for (const link of links) for (const p of link.points) extend(p);
+    for (const line of lines) for (const p of line.points) extend(p);
 
     if (!Number.isFinite(minX)) return { x: 0, y: 0, width: 0, height: 0 };
     return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
