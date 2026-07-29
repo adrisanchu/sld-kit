@@ -1,5 +1,5 @@
 /**
- * Smoke demo — builds the "Example 400 kV" fixture, checks the JSON
+ * Smoke demo — builds the "South 400 kV" fixture, checks the JSON
  * roundtrip, and prints the exported standalone SVG to stdout.
  *
  *   pnpm --filter @sld-kit/core demo > /tmp/example.svg
@@ -8,9 +8,9 @@
  * rendering. The same logic is asserted by the vitest suite.
  */
 import { Serializer, SvgExporter } from '../src';
-import { buildExampleHv } from './fixtures';
+import { buildSouth400 } from './fixtures';
 
-const doc = buildExampleHv();
+const doc = buildSouth400();
 
 const json = Serializer.toJSON(doc);
 const restored = Serializer.fromJSON(JSON.parse(JSON.stringify(json)));

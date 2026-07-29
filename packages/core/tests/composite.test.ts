@@ -17,12 +17,17 @@ import {
   type SldDocumentJson
 } from '../src';
 import {
-  buildExampleHv,
-  buildExampleMv,
-  buildExampleComposite,
-  buildExampleCompositeWithLine,
-  EXAMPLE_HV_ID,
-  EXAMPLE_MV_ID,
+  buildSouth400,
+  buildSouth220,
+  buildWest400,
+  buildSouthComposite,
+  buildSouthCompositeWithLine,
+  buildSouthWestComposite,
+  SOUTH_400_ID,
+  SOUTH_220_ID,
+  WEST_400_ID,
+  SOUTH_WEST_1,
+  SOUTH_WEST_2,
   HV_INSTANCE_ID,
   SHARED_LINK_ID
 } from './fixtures';
@@ -31,15 +36,15 @@ const cycle = (v: unknown) => JSON.parse(JSON.stringify(v));
 
 function resolver() {
   const docs = new Map<string, SldDocumentJson>([
-    [EXAMPLE_HV_ID, Serializer.toJSON(buildExampleHv())],
-    [EXAMPLE_MV_ID, Serializer.toJSON(buildExampleMv())]
+    [SOUTH_400_ID, Serializer.toJSON(buildSouth400())],
+    [SOUTH_220_ID, Serializer.toJSON(buildSouth220())]
   ]);
   return new MapResolver(docs);
 }
 
 describe('CompositeSerializer', () => {
   it('roundtrips (kind + version stable)', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     const json1 = CompositeSerializer.toJSON(doc);
     expect(json1.kind).toBe('composite');
     expect(json1.version).toBe(COMPOSITE_SCHEMA_VERSION);
@@ -54,7 +59,7 @@ describe('CompositeSerializer', () => {
   });
 
   it('roundtrips manual lines (point + anchor vertices)', () => {
-    const doc = buildExampleCompositeWithLine();
+    const doc = buildSouthCompositeWithLine();
     const json1 = CompositeSerializer.toJSON(doc);
     expect(json1.version).toBe(COMPOSITE_SCHEMA_VERSION);
     expect(json1.lines).toHaveLength(1);
@@ -85,7 +90,7 @@ describe('CompositeSerializer', () => {
   });
 
   it('roundtrips a non-default label placement', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     const child = doc.allChildren()[0];
     doc.setChildLabel(child.id, 'bottom-right', 90);
     const json1 = CompositeSerializer.toJSON(doc);
@@ -111,12 +116,12 @@ describe('CompositeLayoutEngine — manual lines', () => {
   it('resolves anchored ends to the same tips the auto-link would use', () => {
     const engine = new CompositeLayoutEngine();
 
-    const noLine = buildExampleComposite();
+    const noLine = buildSouthComposite();
     noLine.resolveChildren(resolver());
     const autoLink = engine.layout(noLine).links.find((l) => l.connectionId === SHARED_LINK_ID);
     expect(autoLink).toBeDefined();
 
-    const withLine = buildExampleCompositeWithLine();
+    const withLine = buildSouthCompositeWithLine();
     withLine.resolveChildren(resolver());
     const [line] = engine.layout(withLine).lines;
     expect(line.points).toHaveLength(3);
@@ -125,7 +130,7 @@ describe('CompositeLayoutEngine — manual lines', () => {
   });
 
   it('suppresses the auto-link for a connection id claimed by a manual line', () => {
-    const doc = buildExampleCompositeWithLine();
+    const doc = buildSouthCompositeWithLine();
     doc.resolveChildren(resolver());
     const layout = new CompositeLayoutEngine().layout(doc);
     expect(layout.links.some((l) => l.connectionId === SHARED_LINK_ID)).toBe(false);
@@ -134,7 +139,7 @@ describe('CompositeLayoutEngine — manual lines', () => {
 
   it('anchored ends follow their child; free bends stay put', () => {
     const engine = new CompositeLayoutEngine();
-    const doc = buildExampleCompositeWithLine();
+    const doc = buildSouthCompositeWithLine();
     doc.resolveChildren(resolver());
     const before = engine.layout(doc).lines[0];
 
@@ -154,7 +159,7 @@ describe('CompositeLayoutEngine — manual lines', () => {
   });
 
   it('drops unresolvable anchors and omits a line with fewer than two points', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     doc.resolveChildren(resolver());
     doc.addLine(
       new CompositeLine('dangling', [
@@ -167,7 +172,7 @@ describe('CompositeLayoutEngine — manual lines', () => {
   });
 
   it('exposes external connection tips for snap/convert targets', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     doc.resolveChildren(resolver());
     const engine = new CompositeLayoutEngine();
     const layout = engine.layout(doc);
@@ -178,7 +183,7 @@ describe('CompositeLayoutEngine — manual lines', () => {
 
 describe('CompositeLayoutEngine', () => {
   it('auto-links children by shared external connection id', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     doc.resolveChildren(resolver());
     const layout = new CompositeLayoutEngine().layout(doc);
     expect(layout.children).toHaveLength(2);
@@ -186,7 +191,7 @@ describe('CompositeLayoutEngine', () => {
   });
 
   it('leaves an unresolved child as a placeholder (no crash)', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     doc.resolveChildren(new MapResolver(new Map())); // resolves nothing
     const layout = new CompositeLayoutEngine().layout(doc);
     expect(layout.children.every((c) => c.layout === null)).toBe(true);
@@ -194,11 +199,11 @@ describe('CompositeLayoutEngine', () => {
   });
 
   it('labels each child with its resolved meta.name at the frame top-left', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     doc.resolveChildren(resolver());
     const layout = new CompositeLayoutEngine().layout(doc);
-    const hv = layout.children.find((c) => c.instance.libraryId === EXAMPLE_HV_ID)!;
-    expect(hv.name).toBe('Example 400 kV');
+    const hv = layout.children.find((c) => c.instance.libraryId === SOUTH_400_ID)!;
+    expect(hv.name).toBe('South 400 kV');
     // Anchor is the top-left frame corner plus a small inset (child-local).
     expect(hv.nameLabel.x).toBeGreaterThan(hv.frame.x);
     expect(hv.nameLabel.y).toBeGreaterThan(hv.frame.y);
@@ -206,14 +211,14 @@ describe('CompositeLayoutEngine', () => {
   });
 
   it('falls back to the libraryId when the child is unresolved', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     doc.resolveChildren(new MapResolver(new Map()));
     const layout = new CompositeLayoutEngine().layout(doc);
-    expect(layout.children.map((c) => c.name)).toContain(EXAMPLE_HV_ID);
+    expect(layout.children.map((c) => c.name)).toContain(SOUTH_400_ID);
   });
 
   it('places the name label at the chosen slot', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     doc.resolveChildren(resolver());
     const child = doc.allChildren()[0];
     doc.setChildLabel(child.id, 'bottom-right', 0);
@@ -224,7 +229,7 @@ describe('CompositeLayoutEngine', () => {
   });
 
   it('adds labelDirection into the label rotation', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     doc.resolveChildren(resolver());
     const child = doc.allChildren()[0];
     doc.setChildTransform(child.id, child.x, child.y, 0); // angle 0 isolates direction
@@ -234,7 +239,7 @@ describe('CompositeLayoutEngine', () => {
   });
 
   it('flips the label 180 so it never reads upside-down', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     doc.resolveChildren(resolver());
     const child = doc.allChildren()[0];
     doc.setChildTransform(child.id, child.x, child.y, 180); // upside-down half
@@ -246,7 +251,7 @@ describe('CompositeLayoutEngine', () => {
 
 describe('SetChildLabelCommand', () => {
   it('sets and undoes a child label placement', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     const child = doc.allChildren()[0];
     const stack = new CommandStack<CompositeDocument>();
     const before = { anchor: child.labelAnchor, direction: child.labelDirection };
@@ -259,7 +264,7 @@ describe('SetChildLabelCommand', () => {
   });
 
   it('normalizes an off-quarter direction to the nearest quarter turn', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     const child = doc.allChildren()[0];
     doc.setChildLabel(child.id, 'top-left', 100);
     expect(child.labelDirection).toBe(90);
@@ -285,7 +290,7 @@ describe('SetChildLabelCommand', () => {
 
 describe('CompositeSvgExporter', () => {
   it('exports a PowerPoint-safe SVG for a resolved composite', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     doc.resolveChildren(resolver());
     const svg = new CompositeSvgExporter().export(doc);
     expect(svg).not.toContain('class=');
@@ -294,7 +299,7 @@ describe('CompositeSvgExporter', () => {
   });
 
   it('renders a manual line as a plain path and stays Office-safe', () => {
-    const doc = buildExampleCompositeWithLine();
+    const doc = buildSouthCompositeWithLine();
     doc.resolveChildren(resolver());
     const svg = new CompositeSvgExporter().export(doc);
     // The free bend vertex {250,400} lands verbatim in the line path's `d`.
@@ -305,22 +310,22 @@ describe('CompositeSvgExporter', () => {
   });
 
   it('renders each child diagram name into the export', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     doc.resolveChildren(resolver());
     const svg = new CompositeSvgExporter().export(doc);
-    expect(svg).toContain('Example 400 kV');
-    expect(svg).toContain('Example 220 kV');
+    expect(svg).toContain('South 400 kV');
+    expect(svg).toContain('South 220 kV');
   });
 
   it('renders the libraryId as the name for an unresolved child', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     doc.resolveChildren(new MapResolver(new Map()));
     const svg = new CompositeSvgExporter().export(doc);
-    expect(svg).toContain(EXAMPLE_HV_ID);
+    expect(svg).toContain(SOUTH_400_ID);
   });
 
   it('renders the diagram name bold and stays Office-safe', () => {
-    const doc = buildExampleComposite();
+    const doc = buildSouthComposite();
     doc.resolveChildren(resolver());
     const svg = new CompositeSvgExporter().export(doc);
     expect(svg).toContain('font-weight="700"');
@@ -341,5 +346,38 @@ describe('Transform2D', () => {
   it('a 0° transform is a pure translation', () => {
     const t = new Transform2D(10, 20, 0, { x: 0, y: 0 });
     expect(t.apply({ x: 5, y: 5 })).toEqual({ x: 15, y: 25 });
+  });
+});
+
+describe('South ⇄ West 400 kV (high-level authoring)', () => {
+  it('builds a valid West 400 kV via the high-level API', () => {
+    // The AddPositionCommand-based builder must produce a fully valid document
+    // (auto-wiring + the two relinked tie-feeders), with no dangling refs.
+    expect(buildWest400().validate()).toEqual([]);
+  });
+
+  it('exposes the two shared tie-feeder ids on both substations', () => {
+    const west = buildWest400();
+    const westIds = west.connections().map((c) => c.id);
+    expect(westIds).toContain(SOUTH_WEST_1);
+    expect(westIds).toContain(SOUTH_WEST_2);
+    const southIds = buildSouth400().connections().map((c) => c.id);
+    expect(southIds).toContain(SOUTH_WEST_1);
+    expect(southIds).toContain(SOUTH_WEST_2);
+  });
+
+  it('auto-links the two substations through the shared feeder ids', () => {
+    const doc = buildSouthWestComposite();
+    doc.resolveChildren(
+      new MapResolver(
+        new Map<string, SldDocumentJson>([
+          [SOUTH_400_ID, Serializer.toJSON(buildSouth400())],
+          [WEST_400_ID, Serializer.toJSON(buildWest400())]
+        ])
+      )
+    );
+    const links = new CompositeLayoutEngine().layout(doc).links.map((l) => l.connectionId);
+    expect(links).toContain(SOUTH_WEST_1);
+    expect(links).toContain(SOUTH_WEST_2);
   });
 });

@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { LayoutEngine, SLD_LAYOUT } from '../src';
-import { buildExampleHv } from './fixtures';
+import { buildSouth400 } from './fixtures';
 
 describe('LayoutEngine', () => {
   it('produces a geometry entry for every element', () => {
-    const doc = buildExampleHv();
+    const doc = buildSouth400();
     const layout = new LayoutEngine().layout(doc);
     for (const el of doc.all()) {
       expect(layout.geometry.has(el.id), `missing geometry for ${el.id}`).toBe(true);
@@ -12,7 +12,7 @@ describe('LayoutEngine', () => {
   });
 
   it('cellAt is the inverse of cellRect centers', () => {
-    const doc = buildExampleHv();
+    const doc = buildSouth400();
     const layout = new LayoutEngine().layout(doc);
     for (const cell of [
       { row: 1, col: 0 },
@@ -26,14 +26,14 @@ describe('LayoutEngine', () => {
   });
 
   it('respects an injected layout config (wider cells shift geometry)', () => {
-    const doc = buildExampleHv();
+    const doc = buildSouth400();
     const base = new LayoutEngine().layout(doc);
     const wide = new LayoutEngine({ ...SLD_LAYOUT, cellWidth: SLD_LAYOUT.cellWidth + 40 }).layout(doc);
     expect(wide.size.width).toBeGreaterThan(base.size.width);
   });
 
   it('geometry is stable (snapshot)', () => {
-    const doc = buildExampleHv();
+    const doc = buildSouth400();
     const layout = new LayoutEngine().layout(doc);
     const serialized = [...layout.geometry.entries()]
       .map(([id, geo]) => [id, geo])

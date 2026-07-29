@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { Serializer, SldParseError, SldDocument, BusBar, Position, Connection, element, external } from '../src';
-import { buildExampleHv } from './fixtures';
+import { buildSouth400 } from './fixtures';
 
 describe('Serializer.check (non-throwing, all errors)', () => {
   it('reports ok on a valid document', () => {
-    const result = Serializer.check(Serializer.toJSON(buildExampleHv()));
+    const result = Serializer.check(Serializer.toJSON(buildSouth400()));
     expect(result.ok).toBe(true);
     expect(result.errors).toEqual([]);
   });
@@ -41,7 +41,7 @@ describe('Serializer.check (non-throwing, all errors)', () => {
 
 describe('SldDocument.validate (live document)', () => {
   it('returns [] for a well-formed document', () => {
-    expect(buildExampleHv().validate()).toEqual([]);
+    expect(buildSouth400().validate()).toEqual([]);
   });
 
   it('accepts placements in memory that it then reports as invalid', () => {

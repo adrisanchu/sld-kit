@@ -29,7 +29,7 @@ exports[`SvgExporter (default theme) > matches the locked snapshot 1`] = `
 <path d="M 294 274 L 366 274 L 366 62" fill="none" stroke="#334155" stroke-width="2"/>
 <path d="M 366 52 L 371.5 62 L 360.5 62 Z" fill="#334155"/>
 <circle cx="294" cy="274" r="3.5" fill="#334155"/>
-<text x="366" y="36" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0f172a">FEEDER A</text>
+<text x="366" y="36" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0f172a">WEST 1</text>
 <path d="M 438 274 L 510 274 L 510 62" fill="none" stroke="#334155" stroke-width="2"/>
 <path d="M 510 52 L 515.5 62 L 504.5 62 Z" fill="#334155"/>
 <circle cx="438" cy="274" r="3.5" fill="#334155"/>
@@ -50,7 +50,7 @@ exports[`SvgExporter (default theme) > matches the locked snapshot 1`] = `
 <path d="M 582 408 L 654 408 L 654 620" fill="none" stroke="#334155" stroke-width="2"/>
 <path d="M 654 630 L 648.5 620 L 659.5 620 Z" fill="#334155"/>
 <circle cx="582" cy="408" r="3.5" fill="#334155"/>
-<text x="654" y="656" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0f172a">FEEDER D</text>
+<text x="654" y="656" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0f172a">WEST 2</text>
 <rect x="60" y="101" width="612" height="6" fill="#0f172a"/>
 <text x="60" y="93" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#0f172a">BB1</text>
 <rect x="60" y="575" width="612" height="6" fill="#0f172a"/>

@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { SvgExporter, DEFAULT_THEME } from '../src';
-import { buildExampleHv } from './fixtures';
+import { buildSouth400 } from './fixtures';
 
 describe('SvgExporter (default theme)', () => {
-  const svg = new SvgExporter().export(buildExampleHv());
+  const svg = new SvgExporter().export(buildSouth400());
 
   it('matches the locked snapshot', () => {
     expect(svg).toMatchSnapshot();
@@ -28,7 +28,7 @@ describe('SvgExporter (default theme)', () => {
 
 describe('theme injection', () => {
   it('overrides a position color without touching the others', () => {
-    const doc = buildExampleHv();
+    const doc = buildSouth400();
     const svg = new SvgExporter().export(doc, {
       theme: { positionTypes: { line: { fill: '#ff0000', stroke: '#000000', text: '#ffffff' } } }
     });
@@ -38,7 +38,7 @@ describe('theme injection', () => {
   });
 
   it('renders an unknown position type with the fallback palette', () => {
-    const doc = buildExampleHv();
+    const doc = buildSouth400();
     // Retype one position to a domain-specific bay type.
     doc.positions()[0].type = 'coupling';
     const svg = new SvgExporter().export(doc);
@@ -46,7 +46,7 @@ describe('theme injection', () => {
   });
 
   it('omits the background rect when background: false', () => {
-    const doc = buildExampleHv();
+    const doc = buildSouth400();
     const withBg = new SvgExporter().export(doc);
     const noBg = new SvgExporter().export(doc, { background: false });
     expect(noBg.length).toBeLessThan(withBg.length);

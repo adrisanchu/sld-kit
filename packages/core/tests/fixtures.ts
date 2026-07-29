@@ -1,9 +1,19 @@
 /**
- * Test fixtures — a self-contained, fictional example substation ("Example")
- * at two voltage levels plus a composite of the two. The data is invented; it
- * exists only to exercise the full model surface: two bounding bus bars, series
- * bays, empty slots, double busbar taps, external assets with derived and
- * explicit tap/side, and a shared external id that the composite auto-links.
+ * Test fixtures — a self-contained, fictional grid with two substations,
+ * **South** (a 400 kV level + a 220 kV level) and **West** (a 400 kV level),
+ * plus composites linking them. The data is invented; it exists only to
+ * exercise the full model surface.
+ *
+ * Two authoring styles live side by side on purpose (see issue #21):
+ *  - **Explicit** — `buildSouth400` / `buildSouth220` hand-place every element
+ *    and hand-wire every connection. Full control, maximum verbosity.
+ *  - **High-level** — `buildWest400` uses `CommandStack` + `AddPositionCommand`,
+ *    which auto-wires each bay to its column neighbours and spawns its outgoing
+ *    feeder; only the cross-substation tie-lines are then relinked by hand.
+ *
+ * South 400 kV and West 400 kV are tied together through two feeders that share
+ * the connection ids `south-west-1` / `south-west-2`, so a composite auto-links
+ * them (the same mechanism the South levels use via `SHARED_LINK_ID`).
  *
  * Kept in `tests/` (not shipped) because this is demo content, not library
  * code. Uses only the public `@sld-kit/core` surface via `../src`.
@@ -16,6 +26,10 @@ import {
   CompositeDocument,
   CompositeLine,
   DiagramInstance,
+  CommandStack,
+  AddPositionCommand,
+  RenameElementCommand,
+  UpdateElementCommand,
   element,
   external,
   newId,
@@ -23,22 +37,31 @@ import {
   type ExternalDirection
 } from '../src';
 
-export const EXAMPLE_HV_ID = 'example-hv';
-export const EXAMPLE_MV_ID = 'example-mv';
-export const EXAMPLE_COMPOSITE_ID = 'example-composite';
+export const SOUTH_400_ID = 'south-400';
+export const SOUTH_220_ID = 'south-220';
+export const WEST_400_ID = 'west-400';
+export const SOUTH_COMPOSITE_ID = 'south-composite';
 
-/** Shared external connection id — the composite auto-links the levels here. */
+/** Shared external id tying the South 400 kV and 220 kV levels (transformer). */
 export const SHARED_LINK_ID = 'cn-shared-transformer';
+
+/** Shared external ids tying South 400 kV to West 400 kV (two feeders). */
+export const SOUTH_WEST_1 = 'south-west-1';
+export const SOUTH_WEST_2 = 'south-west-2';
 
 // Thin aliases over the public endpoint helpers, kept for terse call sites below.
 const el = element;
 const ext = (asset: ExternalAssetKind, label: string, direction: ExternalDirection, side?: 'left' | 'right') =>
   external({ asset, label, direction, side });
 
-/** HV level: two bars, 3+4+3 positions, two empty slots. */
-export function buildExampleHv(): SldDocument {
+/**
+ * South 400 kV (explicit authoring): two bars, 3+4+3 positions, two empty slots.
+ * Two of its feeders are the tie-lines to West 400 kV — they carry the shared
+ * ids `south-west-1` / `south-west-2` and the labels "WEST 1" / "WEST 2".
+ */
+export function buildSouth400(): SldDocument {
   const doc = new SldDocument(
-    { id: EXAMPLE_HV_ID, name: 'Example 400 kV', substation: 'Example', voltageKv: 400 },
+    { id: SOUTH_400_ID, name: 'South 400 kV', substation: 'South', voltageKv: 400 },
     { rows: 5, cols: 4 }
   );
 
@@ -80,20 +103,22 @@ export function buildExampleHv(): SldDocument {
   }
 
   doc.addElement(new Connection('cn-c0t-ext', '', el('pos-c0t'), ext('renewable', 'SOLAR PARK 1', 'up')));
-  doc.addElement(new Connection('cn-c1t-ext', '', el('pos-c1t', 'below'), ext('line', 'FEEDER A', 'up', 'right')));
+  // Tie-line to West 400 kV — shared id `south-west-1`.
+  doc.addElement(new Connection(SOUTH_WEST_1, '', el('pos-c1t', 'below'), ext('line', 'WEST 1', 'up', 'right')));
   doc.addElement(new Connection('cn-c2t-ext', '', el('pos-c2t'), ext('line', 'FEEDER B', 'up')));
   doc.addElement(new Connection('cn-c1b-ext', '', el('pos-c1b'), ext('line', 'FEEDER C', 'down')));
-  // Shared id with the MV level — the composite auto-links the two levels here.
+  // Shared id with the 220 kV level — the composite auto-links the two levels here.
   doc.addElement(new Connection(SHARED_LINK_ID, '', el('pos-c2b'), ext('transformer', 'TIE 220 kV', 'down')));
-  doc.addElement(new Connection('cn-c3b-ext', '', el('pos-c3b', 'above'), ext('line', 'FEEDER D', 'down')));
+  // Tie-line to West 400 kV — shared id `south-west-2`.
+  doc.addElement(new Connection(SOUTH_WEST_2, '', el('pos-c3b', 'above'), ext('line', 'WEST 2', 'down')));
 
   return doc;
 }
 
-/** MV level: double busbar, bays fanning upward + one transformer bay down. */
-export function buildExampleMv(): SldDocument {
+/** South 220 kV (explicit): double busbar, bays fanning upward + one transformer bay down. */
+export function buildSouth220(): SldDocument {
   const doc = new SldDocument(
-    { id: EXAMPLE_MV_ID, name: 'Example 220 kV', substation: 'Example', voltageKv: 220 },
+    { id: SOUTH_220_ID, name: 'South 220 kV', substation: 'South', voltageKv: 220 },
     { rows: 4, cols: 8 }
   );
 
@@ -130,21 +155,78 @@ export function buildExampleMv(): SldDocument {
   doc.addElement(new Connection('cn-b5-b2', '', el('pos-b5'), el('bb-2')));
   doc.addElement(new Connection('cn-b5-ext', '', el('pos-b5', 'above'), ext('line', 'FEEDER H', 'up')));
 
-  // Transformer bay dropping to the HV level.
+  // Transformer bay dropping to the 400 kV level.
   doc.addElement(new Position('pos-tr', 'T1', 'transformer', 3, 3));
   doc.addElement(new Connection('cn-tr-b1', '', el('pos-tr'), el('bb-1')));
   doc.addElement(new Connection('cn-tr-b2', '', el('pos-tr'), el('bb-2')));
-  // Shared id with the HV level's transformer external → composite link.
+  // Shared id with the 400 kV level's transformer external → composite link.
   doc.addElement(new Connection(SHARED_LINK_ID, '', el('pos-tr', 'below'), ext('transformer', 'TIE 400 kV', 'down')));
 
   return doc;
 }
 
-/** Composite of the two voltage levels, both rotated 90°. */
-export function buildExampleComposite(): CompositeDocument {
-  const doc = new CompositeDocument({ id: EXAMPLE_COMPOSITE_ID, name: 'Example — overview' });
-  doc.addChild(new DiagramInstance(newId(), EXAMPLE_HV_ID, 0, 0, 90));
-  doc.addChild(new DiagramInstance(newId(), EXAMPLE_MV_ID, 400, 60, 90));
+/**
+ * Repoint a bay's auto-generated external feeder onto a shared connection id and
+ * give it a human label — using only high-level commands. `AddPositionCommand`
+ * mints a random id and an auto-name for the feeder it spawns; a cross-substation
+ * tie needs a specific, shared id (so the composite links it) and a real label,
+ * which `RenameElementCommand` + `UpdateElementCommand` supply.
+ */
+function relinkFeeder(doc: SldDocument, stack: CommandStack, positionId: string, sharedId: string, label: string): void {
+  const feeder = doc.connectionsOf(positionId).find((c) => c.from.kind === 'external' || c.to.kind === 'external');
+  if (!feeder) throw new Error(`no external feeder on ${positionId}`);
+  stack.execute(new RenameElementCommand(feeder.id, sharedId), doc);
+  const before = (doc.getElement(sharedId) as Connection).toJSON();
+  const after = {
+    ...before,
+    from: before.from.kind === 'external' ? { ...before.from, label } : before.from,
+    to: before.to.kind === 'external' ? { ...before.to, label } : before.to
+  };
+  stack.execute(new UpdateElementCommand(before, after), doc);
+}
+
+/**
+ * West 400 kV (high-level authoring): two bars and three bays. Each bay is
+ * added with `AddPositionCommand`, which auto-wires it to both bars and spawns
+ * its outgoing feeder (a line/transformer external). The two line bays are then
+ * relinked as the tie-lines back to South 400 kV via the shared ids.
+ */
+export function buildWest400(): SldDocument {
+  const doc = new SldDocument(
+    { id: WEST_400_ID, name: 'West 400 kV', substation: 'West', voltageKv: 400 },
+    { rows: 3, cols: 3 }
+  );
+
+  // Bounding bars are structural — placed directly.
+  doc.addElement(new BusBar('bb-1', 'BB1', 0));
+  doc.addElement(new BusBar('bb-2', 'BB2', 2));
+
+  // Bays via the high-level command: auto-wire to the bars + auto-spawn feeders.
+  const stack = new CommandStack();
+  stack.execute(new AddPositionCommand(new Position('w-l1', 'L1', 'line', 1, 0)), doc);
+  stack.execute(new AddPositionCommand(new Position('w-t1', 'T1', 'transformer', 1, 1)), doc);
+  stack.execute(new AddPositionCommand(new Position('w-l2', 'L2', 'line', 1, 2)), doc);
+
+  // Turn the two line feeders into the shared tie-lines back to South 400 kV.
+  relinkFeeder(doc, stack, 'w-l1', SOUTH_WEST_1, 'SOUTH 1');
+  relinkFeeder(doc, stack, 'w-l2', SOUTH_WEST_2, 'SOUTH 2');
+
+  return doc;
+}
+
+/** Composite of the two South voltage levels, both rotated 90°. */
+export function buildSouthComposite(): CompositeDocument {
+  const doc = new CompositeDocument({ id: SOUTH_COMPOSITE_ID, name: 'South — overview' });
+  doc.addChild(new DiagramInstance(newId(), SOUTH_400_ID, 0, 0, 90));
+  doc.addChild(new DiagramInstance(newId(), SOUTH_220_ID, 400, 60, 90));
+  return doc;
+}
+
+/** Composite tying South 400 kV to West 400 kV — auto-linked by the two feeders. */
+export function buildSouthWestComposite(): CompositeDocument {
+  const doc = new CompositeDocument({ id: 'south-west-composite', name: 'South ⇄ West 400 kV' });
+  doc.addChild(new DiagramInstance(newId(), SOUTH_400_ID, 0, 0, 0));
+  doc.addChild(new DiagramInstance(newId(), WEST_400_ID, 520, 0, 0));
   return doc;
 }
 
@@ -153,14 +235,14 @@ export const HV_INSTANCE_ID = 'inst-hv';
 export const MV_INSTANCE_ID = 'inst-mv';
 
 /**
- * Same composite but with a manual line whose two ends are anchored to the
+ * Same South composite but with a manual line whose two ends are anchored to the
  * shared transformer connection on each child, plus one free bend between them.
  * The line claims `SHARED_LINK_ID`, so it replaces the auto-link for that id.
  */
-export function buildExampleCompositeWithLine(): CompositeDocument {
-  const doc = new CompositeDocument({ id: EXAMPLE_COMPOSITE_ID, name: 'Example — overview' });
-  doc.addChild(new DiagramInstance(HV_INSTANCE_ID, EXAMPLE_HV_ID, 0, 0, 90));
-  doc.addChild(new DiagramInstance(MV_INSTANCE_ID, EXAMPLE_MV_ID, 400, 60, 90));
+export function buildSouthCompositeWithLine(): CompositeDocument {
+  const doc = new CompositeDocument({ id: SOUTH_COMPOSITE_ID, name: 'South — overview' });
+  doc.addChild(new DiagramInstance(HV_INSTANCE_ID, SOUTH_400_ID, 0, 0, 90));
+  doc.addChild(new DiagramInstance(MV_INSTANCE_ID, SOUTH_220_ID, 400, 60, 90));
   doc.addLine(
     new CompositeLine('line-1', [
       { kind: 'anchor', instanceId: HV_INSTANCE_ID, connectionId: SHARED_LINK_ID },
