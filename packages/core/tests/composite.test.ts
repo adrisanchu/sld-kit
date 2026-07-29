@@ -29,6 +29,7 @@ import {
   SOUTH_WEST_1,
   SOUTH_WEST_2,
   HV_INSTANCE_ID,
+  MV_INSTANCE_ID,
   SHARED_LINK_ID
 } from './fixtures';
 
@@ -113,20 +114,22 @@ describe('CompositeSerializer', () => {
 });
 
 describe('CompositeLayoutEngine — manual lines', () => {
-  it('resolves anchored ends to the same tips the auto-link would use', () => {
+  it('resolves anchored ends to each child external connection tip', () => {
     const engine = new CompositeLayoutEngine();
-
-    const noLine = buildSouthComposite();
-    noLine.resolveChildren(resolver());
-    const autoLink = engine.layout(noLine).links.find((l) => l.connectionId === SHARED_LINK_ID);
-    expect(autoLink).toBeDefined();
-
     const withLine = buildSouthCompositeWithLine();
     withLine.resolveChildren(resolver());
-    const [line] = engine.layout(withLine).lines;
+    const layout = engine.layout(withLine);
+    const [line] = layout.lines;
     expect(line.points).toHaveLength(3);
-    expect(line.points[0]).toEqual(autoLink!.a.point);
-    expect(line.points[2]).toEqual(autoLink!.b.point);
+    // Each anchored end lands exactly on its child's connection tip — the same
+    // point the auto-link would use (both go through externalTip). Comparing
+    // within one composite keeps this independent of the fixture's transforms.
+    const tipOf = (instanceId: string) =>
+      engine
+        .externalConnectionTips(layout.children)
+        .find((t) => t.instanceId === instanceId && t.connectionId === SHARED_LINK_ID)!.point;
+    expect(line.points[0]).toEqual(tipOf(HV_INSTANCE_ID));
+    expect(line.points[2]).toEqual(tipOf(MV_INSTANCE_ID));
   });
 
   it('suppresses the auto-link for a connection id claimed by a manual line', () => {
@@ -221,6 +224,7 @@ describe('CompositeLayoutEngine', () => {
     const doc = buildSouthComposite();
     doc.resolveChildren(resolver());
     const child = doc.allChildren()[0];
+    doc.setChildTransform(child.id, child.x, child.y, 0); // angle 0 isolates slot placement from the fixture's rotation
     doc.setChildLabel(child.id, 'bottom-right', 0);
     const c = new CompositeLayoutEngine().layout(doc).children.find((x) => x.instance.id === child.id)!;
     expect(c.nameLabel.textAnchor).toBe('end');
@@ -366,7 +370,7 @@ describe('South ⇄ West 400 kV (high-level authoring)', () => {
     expect(southIds).toContain(SOUTH_WEST_2);
   });
 
-  it('auto-links the two substations through the shared feeder ids', () => {
+  it('draws the two custom tie-lines and suppresses their auto-links', () => {
     const doc = buildSouthWestComposite();
     doc.resolveChildren(
       new MapResolver(
@@ -376,8 +380,13 @@ describe('South ⇄ West 400 kV (high-level authoring)', () => {
         ])
       )
     );
-    const links = new CompositeLayoutEngine().layout(doc).links.map((l) => l.connectionId);
-    expect(links).toContain(SOUTH_WEST_1);
-    expect(links).toContain(SOUTH_WEST_2);
+    const layout = new CompositeLayoutEngine().layout(doc);
+    // Two hand-routed lines claim south-west-1/2, so the straight auto-links are
+    // replaced by the polylines (each: 2 anchored ends + 4 free bends).
+    expect(layout.lines).toHaveLength(2);
+    for (const line of layout.lines) expect(line.points).toHaveLength(6);
+    const linkIds = layout.links.map((l) => l.connectionId);
+    expect(linkIds).not.toContain(SOUTH_WEST_1);
+    expect(linkIds).not.toContain(SOUTH_WEST_2);
   });
 });

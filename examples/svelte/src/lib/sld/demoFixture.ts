@@ -240,35 +240,51 @@ export function buildWest400(): SldDocument {
 
 /**
  * Composite of the two South voltage levels, both rotated a bit to showcase that
- * it's possible. The shared transformer tie is drawn as a manual line (anchored
- * to both levels with one free bend) instead of the default straight dashed
- * auto-link — showing off the manual/automatic line ends.
+ * it's possible. The shared transformer tie is drawn by the default straight
+ * dashed auto-link (both levels share the `cn-shared-transformer` external id) —
+ * the manual/hand-routed line showcase now lives in `buildSouthWestComposite`.
  */
 export function buildSouthComposite(): CompositeDocument {
-  const hvInstanceId = newId();
-  const mvInstanceId = newId();
   const doc = new CompositeDocument({ id: SOUTH_COMPOSITE_ID, name: 'South — overview' });
-  doc.addChild(new DiagramInstance(hvInstanceId, SOUTH_400_ID, 250, 230, 222));
-  doc.addChild(new DiagramInstance(mvInstanceId, SOUTH_220_ID, 400, -300, 40));
-  doc.addLine(
-    new CompositeLine(newId(), [
-      { kind: 'anchor', instanceId: hvInstanceId, connectionId: SHARED_LINK_ID },
-      { kind: 'point', x: 520, y: 60 },
-      { kind: 'anchor', instanceId: mvInstanceId, connectionId: SHARED_LINK_ID }
-    ])
-  );
+  doc.addChild(new DiagramInstance(newId(), SOUTH_400_ID, 250, 230, 222));
+  doc.addChild(new DiagramInstance(newId(), SOUTH_220_ID, 400, -300, 40));
   return doc;
 }
 
+/** Stable instance ids for the South ⇄ West composite — its manual lines anchor to them. */
+const SW_SOUTH_INSTANCE_ID = 'inst-sw-south';
+const SW_WEST_INSTANCE_ID = 'inst-sw-west';
+
 /**
- * Composite tying South 400 kV to West 400 kV, side by side. The two children
- * share the `south-west-1` / `south-west-2` feeder ids, so the composite draws
- * the default dashed auto-links between them — no manual lines needed.
+ * Composite tying South 400 kV to West 400 kV. The two feeders sharing
+ * `south-west-1` / `south-west-2` are drawn as hand-routed manual lines — each
+ * anchored to the matching feeder on both children with free bends between — so
+ * they claim those ids and replace the default straight dashed auto-links.
  */
 export function buildSouthWestComposite(): CompositeDocument {
   const doc = new CompositeDocument({ id: SOUTH_WEST_COMPOSITE_ID, name: 'South ⇄ West 400 kV' });
-  doc.addChild(new DiagramInstance(newId(), SOUTH_400_ID, -300, 60, 0));
-  doc.addChild(new DiagramInstance(newId(), WEST_400_ID, 600, -130, 0));
+  doc.addChild(new DiagramInstance(SW_SOUTH_INSTANCE_ID, SOUTH_400_ID, -300, 60, 0));
+  doc.addChild(new DiagramInstance(SW_WEST_INSTANCE_ID, WEST_400_ID, 1266, -802, 0));
+  doc.addLine(
+    new CompositeLine('sw-line-1', [
+      { kind: 'anchor', instanceId: SW_SOUTH_INSTANCE_ID, connectionId: SOUTH_WEST_1 },
+      { kind: 'point', x: 65, y: 33 },
+      { kind: 'point', x: 475, y: 24 },
+      { kind: 'point', x: 1236, y: -135 },
+      { kind: 'point', x: 1234, y: -749 },
+      { kind: 'anchor', instanceId: SW_WEST_INSTANCE_ID, connectionId: SOUTH_WEST_1 }
+    ])
+  );
+  doc.addLine(
+    new CompositeLine('sw-line-2', [
+      { kind: 'anchor', instanceId: SW_SOUTH_INSTANCE_ID, connectionId: SOUTH_WEST_2 },
+      { kind: 'point', x: 495, y: 686 },
+      { kind: 'point', x: 494, y: 89 },
+      { kind: 'point', x: 1242, y: -72 },
+      { kind: 'point', x: 1777, y: -91 },
+      { kind: 'anchor', instanceId: SW_WEST_INSTANCE_ID, connectionId: SOUTH_WEST_2 }
+    ])
+  );
   return doc;
 }
 
