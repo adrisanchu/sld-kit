@@ -45,7 +45,11 @@ export const DEFAULT_THEME: SldTheme = {
     transformer: { fill: '#fef3c7', stroke: '#f59e0b', text: '#78350f' },
     central: { fill: '#ede9fe', stroke: '#8b5cf6', text: '#4c1d95' },
     renewable: { fill: '#dcfce7', stroke: '#22c55e', text: '#14532d' },
-    reserve: { fill: '#f1f5f9', stroke: '#94a3b8', text: '#334155' }
+    reserve: { fill: '#f1f5f9', stroke: '#94a3b8', text: '#334155' },
+    // Storage (battery): teal — distinct from renewable green.
+    storage: { fill: '#ccfbf1', stroke: '#14b8a6', text: '#134e4a' },
+    // Demand (consumer/load): red.
+    demand: { fill: '#fee2e2', stroke: '#ef4444', text: '#7f1d1d' }
   },
   fallbackPositionType: { fill: '#f1f5f9', stroke: '#94a3b8', text: '#334155' },
   structure: {

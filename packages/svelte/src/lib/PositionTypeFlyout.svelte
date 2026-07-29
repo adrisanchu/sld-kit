@@ -14,7 +14,15 @@
   /** Currently selected position type (owned by the parent). */
   export let positionType: PositionType = 'line';
   /** Selectable types, in display order. */
-  export let positionTypes: PositionType[] = ['line', 'transformer', 'central', 'renewable', 'reserve'];
+  export let positionTypes: PositionType[] = [
+    'line',
+    'transformer',
+    'central',
+    'renewable',
+    'reserve',
+    'storage',
+    'demand'
+  ];
   /** Label per position type. */
   export let labels: Record<string, string> = DEFAULT_POSITION_TYPE_LABELS;
   /** Tooltip on the chevron trigger. */

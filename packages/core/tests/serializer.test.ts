@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { Serializer, SldParseError, SLD_SCHEMA_VERSION, SldDocument, BusBar, Position } from '../src';
-import { buildExampleHv } from './fixtures';
+import { buildSouth400 } from './fixtures';
 
 /** Deep clone through JSON, mimicking a localStorage save/load cycle. */
 const cycle = (v: unknown) => JSON.parse(JSON.stringify(v));
 
 describe('Serializer roundtrip', () => {
   it('is stable: toJSON → fromJSON → toJSON deep-equals', () => {
-    const doc = buildExampleHv();
+    const doc = buildSouth400();
     const json1 = Serializer.toJSON(doc);
     const restored = Serializer.fromJSON(cycle(json1));
     const json2 = Serializer.toJSON(restored);
@@ -15,7 +15,7 @@ describe('Serializer roundtrip', () => {
   });
 
   it('preserves element count and ids', () => {
-    const doc = buildExampleHv();
+    const doc = buildSouth400();
     const restored = Serializer.fromJSON(cycle(Serializer.toJSON(doc)));
     expect(
       restored
@@ -31,7 +31,7 @@ describe('Serializer roundtrip', () => {
   });
 
   it('stamps the current schema version', () => {
-    expect(Serializer.toJSON(buildExampleHv()).version).toBe(SLD_SCHEMA_VERSION);
+    expect(Serializer.toJSON(buildSouth400()).version).toBe(SLD_SCHEMA_VERSION);
   });
 });
 
@@ -86,7 +86,7 @@ describe('Serializer validation', () => {
 
 describe('Serializer migrations', () => {
   it('upgrades a v1 document to v2 (identity widening)', () => {
-    const v2 = Serializer.toJSON(buildExampleHv());
+    const v2 = Serializer.toJSON(buildSouth400());
     const v1 = { ...cycle(v2), version: 1 };
     const restored = Serializer.fromJSON(v1);
     expect(Serializer.toJSON(restored).version).toBe(2);

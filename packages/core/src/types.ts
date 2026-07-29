@@ -16,19 +16,29 @@ export interface Cell {
 }
 
 /**
- * The five position types shipped as defaults. They seed IDE autocompletion
- * and the default theme / naming-prefix maps, but `PositionType` is open (see
- * below): consumers may use any string to model domain-specific bay types.
+ * The position types shipped as defaults. They seed IDE autocompletion and the
+ * default theme / naming-prefix maps, but `PositionType` is open (see below):
+ * consumers may use any string to model domain-specific bay types. `storage`
+ * and `demand` double as `ExternalAssetKind`s — a storage/demand bay auto-spawns
+ * the matching external glyph, mirroring line/transformer/renewable.
  */
-export const DEFAULT_POSITION_TYPES = ['line', 'transformer', 'central', 'renewable', 'reserve'] as const;
+export const DEFAULT_POSITION_TYPES = [
+  'line',
+  'transformer',
+  'central',
+  'renewable',
+  'reserve',
+  'storage',
+  'demand'
+] as const;
 
 /**
  * Functional type of a position (posición) — drives its export color and
- * auto-naming prefix. Open string: the five `DEFAULT_POSITION_TYPES` are
- * suggested in autocompletion, but any non-empty string is accepted. Unknown
- * types render with the theme's fallback palette and auto-name from the type
- * string itself. The `(string & {})` intersection keeps the literal
- * suggestions while widening the type to every string.
+ * auto-naming prefix. Open string: the `DEFAULT_POSITION_TYPES` are suggested
+ * in autocompletion, but any non-empty string is accepted. Unknown types render
+ * with the theme's fallback palette and auto-name from the type string itself.
+ * The `(string & {})` intersection keeps the literal suggestions while widening
+ * the type to every string.
  */
 export type PositionType = (typeof DEFAULT_POSITION_TYPES)[number] | (string & {});
 

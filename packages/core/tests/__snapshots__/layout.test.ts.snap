@@ -121,44 +121,6 @@ exports[`LayoutEngine > geometry is stable (snapshot) 1`] = `
       },
     ],
     [
-      "cn-c1t-ext",
-      {
-        "arrow": {
-          "angle": -90,
-          "at": {
-            "x": 366,
-            "y": 52,
-          },
-        },
-        "dot": {
-          "x": 294,
-          "y": 274,
-        },
-        "kind": "connection",
-        "labelAt": {
-          "anchor": "middle",
-          "at": {
-            "x": 366,
-            "y": 36,
-          },
-        },
-        "points": [
-          {
-            "x": 294,
-            "y": 274,
-          },
-          {
-            "x": 366,
-            "y": 274,
-          },
-          {
-            "x": 366,
-            "y": 62,
-          },
-        ],
-      },
-    ],
-    [
       "cn-c2t-ext",
       {
         "arrow": {
@@ -192,44 +154,6 @@ exports[`LayoutEngine > geometry is stable (snapshot) 1`] = `
           {
             "x": 510,
             "y": 62,
-          },
-        ],
-      },
-    ],
-    [
-      "cn-c3b-ext",
-      {
-        "arrow": {
-          "angle": 90,
-          "at": {
-            "x": 654,
-            "y": 630,
-          },
-        },
-        "dot": {
-          "x": 582,
-          "y": 408,
-        },
-        "kind": "connection",
-        "labelAt": {
-          "anchor": "middle",
-          "at": {
-            "x": 654,
-            "y": 656,
-          },
-        },
-        "points": [
-          {
-            "x": 582,
-            "y": 408,
-          },
-          {
-            "x": 654,
-            "y": 408,
-          },
-          {
-            "x": 654,
-            "y": 620,
           },
         ],
       },
@@ -663,6 +587,82 @@ exports[`LayoutEngine > geometry is stable (snapshot) 1`] = `
           "x": 534,
           "y": 311,
         },
+      },
+    ],
+    [
+      "south-west-1",
+      {
+        "arrow": {
+          "angle": -90,
+          "at": {
+            "x": 366,
+            "y": 52,
+          },
+        },
+        "dot": {
+          "x": 294,
+          "y": 274,
+        },
+        "kind": "connection",
+        "labelAt": {
+          "anchor": "middle",
+          "at": {
+            "x": 366,
+            "y": 36,
+          },
+        },
+        "points": [
+          {
+            "x": 294,
+            "y": 274,
+          },
+          {
+            "x": 366,
+            "y": 274,
+          },
+          {
+            "x": 366,
+            "y": 62,
+          },
+        ],
+      },
+    ],
+    [
+      "south-west-2",
+      {
+        "arrow": {
+          "angle": 90,
+          "at": {
+            "x": 654,
+            "y": 630,
+          },
+        },
+        "dot": {
+          "x": 582,
+          "y": 408,
+        },
+        "kind": "connection",
+        "labelAt": {
+          "anchor": "middle",
+          "at": {
+            "x": 654,
+            "y": 656,
+          },
+        },
+        "points": [
+          {
+            "x": 582,
+            "y": 408,
+          },
+          {
+            "x": 654,
+            "y": 408,
+          },
+          {
+            "x": 654,
+            "y": 620,
+          },
+        ],
       },
     ],
   ],

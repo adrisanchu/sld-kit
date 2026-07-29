@@ -52,7 +52,9 @@ export const POSITION_TYPE_TOKENS: Record<string, string> = {
   transformer: 'sld-pos-transformer',
   central: 'sld-pos-central',
   renewable: 'sld-pos-renewable',
-  reserve: 'sld-pos-reserve'
+  reserve: 'sld-pos-reserve',
+  storage: 'sld-pos-storage',
+  demand: 'sld-pos-demand'
 };
 
 /** Human-readable labels for position types — UI + tooltips. */
@@ -61,7 +63,9 @@ export const POSITION_TYPE_LABELS: Record<string, string> = {
   transformer: 'Transformer position',
   central: 'Central position',
   renewable: 'Renewable position',
-  reserve: 'Reserve position'
+  reserve: 'Reserve position',
+  storage: 'Storage position',
+  demand: 'Demand position'
 };
 
 /** Strings for the `@sld-kit/svelte` editor toolbar. */

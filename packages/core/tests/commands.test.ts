@@ -8,7 +8,9 @@ import {
   AddPositionCommand,
   DeleteElementsCommand,
   RenameElementCommand,
-  Serializer
+  Serializer,
+  positionColors,
+  DEFAULT_THEME
 } from '../src';
 
 const snapshot = (doc: SldDocument) => JSON.stringify(Serializer.toJSON(doc).elements);
@@ -61,6 +63,28 @@ describe('AddPositionCommand auto-wiring', () => {
     stack.redo(doc);
     expect(doc.getElement('p')).toBeDefined();
     expect(doc.connectionsOf('p').length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('storage / demand position types', () => {
+  it('auto-spawn their matching external asset via AddPositionCommand', () => {
+    for (const [type, asset] of [
+      ['storage', 'storage'],
+      ['demand', 'demand']
+    ] as const) {
+      const doc = barDoc();
+      new CommandStack().execute(new AddPositionCommand(new Position('p', 'X', type, 1, 1)), doc);
+      const feeder = doc.connectionsOf('p').find((c) => c.from.kind === 'external' || c.to.kind === 'external');
+      expect(feeder, `${type} should spawn an external feeder`).toBeDefined();
+      const ep = [feeder!.from, feeder!.to].find((e) => e.kind === 'external');
+      expect(ep?.kind === 'external' ? ep.asset : undefined).toBe(asset);
+    }
+  });
+
+  it('render with a themed colour, not the fallback palette', () => {
+    expect(positionColors(DEFAULT_THEME, 'storage')).not.toBe(DEFAULT_THEME.fallbackPositionType);
+    expect(positionColors(DEFAULT_THEME, 'storage').stroke).toBe('#14b8a6'); // teal
+    expect(positionColors(DEFAULT_THEME, 'demand').stroke).toBe('#ef4444'); // red
   });
 });
 

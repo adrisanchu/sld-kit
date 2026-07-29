@@ -40,7 +40,15 @@
   /** Label-visibility mode, owned by the editor. */
   export let labelMode: 'all' | 'topology' | 'none' = 'all';
   /** Selectable position types for the type flyout. */
-  export let positionTypes: PositionType[] = ['line', 'transformer', 'central', 'renewable', 'reserve'];
+  export let positionTypes: PositionType[] = [
+    'line',
+    'transformer',
+    'central',
+    'renewable',
+    'reserve',
+    'storage',
+    'demand'
+  ];
   /** Label per position type (hint bar + type flyout). */
   export let positionTypeLabels: Record<string, string> = DEFAULT_POSITION_TYPE_LABELS;
   /** Toolbar UI strings. */
