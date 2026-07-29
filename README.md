@@ -24,15 +24,27 @@ npm install @sld-kit/core @sld-kit/svelte
 
 **[▶ Live demo](https://adrisanchu.github.io/sld-kit/)** — the example editor running in your browser.
 
-A full example editor (SvelteKit + shadcn-svelte, localStorage-backed, seeded with a
-fictional demo substation) lives in [`examples/svelte`](examples/svelte). It is the best
-way to see both packages working together:
+A full example editor (SvelteKit + shadcn-svelte, localStorage-backed) lives in
+[`examples/svelte`](examples/svelte). It is the best way to see both packages
+working together:
 
 ```bash
 pnpm install
 pnpm run build          # build core → svelte first (the example consumes their dist)
 pnpm run dev:example    # open the printed localhost URL
 ```
+
+It seeds a fictional grid with two substations and two composites:
+
+- **South 400 kV** / **South 220 kV** — the two levels of the "South" substation,
+  hand-authored element by element (the explicit, full-control path).
+- **West 400 kV** — a breaker-and-a-half substation built with the high-level
+  command API (`AddPositionCommand` auto-wires each bay), including `storage`
+  (battery) and `demand` (consumer) bays.
+- **South — overview** — the two South levels tied by the default **automatic**
+  dashed link (they share a connection id).
+- **South ⇄ West 400 kV** — South 400 tied to West 400 by **two hand-routed
+  manual lines**, showing the manual line-routing alternative to auto-links.
 
 ## Development
 
@@ -47,7 +59,7 @@ pnpm -r build         # build every package
 pnpm --filter @sld-kit/core test
 pnpm --filter @sld-kit/core build
 pnpm --filter @sld-kit/core verify:pack   # build + publint + attw
-pnpm --filter @sld-kit/core demo > /tmp/example.svg   # smoke render
+pnpm --silent --filter @sld-kit/core demo > /tmp/example.svg   # smoke render (--silent keeps pnpm's banner out of the file)
 
 # example editor
 pnpm run dev:example      # SvelteKit dev server
