@@ -16,8 +16,9 @@ import {
   CompositeDocument,
   CompositeLine,
   DiagramInstance,
+  element,
+  external,
   newId,
-  type Endpoint,
   type ExternalAssetKind,
   type ExternalDirection
 } from '../src';
@@ -29,13 +30,10 @@ export const EXAMPLE_COMPOSITE_ID = 'example-composite';
 /** Shared external connection id — the composite auto-links the levels here. */
 export const SHARED_LINK_ID = 'cn-shared-transformer';
 
-function el(id: string, tap?: 'above' | 'below'): Endpoint {
-  return tap ? { kind: 'element', id, tap } : { kind: 'element', id };
-}
-
-function ext(asset: ExternalAssetKind, label: string, direction: ExternalDirection, side?: 'left' | 'right'): Endpoint {
-  return side ? { kind: 'external', asset, label, direction, side } : { kind: 'external', asset, label, direction };
-}
+// Thin aliases over the public endpoint helpers, kept for terse call sites below.
+const el = element;
+const ext = (asset: ExternalAssetKind, label: string, direction: ExternalDirection, side?: 'left' | 'right') =>
+  external({ asset, label, direction, side });
 
 /** HV level: two bars, 3+4+3 positions, two empty slots. */
 export function buildExampleHv(): SldDocument {

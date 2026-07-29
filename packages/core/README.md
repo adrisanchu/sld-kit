@@ -55,6 +55,22 @@ const reopened = Serializer.fromJSON(json); // throws SldParseError on bad input
 const svg = new SvgExporter().export(reopened);
 ```
 
+## Authoring connections
+
+A `Connection` joins two `Endpoint`s. Build them with the `element` / `external`
+helpers instead of hand-writing the discriminated union — they omit optional
+fields (`tap`, `side`, `direction`) so the layout can derive them:
+
+```ts
+import { Connection, element, external, newId } from '@sld-kit/core';
+
+// position ↔ bus bar
+new Connection(newId(), '', element('pos-1'), element('bb-1'));
+
+// position ↔ external feeder (direction/side optional — derived when omitted)
+new Connection(newId(), '', element('pos-1'), external({ asset: 'line', label: 'FEEDER A', direction: 'up' }));
+```
+
 ## Theming
 
 The core is headless: all export colors come from an injected `SldTheme`, and
@@ -165,10 +181,24 @@ current schema is **version 2**; v1 documents upgrade transparently on load. The
 `data` field is additive and optional, so the schema stays at v2 and every
 existing document loads unchanged.
 
+For a fix-then-recheck loop (an editor surfacing every issue at once, or an LLM
+self-correcting generated JSON), use the non-throwing validators that return the
+**full** error list instead of throwing on the first:
+
+```ts
+const { ok, errors } = Serializer.check(untrustedJson); // errors: SldParseError[]
+const liveErrors = doc.validate();                      // same rules, in-memory doc
+```
+
+`SldDocument` mutations are intentionally not validated on the fly (an editor
+passes through transiently-invalid states while dragging), so call `validate()`
+when you want to check — e.g. before an export or a save.
+
 ## API surface
 
 Everything is exported from the package root: document + elements
-(`SldDocument`, `BusBar`, `Position`, `Connection`), `Grid`, `LayoutEngine`,
+(`SldDocument`, `BusBar`, `Position`, `Connection`, the `element` / `external`
+endpoint helpers), `Grid`, `LayoutEngine`,
 the `CommandStack` and command classes, `Serializer` / `SldParseError`,
 `SvgExporter` / `SvgBuilder`, the `SymbolRegistry` and default symbols, the
 theme (`SldTheme`, `DEFAULT_THEME`, `resolveTheme`, `positionColors`),
