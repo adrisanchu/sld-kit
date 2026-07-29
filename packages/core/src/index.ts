@@ -14,6 +14,7 @@ export { SldElement } from './elements/Element';
 export { BusBar } from './elements/BusBar';
 export { Position } from './elements/Position';
 export { Connection } from './elements/Connection';
+export { element, external } from './elements/endpoints';
 export { elementFromJson } from './elements/factory';
 
 export { SldDocument } from './SldDocument';
