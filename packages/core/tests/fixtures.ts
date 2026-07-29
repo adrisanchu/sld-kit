@@ -166,67 +166,90 @@ export function buildSouth220(): SldDocument {
 }
 
 /**
- * Repoint a bay's auto-generated external feeder onto a shared connection id and
- * give it a human label — using only high-level commands. `AddPositionCommand`
- * mints a random id and an auto-name for the feeder it spawns; a cross-substation
- * tie needs a specific, shared id (so the composite links it) and a real label,
- * which `RenameElementCommand` + `UpdateElementCommand` supply.
+ * Configure a bay's auto-generated external feeder using only high-level
+ * commands: optionally repoint it onto a shared connection id (so a composite
+ * links it) and/or give it a human label. `AddPositionCommand` spawns each
+ * feeder with a random id and an auto-name (`line-1`, `trf-1`…); the tie-lines
+ * we care about get a specific, shared id via `RenameElementCommand` and a real
+ * label via `UpdateElementCommand`.
  */
-function relinkFeeder(doc: SldDocument, stack: CommandStack, positionId: string, sharedId: string, label: string): void {
+function setFeeder(
+  doc: SldDocument,
+  stack: CommandStack,
+  positionId: string,
+  opts: { id?: string; label?: string }
+): void {
   const feeder = doc.connectionsOf(positionId).find((c) => c.from.kind === 'external' || c.to.kind === 'external');
   if (!feeder) throw new Error(`no external feeder on ${positionId}`);
-  stack.execute(new RenameElementCommand(feeder.id, sharedId), doc);
-  const before = (doc.getElement(sharedId) as Connection).toJSON();
-  const after = {
-    ...before,
-    from: before.from.kind === 'external' ? { ...before.from, label } : before.from,
-    to: before.to.kind === 'external' ? { ...before.to, label } : before.to
-  };
-  stack.execute(new UpdateElementCommand(before, after), doc);
+  if (opts.id && opts.id !== feeder.id) stack.execute(new RenameElementCommand(feeder.id, opts.id), doc);
+  const id = opts.id ?? feeder.id;
+  if (opts.label !== undefined) {
+    const before = (doc.getElement(id) as Connection).toJSON();
+    const after = {
+      ...before,
+      from: before.from.kind === 'external' ? { ...before.from, label: opts.label } : before.from,
+      to: before.to.kind === 'external' ? { ...before.to, label: opts.label } : before.to
+    };
+    stack.execute(new UpdateElementCommand(before, after), doc);
+  }
 }
 
 /**
- * West 400 kV (high-level authoring): two bars and three bays. Each bay is
- * added with `AddPositionCommand`, which auto-wires it to both bars and spawns
- * its outgoing feeder (a line/transformer external). The two line bays are then
- * relinked as the tie-lines back to South 400 kV via the shared ids.
+ * West 400 kV (high-level authoring): a breaker-and-a-half layout mirroring
+ * South 400 kV — feeder bays on the outer rows with a `central` position in
+ * between, so each bay forms a BB1—top—central—bottom—BB2 chain. It also shows
+ * off the `storage` (battery) and `demand` (consumer/load) position types: like
+ * line/transformer/renewable, they auto-spawn their matching external glyph.
+ * Every bay is added with `AddPositionCommand`, which auto-wires it and spawns
+ * its feeder; adding each column's central FIRST lets the outer positions split
+ * the chain correctly as they land. Only the two tie-lines back to South 400 kV
+ * are relinked to the shared ids — SOUTH 1 leaves a top position (toward BB1),
+ * SOUTH 2 the bottom-right one (toward BB2), matching WEST 1 / WEST 2 on South.
  */
 export function buildWest400(): SldDocument {
   const doc = new SldDocument(
     { id: WEST_400_ID, name: 'West 400 kV', substation: 'West', voltageKv: 400 },
-    { rows: 3, cols: 3 }
+    { rows: 5, cols: 3 }
   );
 
   // Bounding bars are structural — placed directly.
   doc.addElement(new BusBar('bb-1', 'BB1', 0));
-  doc.addElement(new BusBar('bb-2', 'BB2', 2));
+  doc.addElement(new BusBar('bb-2', 'BB2', 4));
 
-  // Bays via the high-level command: auto-wire to the bars + auto-spawn feeders.
+  // Centrals first (row 2), then the top feeders (row 1), then the bottom ones
+  // (row 3): each AddPositionCommand auto-wires the bay and spawns its feeder.
   const stack = new CommandStack();
-  stack.execute(new AddPositionCommand(new Position('w-l1', 'L1', 'line', 1, 0)), doc);
-  stack.execute(new AddPositionCommand(new Position('w-t1', 'T1', 'transformer', 1, 1)), doc);
-  stack.execute(new AddPositionCommand(new Position('w-l2', 'L2', 'line', 1, 2)), doc);
+  stack.execute(new AddPositionCommand(new Position('w-c0', 'C1', 'central', 2, 0)), doc);
+  stack.execute(new AddPositionCommand(new Position('w-c1', 'C2', 'central', 2, 1)), doc);
+  stack.execute(new AddPositionCommand(new Position('w-c2', 'C3', 'central', 2, 2)), doc);
+  stack.execute(new AddPositionCommand(new Position('w-l1', 'L1', 'line', 1, 0)), doc);      // top-left     → SOUTH 1
+  stack.execute(new AddPositionCommand(new Position('w-sto1', 'S1', 'storage', 1, 1)), doc); // top-mid      → storage
+  stack.execute(new AddPositionCommand(new Position('w-dem1', 'D1', 'demand', 3, 1)), doc);  // bottom-mid   → consumer
+  stack.execute(new AddPositionCommand(new Position('w-l3', 'L3', 'line', 3, 2)), doc);      // bottom-right → SOUTH 2
 
-  // Turn the two line feeders into the shared tie-lines back to South 400 kV.
-  relinkFeeder(doc, stack, 'w-l1', SOUTH_WEST_1, 'SOUTH 1');
-  relinkFeeder(doc, stack, 'w-l2', SOUTH_WEST_2, 'SOUTH 2');
+  // Tie-lines back to South 400 kV get the shared ids + labels; the local
+  // storage/demand feeders just get human labels (their wiring is already done).
+  setFeeder(doc, stack, 'w-l1', { id: SOUTH_WEST_1, label: 'SOUTH 1' });
+  setFeeder(doc, stack, 'w-l3', { id: SOUTH_WEST_2, label: 'SOUTH 2' });
+  setFeeder(doc, stack, 'w-sto1', { label: 'STORAGE W1' });
+  setFeeder(doc, stack, 'w-dem1', { label: 'CONSUMER W1' });
 
   return doc;
 }
 
-/** Composite of the two South voltage levels, both rotated 90°. */
+/** Composite of the two South voltage levels, both rotated an angle. */
 export function buildSouthComposite(): CompositeDocument {
   const doc = new CompositeDocument({ id: SOUTH_COMPOSITE_ID, name: 'South — overview' });
-  doc.addChild(new DiagramInstance(newId(), SOUTH_400_ID, 0, 0, 90));
-  doc.addChild(new DiagramInstance(newId(), SOUTH_220_ID, 400, 60, 90));
+  doc.addChild(new DiagramInstance(newId(), SOUTH_400_ID, 250, 230, 222));
+  doc.addChild(new DiagramInstance(newId(), SOUTH_220_ID, 400, -300, 40));
   return doc;
 }
 
 /** Composite tying South 400 kV to West 400 kV — auto-linked by the two feeders. */
 export function buildSouthWestComposite(): CompositeDocument {
   const doc = new CompositeDocument({ id: 'south-west-composite', name: 'South ⇄ West 400 kV' });
-  doc.addChild(new DiagramInstance(newId(), SOUTH_400_ID, 0, 0, 0));
-  doc.addChild(new DiagramInstance(newId(), WEST_400_ID, 520, 0, 0));
+  doc.addChild(new DiagramInstance(newId(), SOUTH_400_ID, -300, 60, 0));
+  doc.addChild(new DiagramInstance(newId(), WEST_400_ID, 600, -130, 0));
   return doc;
 }
 
