@@ -15,7 +15,9 @@ export const POSITION_LABEL_PREFIX: Record<string, string> = {
   transformer: 'trf',
   central: 'central',
   renewable: 'ren',
-  reserve: 'res'
+  reserve: 'res',
+  storage: 'sto',
+  demand: 'dem'
 };
 
 export const EXTERNAL_LABEL_PREFIX: Record<ExternalAssetKind, string> = {

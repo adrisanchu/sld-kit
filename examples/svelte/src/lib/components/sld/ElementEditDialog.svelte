@@ -27,7 +27,15 @@
 
   const dispatch = createEventDispatcher<{ save: { json: ElementJson } }>();
 
-  const positionTypes: PositionType[] = ['line', 'transformer', 'central', 'renewable', 'reserve'];
+  const positionTypes: PositionType[] = [
+    'line',
+    'transformer',
+    'central',
+    'renewable',
+    'reserve',
+    'storage',
+    'demand'
+  ];
   const externalAssets: { value: ExternalAssetKind; label: string }[] = [
     { value: 'line', label: 'Line' },
     { value: 'transformer', label: 'Transformer' },
