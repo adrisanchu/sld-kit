@@ -5,6 +5,7 @@ import { BusBar } from './elements/BusBar';
 import { Position } from './elements/Position';
 import { Connection } from './elements/Connection';
 import { elementFromJson } from './elements/factory';
+import { parseDocument, SLD_SCHEMA_VERSION, type SldParseError } from './serialization/validate';
 
 /**
  * Root aggregate of a diagram: meta + grid dimensions + element map.
@@ -64,6 +65,23 @@ export class SldDocument {
 
   isEmpty(): boolean {
     return this.elements.size === 0 && this.grid.rows === 0 && this.grid.cols === 0;
+  }
+
+  /**
+   * Structural + referential integrity of the live document, as the list of
+   * every problem (empty = valid). Runs the same rules as the serializer, but
+   * against the in-memory model so callers get feedback without a JSON
+   * round-trip. Mutations are intentionally not validated on the fly (an editor
+   * passes through transiently-invalid states while dragging); call this when
+   * you want to check, e.g. before an export or a save.
+   */
+  validate(): SldParseError[] {
+    return parseDocument({
+      version: SLD_SCHEMA_VERSION,
+      meta: this.meta,
+      grid: this.grid,
+      elements: this.all().map((e) => e.toJSON())
+    }).errors;
   }
 
   // ── Mutations (called by commands) ─────────────────────────────────────────
