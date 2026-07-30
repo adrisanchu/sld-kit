@@ -71,6 +71,39 @@ new Connection(newId(), '', element('pos-1'), element('bb-1'));
 new Connection(newId(), '', element('pos-1'), external({ asset: 'line', label: 'FEEDER A', direction: 'up' }));
 ```
 
+## Batch authoring (place first, wire in one call)
+
+Wiring a whole diagram by hand — or one `AddPositionCommand` at a time — is
+verbose. When you already know the layout (e.g. reading a diagram top-to-bottom,
+or generating one), place the bars and bays first and let the rest follow:
+
+```ts
+import { SldDocument, BusBar, Position, autoWire } from '@sld-kit/core';
+
+// Grid omitted → starts 0×0 and grows to fit.
+const doc = new SldDocument({ name: 'My substation' });
+doc.addElement(new BusBar('bb-1', 'BB1', 0));
+doc.addElement(new BusBar('bb-2', 'BB2', 2));
+doc.addElement(new Position('p1', 'L1', 'line', 1, 0));
+doc.addElement(new Position('p2', 'L2', 'transformer', 1, 1));
+
+autoWire(doc); // series-wires every bay to its column, spawns each feeder…
+// autoWire calls doc.fitGrid() first, so the document is valid by construction.
+```
+
+`autoWire(doc, { externals })` is the batch form of `AddPositionCommand`: it adds
+every series connection (bar↔bay, bay↔bay) each column needs and, unless
+`externals: false`, the outgoing feeder for each external-typed bay
+(`line`/`transformer`/`renewable`/`storage`/`demand`). It never double-wires a
+link, so it can top up a partially-wired document. It mutates directly (a
+construction step, not an undoable edit); reach for `AddPositionCommand` when you
+need one interactive, undoable insertion instead.
+
+`doc.fitGrid({ pad })` sizes `rows`/`cols` to exactly contain the current
+elements (plus optional `pad` empty lanes), so you never have to count
+dimensions up front. It only grows or tightens to fit — it never moves an
+element.
+
 ## Theming
 
 The core is headless: all export colors come from an injected `SldTheme`, and
@@ -199,7 +232,8 @@ when you want to check — e.g. before an export or a save.
 Everything is exported from the package root: document + elements
 (`SldDocument`, `BusBar`, `Position`, `Connection`, the `element` / `external`
 endpoint helpers), `Grid`, `LayoutEngine`,
-the `CommandStack` and command classes, `Serializer` / `SldParseError`,
+the `CommandStack` and command classes, the batch-authoring helper `autoWire`,
+`Serializer` / `SldParseError`,
 `SvgExporter` / `SvgBuilder`, the `SymbolRegistry` and default symbols, the
 theme (`SldTheme`, `DEFAULT_THEME`, `resolveTheme`, `positionColors`),
 `getElementData`, and the composite classes (`CompositeDocument`,

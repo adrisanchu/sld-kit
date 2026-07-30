@@ -175,6 +175,30 @@ export class SldDocument {
     this.emit({ type: 'grid' });
   }
 
+  /**
+   * Size the grid to exactly contain the current elements, plus optional
+   * `pad` empty lanes on each axis. Lets an author place bars and bays first
+   * and let the dimensions follow, instead of committing to `rows`/`cols` up
+   * front. `rows` fits the lowest element (`max(row) + 1`, over positions and
+   * bars); `cols` fits the widest position (`max(col + colSpan)`). Only ever
+   * grows or tightens to fit — it never moves an element. An empty document
+   * stays 0×0.
+   */
+  fitGrid(opts: { pad?: number } = {}): void {
+    const pad = opts.pad ?? 0;
+    let rows = 0;
+    let cols = 0;
+    for (const el of this.elements.values()) {
+      if (el instanceof Position) {
+        rows = Math.max(rows, el.row + 1);
+        cols = Math.max(cols, el.col + el.colSpan);
+      } else if (el instanceof BusBar) {
+        rows = Math.max(rows, el.row + 1);
+      }
+    }
+    this.setGrid(rows > 0 ? rows + pad : 0, cols > 0 ? cols + pad : 0);
+  }
+
   /** Insert an empty row at `at`, shifting every element at row >= at down. */
   insertRow(at: number): void {
     for (const el of this.elements.values()) {
