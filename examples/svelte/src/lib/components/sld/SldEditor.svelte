@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import {
     LayoutEngine,
     Grid,
@@ -449,7 +449,7 @@
     else matrixConfirmOpen = true;
   }
 
-  function applyMatrix() {
+  async function applyMatrix() {
     if (!pendingMatrix) return;
     const before = Serializer.toJSON(doc);
     const after = { ...before, grid: { ...pendingMatrix }, elements: [] };
@@ -457,6 +457,10 @@
     selectedIds = new Set();
     pendingMatrix = null;
     matrixConfirmOpen = false;
+    // Re-fit the viewport to the freshly reserved grid space. Wait a tick so
+    // the new layout has propagated to the canvas before measuring.
+    await tick();
+    canvas?.zoomToFit();
   }
 
   // ── Export ─────────────────────────────────────────────────────────────────
