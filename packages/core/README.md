@@ -71,6 +71,25 @@ new Connection(newId(), '', element('pos-1'), element('bb-1'));
 new Connection(newId(), '', element('pos-1'), external({ asset: 'line', label: 'FEEDER A', direction: 'up' }));
 ```
 
+## Readable element factories
+
+The positional constructors are terse but easy to misorder, and force you to
+mint an id even when you don't care. Every element also has an options-object
+factory, `.of(...)`, that reads clearly and defaults `id` (to `newId()`) and
+`label` (to `''`):
+
+```ts
+import { BusBar, Position, Connection, element, external } from '@sld-kit/core';
+
+BusBar.of({ label: 'BB1', row: 0 });
+Position.of({ type: 'line', label: 'L1', row: 1, col: 0 }); // id minted for you
+Connection.of({ from: element('pos-1'), to: external({ asset: 'line', label: 'FEEDER A' }) });
+```
+
+The factories are pure sugar — same objects, same behavior as the positional
+constructors (which stay for back-compat and hot paths). Pass `id` when you need
+a specific one (e.g. a shared id across documents for the composite editor).
+
 ## Batch authoring (place first, wire in one call)
 
 Wiring a whole diagram by hand — or one `AddPositionCommand` at a time — is
@@ -265,8 +284,9 @@ when you want to check — e.g. before an export or a save.
 ## API surface
 
 Everything is exported from the package root: document + elements
-(`SldDocument`, `BusBar`, `Position`, `Connection`, the `element` / `external`
-endpoint helpers), `Grid`, `LayoutEngine`,
+(`SldDocument`, `BusBar`, `Position`, `Connection` — each with an `.of({...})`
+options factory — and the `element` / `external` endpoint helpers), `Grid`,
+`LayoutEngine`,
 the `CommandStack` and command classes, the batch-authoring helpers `autoWire`
 and `buildDocument`, `Serializer` / `SldParseError`,
 `SvgExporter` / `SvgBuilder`, the `SymbolRegistry` and default symbols, the
