@@ -23,18 +23,16 @@ function twoColumn() {
       {
         col: 0,
         positions: [
-          { type: 'line', row: 1 },
+          { type: 'line', row: 1, feeder: { asset: 'line', label: 'FEEDER A' } },
           { type: 'central', row: 2 }
-        ],
-        feeder: { asset: 'line', label: 'FEEDER A' }
+        ]
       },
       {
         col: 1,
         positions: [
-          { type: 'renewable', row: 1 },
+          { type: 'renewable', row: 1, feeder: { asset: 'renewable', label: 'SOLAR' } },
           { type: 'central', row: 2 }
-        ],
-        feeder: { asset: 'renewable', label: 'SOLAR' }
+        ]
       }
     ]
   });
@@ -83,7 +81,7 @@ describe('buildDocument', () => {
     expect(doc.positions().map((p) => p.label)).toEqual(['line-5', 'line-6']);
   });
 
-  it('attaches the feeder to the position whose type matches the asset', () => {
+  it('attaches each feeder to the position it hangs off', () => {
     const doc = twoColumn();
     const line = doc.positions().find((p) => p.type === 'line')!;
     const ren = doc.positions().find((p) => p.type === 'renewable')!;
@@ -94,13 +92,44 @@ describe('buildDocument', () => {
     expect(otherEnd(solar.conn)).toMatchObject({ kind: 'element', id: ren.id });
   });
 
+  it('supports several feeders in one column (top and bottom)', () => {
+    const doc = buildDocument({
+      busbars: [
+        { label: 'BB1', row: 0 },
+        { label: 'BB2', row: 4 }
+      ],
+      bays: [
+        {
+          col: 0,
+          positions: [
+            { type: 'line', row: 1, feeder: { asset: 'line', label: 'TOP' } }, // toward BB1
+            { type: 'central', row: 2 },
+            { type: 'line', row: 3, feeder: { asset: 'line', label: 'BOTTOM' } } // toward BB2
+          ]
+        }
+      ]
+    });
+    expect(doc.validate()).toEqual([]);
+    const feeders = doc.connections().filter((c) => isExternal(c.from) || isExternal(c.to));
+    expect(feeders).toHaveLength(2);
+
+    const topPos = doc.positions().find((p) => p.row === 1)!;
+    const botPos = doc.positions().find((p) => p.row === 3)!;
+    const otherEnd = (label: string) => {
+      const { conn } = feederFor(doc, label)!;
+      return isExternal(conn.from) ? conn.to : conn.from;
+    };
+    expect(otherEnd('TOP')).toMatchObject({ kind: 'element', id: topPos.id });
+    expect(otherEnd('BOTTOM')).toMatchObject({ kind: 'element', id: botPos.id });
+  });
+
   it('omits feeder direction so the layout derives it, unless given', () => {
     const derived = feederFor(twoColumn(), 'FEEDER A')!;
     expect(derived.ext.direction).toBeUndefined();
 
     const doc = buildDocument({
       busbars: [{ label: 'BB1', row: 0 }],
-      bays: [{ col: 0, positions: [{ type: 'line', row: 1 }], feeder: { asset: 'line', label: 'F', direction: 'down' } }]
+      bays: [{ col: 0, positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'F', direction: 'down' } }] }]
     });
     expect(feederFor(doc, 'F')!.ext.direction).toBe('down');
   });

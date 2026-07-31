@@ -122,10 +122,10 @@ const doc = buildDocument({
     {
       col: 0,
       positions: [
-        { type: 'line', row: 1 }, // auto-named line-1
-        { type: 'central', row: 2 } // auto-named central-1
-      ],
-      feeder: { asset: 'line', label: 'FEEDER A' } // outgoing line
+        { type: 'line', row: 1, feeder: { asset: 'line', label: 'FEEDER A' } }, // toward BB1
+        { type: 'central', row: 2 }, // auto-named central-1
+        { type: 'line', row: 3, feeder: { asset: 'line', label: 'FEEDER B' } } // toward BB2
+      ]
     }
   ]
 });
@@ -133,10 +133,11 @@ const doc = buildDocument({
 
 Positions are auto-named per type (`line-1`, `line-2`, `ren-1`, …) unless you
 pass a `label`; supply `prefixes` to rename the counters. Feeders are
-**explicit** here (a bay's `feeder`, not implied by position type), so the spec
-states exactly what leaves the diagram — each attaches to the bay position whose
-type matches its `asset`. Anything the spec can't express (multi-feeder bays,
-custom taps) stays reachable through the explicit element/command API.
+**explicit** — each hangs off the specific position it leaves from
+(`position.feeder`), not implied by position type — so the spec states exactly
+what leaves the diagram, and a column can carry several feeders (e.g. one off the
+top position toward the top bar and one off the bottom). Anything the spec can't
+express stays reachable through the explicit element/command API.
 
 ## Theming
 
