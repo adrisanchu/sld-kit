@@ -1,10 +1,9 @@
-import type { DocumentMeta, ExternalAssetKind, ExternalDirection, PositionType } from './types';
+import type { DocumentMeta, ElementId, ExternalAssetKind, ExternalDirection, PositionType } from './types';
 import { SldDocument } from './SldDocument';
 import { BusBar } from './elements/BusBar';
 import { Position } from './elements/Position';
 import { Connection } from './elements/Connection';
 import { element, external } from './elements/endpoints';
-import { newId } from './ids';
 import { nextPositionLabel, POSITION_LABEL_PREFIX } from './naming';
 import { autoWire } from './wiring';
 import { SldParseError } from './serialization/validate';
@@ -15,6 +14,12 @@ export interface FeederSpec {
   label: string;
   /** Arrow direction; omit to let the layout derive it (up toward the nearer bar). */
   direction?: ExternalDirection;
+  /**
+   * Explicit connection id; defaults to a fresh `newId()`. Set it to give a
+   * feeder a stable, shareable id — e.g. a tie-line that a composite auto-links
+   * by matching the same id across two diagrams.
+   */
+  id?: ElementId;
 }
 
 /** One bay position: its functional type + row. `label` is optional (auto-named). */
@@ -67,7 +72,7 @@ export function buildDocument(spec: BuildDocumentSpec): SldDocument {
   const prefixes = spec.prefixes ?? POSITION_LABEL_PREFIX;
 
   for (const bb of spec.busbars) {
-    doc.addElement(new BusBar(newId(), bb.label, bb.row));
+    doc.addElement(BusBar.of({ label: bb.label, row: bb.row }));
   }
 
   // Place every bay's positions, auto-naming the unlabeled ones as we go so the
@@ -76,8 +81,13 @@ export function buildDocument(spec: BuildDocumentSpec): SldDocument {
   const feeders: Array<{ pos: Position; feeder: FeederSpec }> = [];
   for (const bay of spec.bays) {
     for (const p of bay.positions) {
-      const label = p.label ?? nextPositionLabel(doc, p.type, prefixes);
-      const pos = new Position(newId(), label, p.type, p.row, bay.col, p.colSpan ?? 1);
+      const pos = Position.of({
+        label: p.label ?? nextPositionLabel(doc, p.type, prefixes),
+        type: p.type,
+        row: p.row,
+        col: bay.col,
+        colSpan: p.colSpan
+      });
       doc.addElement(pos);
       if (p.feeder) feeders.push({ pos, feeder: p.feeder });
     }
@@ -89,12 +99,11 @@ export function buildDocument(spec: BuildDocumentSpec): SldDocument {
 
   for (const { pos, feeder } of feeders) {
     doc.addElement(
-      new Connection(
-        newId(),
-        '',
-        element(pos.id),
-        external({ asset: feeder.asset, label: feeder.label, direction: feeder.direction })
-      )
+      Connection.of({
+        id: feeder.id,
+        from: element(pos.id),
+        to: external({ asset: feeder.asset, label: feeder.label, direction: feeder.direction })
+      })
     );
   }
 

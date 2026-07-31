@@ -11,9 +11,9 @@ export { DEFAULT_THEME, positionColors, resolveTheme, type SldTheme, type Positi
 export { getElementData } from './data';
 
 export { SldElement } from './elements/Element';
-export { BusBar } from './elements/BusBar';
-export { Position } from './elements/Position';
-export { Connection } from './elements/Connection';
+export { BusBar, type BusBarOptions } from './elements/BusBar';
+export { Position, type PositionOptions } from './elements/Position';
+export { Connection, type ConnectionOptions } from './elements/Connection';
 export { element, external } from './elements/endpoints';
 export { elementFromJson } from './elements/factory';
 

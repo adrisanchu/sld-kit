@@ -4,7 +4,6 @@ import { Grid } from './Grid';
 import { Position } from './elements/Position';
 import { Connection } from './elements/Connection';
 import { nextExternalLabel } from './naming';
-import { newId } from './ids';
 
 /**
  * A wiring plan for a position: the connections to create so it joins its
@@ -173,11 +172,11 @@ export function autoWire(doc: SldDocument, opts: AutoWireOptions = {}): void {
         if (seen.has(key)) continue;
         seen.add(key);
       }
-      doc.addElement(new Connection(newId(), '', pair.from, pair.to));
+      doc.addElement(Connection.of({ from: pair.from, to: pair.to }));
     }
     if (externals) {
       const ext = planPositionExternal(doc, position);
-      if (ext) doc.addElement(new Connection(newId(), '', ext.from, ext.to));
+      if (ext) doc.addElement(Connection.of({ from: ext.from, to: ext.to }));
     }
   }
 }

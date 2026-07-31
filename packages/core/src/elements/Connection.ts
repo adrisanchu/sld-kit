@@ -1,8 +1,20 @@
 import { SldElement, cloneData } from './Element';
+import { newId } from '../ids';
 import type { ConnectionJson, ElementId, Endpoint } from '../types';
 
 function cloneEndpoint(e: Endpoint): Endpoint {
   return { ...e };
+}
+
+/** Options for {@link Connection.of} — the readable, id-optional way to author a connection. */
+export interface ConnectionOptions {
+  from: Endpoint;
+  to: Endpoint;
+  /** Human label; defaults to `''` (most connections are unlabeled). */
+  label?: string;
+  data?: unknown;
+  /** Explicit id; defaults to a fresh `newId()`. */
+  id?: ElementId;
 }
 
 /**
@@ -23,6 +35,15 @@ export class Connection extends SldElement {
     data?: unknown
   ) {
     super(id, label, data);
+  }
+
+  /**
+   * Options-object factory — sugar over the positional constructor that mints
+   * an id for you (`id` defaults to `newId()`, `label` to `''`). Pairs with the
+   * `element` / `external` endpoint helpers.
+   */
+  static of(opts: ConnectionOptions): Connection {
+    return new Connection(opts.id ?? newId(), opts.label ?? '', opts.from, opts.to, opts.data);
   }
 
   /** Ids of the elements this connection references (0–2 entries). */

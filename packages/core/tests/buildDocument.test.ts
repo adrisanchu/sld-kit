@@ -134,6 +134,20 @@ describe('buildDocument', () => {
     expect(feederFor(doc, 'F')!.ext.direction).toBe('down');
   });
 
+  it('gives a feeder an explicit id when provided (for shared tie-lines)', () => {
+    const doc = buildDocument({
+      busbars: [{ label: 'BB1', row: 0 }],
+      bays: [
+        {
+          col: 0,
+          positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'TIE', id: 'shared-tie' } }]
+        }
+      ]
+    });
+    expect(doc.getElement('shared-tie')).toBeDefined();
+    expect(feederFor(doc, 'TIE')!.conn.id).toBe('shared-tie');
+  });
+
   it('throws SldParseError when the spec yields an invalid document', () => {
     expect(() =>
       buildDocument({
