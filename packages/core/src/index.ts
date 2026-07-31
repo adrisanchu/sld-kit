@@ -20,6 +20,13 @@ export { elementFromJson } from './elements/factory';
 export { SldDocument } from './SldDocument';
 export { Grid, type MovePlan } from './Grid';
 export { planPositionWiring, autoWire, type WiringPlan, type AutoWireOptions } from './wiring';
+export {
+  buildDocument,
+  type BuildDocumentSpec,
+  type BaySpec,
+  type BayPositionSpec,
+  type FeederSpec
+} from './buildDocument';
 export { nextPositionLabel, nextExternalLabel, POSITION_LABEL_PREFIX, EXTERNAL_LABEL_PREFIX } from './naming';
 
 export { type Point, type Rect, rectCenter, rectContains, arrowheadPath } from './layout/geometry';
