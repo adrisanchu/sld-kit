@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SldDocument, BusBar, Position, autoWire } from '../src';
-import { buildWest400 } from './fixtures';
+import { SldDocument, BusBar, Position, CommandStack, AddPositionCommand, autoWire } from '../src';
 
 /**
  * Normalize a document's connections to an order-, id- and label-independent
@@ -30,6 +29,24 @@ function stackDoc(): SldDocument {
   doc.addElement(new Position('c', 'C', 'line', 3, 0));
   return doc;
 }
+
+/**
+ * A breaker-and-a-half layout (two bars, three columns of stacked bays) used to
+ * cross-check batch wiring. Placements only — no connections.
+ */
+const WEST_LIKE_BARS = [
+  { id: 'bb-1', label: 'BB1', row: 0 },
+  { id: 'bb-2', label: 'BB2', row: 4 }
+];
+const WEST_LIKE_POSITIONS: Array<{ id: string; label: string; type: string; row: number; col: number }> = [
+  { id: 'c0', label: 'C1', type: 'central', row: 2, col: 0 },
+  { id: 'c1', label: 'C2', type: 'central', row: 2, col: 1 },
+  { id: 'c2', label: 'C3', type: 'central', row: 2, col: 2 },
+  { id: 'l1', label: 'L1', type: 'line', row: 1, col: 0 },
+  { id: 'sto1', label: 'S1', type: 'storage', row: 1, col: 1 },
+  { id: 'dem1', label: 'D1', type: 'demand', row: 3, col: 1 },
+  { id: 'l3', label: 'L3', type: 'line', row: 3, col: 2 }
+];
 
 describe('SldDocument.fitGrid', () => {
   it('sizes rows/cols to contain the current elements', () => {
@@ -71,19 +88,24 @@ describe('SldDocument.fitGrid', () => {
 });
 
 describe('autoWire', () => {
-  it('reproduces the command-authored West 400 fixture topology', () => {
-    const expected = buildWest400();
-
-    // Rebuild the same bars + bays with no connections, then batch-wire.
-    const doc = new SldDocument({ id: 'w', name: 'x' }); // grid omitted → 0×0
-    for (const b of expected.busBars()) doc.addElement(new BusBar(b.id, b.label, b.row));
-    for (const p of expected.positions()) {
-      doc.addElement(new Position(p.id, p.label, p.type, p.row, p.col, p.colSpan));
+  it('reproduces the topology of an AddPositionCommand sequence', () => {
+    // Reference: author the same layout one bay at a time via AddPositionCommand
+    // (an independent wiring path — centrals first, so outer bays split cleanly).
+    const expected = new SldDocument({ id: 'w', name: 'x' }, { rows: 5, cols: 3 });
+    for (const b of WEST_LIKE_BARS) expected.addElement(new BusBar(b.id, b.label, b.row));
+    const stack = new CommandStack();
+    for (const p of WEST_LIKE_POSITIONS) {
+      stack.execute(new AddPositionCommand(new Position(p.id, p.label, p.type, p.row, p.col)), expected);
     }
+
+    // Under test: place the same bars + bays with no connections, then batch-wire.
+    const doc = new SldDocument({ id: 'w', name: 'x' }); // grid omitted → 0×0
+    for (const b of WEST_LIKE_BARS) doc.addElement(new BusBar(b.id, b.label, b.row));
+    for (const p of WEST_LIKE_POSITIONS) doc.addElement(new Position(p.id, p.label, p.type, p.row, p.col));
     autoWire(doc);
 
     expect(connTopology(doc)).toEqual(connTopology(expected));
-    // fitGrid ran, so the place-first document matches the fixture's grid.
+    // fitGrid ran, so the place-first document matches the reference's grid.
     expect(doc.grid).toEqual(expected.grid);
   });
 

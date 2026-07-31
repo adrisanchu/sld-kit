@@ -1,4 +1,4 @@
-import type { DocumentMeta, ExternalAssetKind, ExternalDirection, PositionType } from './types';
+import type { DocumentMeta, ElementId, ExternalAssetKind, ExternalDirection, PositionType } from './types';
 import { SldDocument } from './SldDocument';
 import { BusBar } from './elements/BusBar';
 import { Position } from './elements/Position';
@@ -14,6 +14,12 @@ export interface FeederSpec {
   label: string;
   /** Arrow direction; omit to let the layout derive it (up toward the nearer bar). */
   direction?: ExternalDirection;
+  /**
+   * Explicit connection id; defaults to a fresh `newId()`. Set it to give a
+   * feeder a stable, shareable id — e.g. a tie-line that a composite auto-links
+   * by matching the same id across two diagrams.
+   */
+  id?: ElementId;
 }
 
 /** One bay position: its functional type + row. `label` is optional (auto-named). */
@@ -94,6 +100,7 @@ export function buildDocument(spec: BuildDocumentSpec): SldDocument {
   for (const { pos, feeder } of feeders) {
     doc.addElement(
       Connection.of({
+        id: feeder.id,
         from: element(pos.id),
         to: external({ asset: feeder.asset, label: feeder.label, direction: feeder.direction })
       })

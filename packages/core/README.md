@@ -155,8 +155,10 @@ pass a `label`; supply `prefixes` to rename the counters. Feeders are
 **explicit** — each hangs off the specific position it leaves from
 (`position.feeder`), not implied by position type — so the spec states exactly
 what leaves the diagram, and a column can carry several feeders (e.g. one off the
-top position toward the top bar and one off the bottom). Anything the spec can't
-express stays reachable through the explicit element/command API.
+top position toward the top bar and one off the bottom). Give a feeder an `id`
+for a stable, shareable connection id — e.g. a tie-line a composite auto-links by
+matching the same id across two diagrams. Anything the spec can't express stays
+reachable through the explicit element/command API.
 
 ## Theming
 

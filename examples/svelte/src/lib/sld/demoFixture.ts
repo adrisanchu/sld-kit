@@ -7,9 +7,10 @@
  * Two authoring styles live side by side on purpose (see issue #21):
  *  - **Explicit** — `buildSouth400` / `buildSouth220` hand-place and hand-wire
  *    every element (full control, maximum verbosity).
- *  - **High-level** — `buildWest400` uses `CommandStack` + `AddPositionCommand`,
- *    which auto-wires each bay to its bars and spawns its outgoing feeder; only
- *    the cross-substation tie-lines are relinked by hand.
+ *  - **Declarative** — `buildWest400` uses `buildDocument`: describe the bars and
+ *    columns of bays, hang a feeder off each outer position, and the grid,
+ *    series-wiring, auto-naming and validation follow. The cross-substation
+ *    tie-lines get their shared ids straight from each feeder's `id`.
  *
  * South 400 kV and West 400 kV are tied together through two feeders that share
  * the ids `south-west-1` / `south-west-2`, so a composite auto-links them.
@@ -25,10 +26,7 @@ import {
   CompositeDocument,
   CompositeLine,
   DiagramInstance,
-  CommandStack,
-  AddPositionCommand,
-  RenameElementCommand,
-  UpdateElementCommand,
+  buildDocument,
   element,
   external,
   newId,
@@ -167,75 +165,50 @@ export function buildSouth220(): SldDocument {
 }
 
 /**
- * Configure a bay's auto-generated external feeder using only high-level
- * commands: optionally repoint it onto a shared connection id (so a composite
- * links it) and/or give it a human label. `AddPositionCommand` spawns each
- * feeder with a random id and an auto-name (`line-1`, `trf-1`…); the tie-lines
- * we care about get a specific, shared id via `RenameElementCommand` and a real
- * label via `UpdateElementCommand`.
- */
-function setFeeder(
-  doc: SldDocument,
-  stack: CommandStack,
-  positionId: string,
-  opts: { id?: string; label?: string }
-): void {
-  const feeder = doc.connectionsOf(positionId).find((c) => c.from.kind === 'external' || c.to.kind === 'external');
-  if (!feeder) throw new Error(`no external feeder on ${positionId}`);
-  if (opts.id && opts.id !== feeder.id) stack.execute(new RenameElementCommand(feeder.id, opts.id), doc);
-  const id = opts.id ?? feeder.id;
-  if (opts.label !== undefined) {
-    const before = (doc.getElement(id) as Connection).toJSON();
-    const after = {
-      ...before,
-      from: before.from.kind === 'external' ? { ...before.from, label: opts.label } : before.from,
-      to: before.to.kind === 'external' ? { ...before.to, label: opts.label } : before.to
-    };
-    stack.execute(new UpdateElementCommand(before, after), doc);
-  }
-}
-
-/**
- * West 400 kV (high-level authoring): a breaker-and-a-half layout mirroring
+ * West 400 kV (declarative authoring): a breaker-and-a-half layout mirroring
  * South 400 kV — feeder bays on the outer rows with a `central` position in
- * between, so each bay forms a BB1—top—central—bottom—BB2 chain. It also shows
- * off the `storage` (battery) and `demand` (consumer/load) position types: like
- * line/transformer/renewable, they auto-spawn their matching external glyph.
- * Every bay is added with `AddPositionCommand`, which auto-wires it and spawns
- * its feeder; adding each column's central FIRST lets the outer positions split
- * the chain correctly as they land. Only the two tie-lines back to South 400 kV
- * are relinked to the shared ids — SOUTH 1 leaves a top position (toward BB1),
- * SOUTH 2 the bottom-right one (toward BB2), matching WEST 1 / WEST 2 on South.
+ * between, so each column forms a BB1—top—central—bottom—BB2 chain. It also
+ * shows off the `storage` (battery) and `demand` (consumer/load) position types.
+ *
+ * Built with `buildDocument`: describe the bars and the columns of bays, hang a
+ * feeder off each outer position, and the grid, series-wiring and validation
+ * follow. The two tie-lines back to South 400 kV get the shared ids
+ * `south-west-1` / `south-west-2` via each feeder's `id`, so a composite
+ * auto-links them (SOUTH 1 leaves a top position toward BB1, SOUTH 2 the
+ * bottom-right one toward BB2, matching WEST 1 / WEST 2 on South).
  */
 export function buildWest400(): SldDocument {
-  const doc = new SldDocument(
-    { id: WEST_400_ID, name: 'West 400 kV', substation: 'West', voltageKv: 400 },
-    { rows: 5, cols: 3 }
-  );
-
-  // Bounding bars are structural — placed directly.
-  doc.addElement(BusBar.of({ id: 'bb-1', label: 'BB1', row: 0 }));
-  doc.addElement(BusBar.of({ id: 'bb-2', label: 'BB2', row: 4 }));
-
-  // Centrals first (row 2), then the top feeders (row 1), then the bottom ones
-  // (row 3): each AddPositionCommand auto-wires the bay and spawns its feeder.
-  const stack = new CommandStack();
-  stack.execute(new AddPositionCommand(Position.of({ id: 'w-c0', label: 'C1', type: 'central', row: 2, col: 0 })), doc);
-  stack.execute(new AddPositionCommand(Position.of({ id: 'w-c1', label: 'C2', type: 'central', row: 2, col: 1 })), doc);
-  stack.execute(new AddPositionCommand(Position.of({ id: 'w-c2', label: 'C3', type: 'central', row: 2, col: 2 })), doc);
-  stack.execute(new AddPositionCommand(Position.of({ id: 'w-l1', label: 'L1', type: 'line', row: 1, col: 0 })), doc); // top-left → SOUTH 1
-  stack.execute(new AddPositionCommand(Position.of({ id: 'w-sto1', label: 'S1', type: 'storage', row: 1, col: 1 })), doc); // top-mid → storage
-  stack.execute(new AddPositionCommand(Position.of({ id: 'w-dem1', label: 'D1', type: 'demand', row: 3, col: 1 })), doc); // bottom-mid → consumer
-  stack.execute(new AddPositionCommand(Position.of({ id: 'w-l3', label: 'L3', type: 'line', row: 3, col: 2 })), doc); // bottom-right → SOUTH 2
-
-  // Tie-lines back to South 400 kV get the shared ids + labels; the local
-  // storage/demand feeders just get human labels (their wiring is already done).
-  setFeeder(doc, stack, 'w-l1', { id: SOUTH_WEST_1, label: 'SOUTH 1' });
-  setFeeder(doc, stack, 'w-l3', { id: SOUTH_WEST_2, label: 'SOUTH 2' });
-  setFeeder(doc, stack, 'w-sto1', { label: 'STORAGE W1' });
-  setFeeder(doc, stack, 'w-dem1', { label: 'CONSUMER W1' });
-
-  return doc;
+  return buildDocument({
+    meta: { id: WEST_400_ID, name: 'West 400 kV', substation: 'West', voltageKv: 400 },
+    busbars: [
+      { label: 'BB1', row: 0 },
+      { label: 'BB2', row: 4 }
+    ],
+    bays: [
+      {
+        col: 0,
+        positions: [
+          { type: 'line', label: 'L1', row: 1, feeder: { asset: 'line', label: 'SOUTH 1', id: SOUTH_WEST_1 } },
+          { type: 'central', label: 'C1', row: 2 }
+        ]
+      },
+      {
+        col: 1,
+        positions: [
+          { type: 'storage', label: 'S1', row: 1, feeder: { asset: 'storage', label: 'STORAGE W1' } },
+          { type: 'central', label: 'C2', row: 2 },
+          { type: 'demand', label: 'D1', row: 3, feeder: { asset: 'demand', label: 'CONSUMER W1' } }
+        ]
+      },
+      {
+        col: 2,
+        positions: [
+          { type: 'central', label: 'C3', row: 2 },
+          { type: 'line', label: 'L3', row: 3, feeder: { asset: 'line', label: 'SOUTH 2', id: SOUTH_WEST_2 } }
+        ]
+      }
+    ]
+  });
 }
 
 /**
