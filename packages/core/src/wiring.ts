@@ -2,7 +2,9 @@ import type { ElementId, Endpoint, ExternalAssetKind, ExternalDirection, Positio
 import { SldDocument } from './SldDocument';
 import { Grid } from './Grid';
 import { Position } from './elements/Position';
+import { Connection } from './elements/Connection';
 import { nextExternalLabel } from './naming';
+import { newId } from './ids';
 
 /**
  * A wiring plan for a position: the connections to create so it joins its
@@ -106,4 +108,76 @@ export function planPositionExternal(doc: SldDocument, position: Position): { fr
       direction: externalDirectionFor(doc, position)
     }
   };
+}
+
+export interface AutoWireOptions {
+  /**
+   * Spawn the outgoing feeder arrow for each external-typed position
+   * (`line`/`transformer`/`renewable`/`storage`/`demand`). Default `true`.
+   */
+  externals?: boolean;
+}
+
+/** Unordered key for an element↔element link, so the same pair isn't wired twice. */
+function elementPairKey(a: ElementId, b: ElementId): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+/**
+ * Wire an already-placed document in one call: add every series connection
+ * (bar↔bay, bay↔bay) each bay needs to join its column, plus (by default) the
+ * outgoing feeder for every external-typed position. This is the batch form of
+ * what a series of `AddPositionCommand`s does — the same planners
+ * (`planPositionWiring` / `planPositionExternal`), just looped over
+ * `doc.positions()` — so a place-first author (or an LLM) can drop bars and
+ * bays and get a fully-wired diagram without hand-authoring connections or
+ * threading each one through a command.
+ *
+ * Expects bars + positions already placed and **no connections yet**; it never
+ * duplicates a link, so any element↔element connection already present is left
+ * intact. Mutates `doc` directly (construction-time, not an undoable edit).
+ * Calls `fitGrid()` first, because neighbour scanning is bounded by the grid —
+ * an unsized (0×0) grid would otherwise wire nothing.
+ */
+export function autoWire(doc: SldDocument, opts: AutoWireOptions = {}): void {
+  const externals = opts.externals ?? true;
+  // Neighbour scanning (findNeighbour / externalDirectionFor) is bounded by
+  // grid.rows, so the grid must contain every element before we wire.
+  doc.fitGrid();
+
+  // Seed the de-dupe set with element↔element links already present, so a
+  // partially-wired document is topped up rather than double-wired.
+  const seen = new Set<string>();
+  for (const conn of doc.connections()) {
+    const ids = conn.elementIds();
+    if (ids.length === 2) seen.add(elementPairKey(ids[0], ids[1]));
+  }
+
+  // Process one position at a time, adding its connections to the document as
+  // we go: later positions see earlier links (matching the incremental
+  // AddPositionCommand flow), and each spawned feeder is auto-named against the
+  // feeders already present so labels don't collide.
+  for (const position of doc.positions()) {
+    const plan = planPositionWiring(doc, position);
+    for (const id of plan.disconnect) {
+      const conn = doc.getElement(id);
+      if (conn instanceof Connection) {
+        const ids = conn.elementIds();
+        if (ids.length === 2) seen.delete(elementPairKey(ids[0], ids[1]));
+      }
+      doc.removeElement(id);
+    }
+    for (const pair of plan.connect) {
+      if (pair.from.kind === 'element' && pair.to.kind === 'element') {
+        const key = elementPairKey(pair.from.id, pair.to.id);
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      doc.addElement(new Connection(newId(), '', pair.from, pair.to));
+    }
+    if (externals) {
+      const ext = planPositionExternal(doc, position);
+      if (ext) doc.addElement(new Connection(newId(), '', ext.from, ext.to));
+    }
+  }
 }
