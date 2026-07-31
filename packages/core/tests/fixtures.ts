@@ -65,21 +65,21 @@ export function buildSouth400(): SldDocument {
     { rows: 5, cols: 4 }
   );
 
-  doc.addElement(new BusBar('bb-1', 'BB1', 0));
-  doc.addElement(new BusBar('bb-2', 'BB2', 4));
+  doc.addElement(BusBar.of({ id: 'bb-1', label: 'BB1', row: 0 }));
+  doc.addElement(BusBar.of({ id: 'bb-2', label: 'BB2', row: 4 }));
 
-  doc.addElement(new Position('pos-c0t', 'R1', 'renewable', 1, 0));
-  doc.addElement(new Position('pos-c1t', 'L1', 'line', 1, 1));
-  doc.addElement(new Position('pos-c2t', 'L2', 'line', 1, 2));
+  doc.addElement(Position.of({ id: 'pos-c0t', label: 'R1', type: 'renewable', row: 1, col: 0 }));
+  doc.addElement(Position.of({ id: 'pos-c1t', label: 'L1', type: 'line', row: 1, col: 1 }));
+  doc.addElement(Position.of({ id: 'pos-c2t', label: 'L2', type: 'line', row: 1, col: 2 }));
 
-  doc.addElement(new Position('pos-c0m', 'C1', 'central', 2, 0));
-  doc.addElement(new Position('pos-c1m', 'C2', 'central', 2, 1));
-  doc.addElement(new Position('pos-c2m', 'C3', 'central', 2, 2));
-  doc.addElement(new Position('pos-c3m', 'C4', 'central', 2, 3));
+  doc.addElement(Position.of({ id: 'pos-c0m', label: 'C1', type: 'central', row: 2, col: 0 }));
+  doc.addElement(Position.of({ id: 'pos-c1m', label: 'C2', type: 'central', row: 2, col: 1 }));
+  doc.addElement(Position.of({ id: 'pos-c2m', label: 'C3', type: 'central', row: 2, col: 2 }));
+  doc.addElement(Position.of({ id: 'pos-c3m', label: 'C4', type: 'central', row: 2, col: 3 }));
 
-  doc.addElement(new Position('pos-c1b', 'L3', 'line', 3, 1));
-  doc.addElement(new Position('pos-c2b', 'T1', 'transformer', 3, 2));
-  doc.addElement(new Position('pos-c3b', 'L4', 'line', 3, 3));
+  doc.addElement(Position.of({ id: 'pos-c1b', label: 'L3', type: 'line', row: 3, col: 1 }));
+  doc.addElement(Position.of({ id: 'pos-c2b', label: 'T1', type: 'transformer', row: 3, col: 2 }));
+  doc.addElement(Position.of({ id: 'pos-c3b', label: 'L4', type: 'line', row: 3, col: 3 }));
 
   const bays = [
     { top: 'pos-c0t', mid: 'pos-c0m', bottom: null },
@@ -89,28 +89,28 @@ export function buildSouth400(): SldDocument {
   ];
   for (const bay of bays) {
     if (bay.top) {
-      doc.addElement(new Connection(`cn-${bay.top}-bar`, '', el(bay.top), el('bb-1')));
-      doc.addElement(new Connection(`cn-${bay.mid}-top`, '', el(bay.mid), el(bay.top)));
+      doc.addElement(Connection.of({ id: `cn-${bay.top}-bar`, from: el(bay.top), to: el('bb-1') }));
+      doc.addElement(Connection.of({ id: `cn-${bay.mid}-top`, from: el(bay.mid), to: el(bay.top) }));
     } else {
-      doc.addElement(new Connection(`cn-${bay.mid}-up`, '', el(bay.mid), el('bb-1')));
+      doc.addElement(Connection.of({ id: `cn-${bay.mid}-up`, from: el(bay.mid), to: el('bb-1') }));
     }
     if (bay.bottom) {
-      doc.addElement(new Connection(`cn-${bay.bottom}-bar`, '', el(bay.bottom), el('bb-2')));
-      doc.addElement(new Connection(`cn-${bay.mid}-bot`, '', el(bay.mid), el(bay.bottom)));
+      doc.addElement(Connection.of({ id: `cn-${bay.bottom}-bar`, from: el(bay.bottom), to: el('bb-2') }));
+      doc.addElement(Connection.of({ id: `cn-${bay.mid}-bot`, from: el(bay.mid), to: el(bay.bottom) }));
     } else {
-      doc.addElement(new Connection(`cn-${bay.mid}-down`, '', el(bay.mid), el('bb-2')));
+      doc.addElement(Connection.of({ id: `cn-${bay.mid}-down`, from: el(bay.mid), to: el('bb-2') }));
     }
   }
 
-  doc.addElement(new Connection('cn-c0t-ext', '', el('pos-c0t'), ext('renewable', 'SOLAR PARK 1', 'up')));
+  doc.addElement(Connection.of({ id: 'cn-c0t-ext', from: el('pos-c0t'), to: ext('renewable', 'SOLAR PARK 1', 'up') }));
   // Tie-line to West 400 kV — shared id `south-west-1`.
-  doc.addElement(new Connection(SOUTH_WEST_1, '', el('pos-c1t', 'below'), ext('line', 'WEST 1', 'up', 'right')));
-  doc.addElement(new Connection('cn-c2t-ext', '', el('pos-c2t'), ext('line', 'FEEDER B', 'up')));
-  doc.addElement(new Connection('cn-c1b-ext', '', el('pos-c1b'), ext('line', 'FEEDER C', 'down')));
+  doc.addElement(Connection.of({ id: SOUTH_WEST_1, from: el('pos-c1t', 'below'), to: ext('line', 'WEST 1', 'up', 'right') }));
+  doc.addElement(Connection.of({ id: 'cn-c2t-ext', from: el('pos-c2t'), to: ext('line', 'FEEDER B', 'up') }));
+  doc.addElement(Connection.of({ id: 'cn-c1b-ext', from: el('pos-c1b'), to: ext('line', 'FEEDER C', 'down') }));
   // Shared id with the 220 kV level — the composite auto-links the two levels here.
-  doc.addElement(new Connection(SHARED_LINK_ID, '', el('pos-c2b'), ext('transformer', 'TIE 220 kV', 'down')));
+  doc.addElement(Connection.of({ id: SHARED_LINK_ID, from: el('pos-c2b'), to: ext('transformer', 'TIE 220 kV', 'down') }));
   // Tie-line to West 400 kV — shared id `south-west-2`.
-  doc.addElement(new Connection(SOUTH_WEST_2, '', el('pos-c3b', 'above'), ext('line', 'WEST 2', 'down')));
+  doc.addElement(Connection.of({ id: SOUTH_WEST_2, from: el('pos-c3b', 'above'), to: ext('line', 'WEST 2', 'down') }));
 
   return doc;
 }
@@ -122,45 +122,45 @@ export function buildSouth220(): SldDocument {
     { rows: 4, cols: 8 }
   );
 
-  doc.addElement(new BusBar('bb-1', 'BB1', 1));
-  doc.addElement(new BusBar('bb-2', 'BB2', 2));
+  doc.addElement(BusBar.of({ id: 'bb-1', label: 'BB1', row: 1 }));
+  doc.addElement(BusBar.of({ id: 'bb-2', label: 'BB2', row: 2 }));
 
-  doc.addElement(new Position('pos-b0', 'L1', 'line', 0, 0));
-  doc.addElement(new Connection('cn-b0-b1', '', el('pos-b0'), el('bb-1')));
-  doc.addElement(new Connection('cn-b0-b2', '', el('pos-b0'), el('bb-2')));
-  doc.addElement(new Connection('cn-b0-ext', '', el('pos-b0', 'above'), ext('line', 'FEEDER E', 'up')));
+  doc.addElement(Position.of({ id: 'pos-b0', label: 'L1', type: 'line', row: 0, col: 0 }));
+  doc.addElement(Connection.of({ id: 'cn-b0-b1', from: el('pos-b0'), to: el('bb-1') }));
+  doc.addElement(Connection.of({ id: 'cn-b0-b2', from: el('pos-b0'), to: el('bb-2') }));
+  doc.addElement(Connection.of({ id: 'cn-b0-ext', from: el('pos-b0', 'above'), to: ext('line', 'FEEDER E', 'up') }));
 
-  doc.addElement(new Position('pos-b1', 'L2', 'line', 0, 1));
-  doc.addElement(new Connection('cn-b1-b1', '', el('pos-b1'), el('bb-1')));
-  doc.addElement(new Connection('cn-b1-b2', '', el('pos-b1'), el('bb-2')));
-  doc.addElement(new Connection('cn-b1-ext', '', el('pos-b1', 'above'), ext('line', 'FEEDER F', 'up')));
+  doc.addElement(Position.of({ id: 'pos-b1', label: 'L2', type: 'line', row: 0, col: 1 }));
+  doc.addElement(Connection.of({ id: 'cn-b1-b1', from: el('pos-b1'), to: el('bb-1') }));
+  doc.addElement(Connection.of({ id: 'cn-b1-b2', from: el('pos-b1'), to: el('bb-2') }));
+  doc.addElement(Connection.of({ id: 'cn-b1-ext', from: el('pos-b1', 'above'), to: ext('line', 'FEEDER F', 'up') }));
 
   // Coupling bay: wired to both bars, no outgoing line.
-  doc.addElement(new Position('pos-b2', 'C1', 'central', 0, 2));
-  doc.addElement(new Connection('cn-b2-b1', '', el('pos-b2'), el('bb-1')));
-  doc.addElement(new Connection('cn-b2-b2', '', el('pos-b2'), el('bb-2')));
+  doc.addElement(Position.of({ id: 'pos-b2', label: 'C1', type: 'central', row: 0, col: 2 }));
+  doc.addElement(Connection.of({ id: 'cn-b2-b1', from: el('pos-b2'), to: el('bb-1') }));
+  doc.addElement(Connection.of({ id: 'cn-b2-b2', from: el('pos-b2'), to: el('bb-2') }));
 
-  doc.addElement(new Position('pos-b3', 'R1', 'renewable', 0, 4));
-  doc.addElement(new Connection('cn-b3-b1', '', el('pos-b3'), el('bb-1')));
-  doc.addElement(new Connection('cn-b3-b2', '', el('pos-b3'), el('bb-2')));
-  doc.addElement(new Connection('cn-b3-ext', '', el('pos-b3', 'above'), ext('renewable', 'SOLAR PARK 2', 'up')));
+  doc.addElement(Position.of({ id: 'pos-b3', label: 'R1', type: 'renewable', row: 0, col: 4 }));
+  doc.addElement(Connection.of({ id: 'cn-b3-b1', from: el('pos-b3'), to: el('bb-1') }));
+  doc.addElement(Connection.of({ id: 'cn-b3-b2', from: el('pos-b3'), to: el('bb-2') }));
+  doc.addElement(Connection.of({ id: 'cn-b3-ext', from: el('pos-b3', 'above'), to: ext('renewable', 'SOLAR PARK 2', 'up') }));
 
-  doc.addElement(new Position('pos-b4', 'L3', 'line', 0, 6));
-  doc.addElement(new Connection('cn-b4-b1', '', el('pos-b4'), el('bb-1')));
-  doc.addElement(new Connection('cn-b4-b2', '', el('pos-b4'), el('bb-2')));
-  doc.addElement(new Connection('cn-b4-ext', '', el('pos-b4', 'above'), ext('line', 'FEEDER G', 'up')));
+  doc.addElement(Position.of({ id: 'pos-b4', label: 'L3', type: 'line', row: 0, col: 6 }));
+  doc.addElement(Connection.of({ id: 'cn-b4-b1', from: el('pos-b4'), to: el('bb-1') }));
+  doc.addElement(Connection.of({ id: 'cn-b4-b2', from: el('pos-b4'), to: el('bb-2') }));
+  doc.addElement(Connection.of({ id: 'cn-b4-ext', from: el('pos-b4', 'above'), to: ext('line', 'FEEDER G', 'up') }));
 
-  doc.addElement(new Position('pos-b5', 'L4', 'line', 0, 7));
-  doc.addElement(new Connection('cn-b5-b1', '', el('pos-b5'), el('bb-1')));
-  doc.addElement(new Connection('cn-b5-b2', '', el('pos-b5'), el('bb-2')));
-  doc.addElement(new Connection('cn-b5-ext', '', el('pos-b5', 'above'), ext('line', 'FEEDER H', 'up')));
+  doc.addElement(Position.of({ id: 'pos-b5', label: 'L4', type: 'line', row: 0, col: 7 }));
+  doc.addElement(Connection.of({ id: 'cn-b5-b1', from: el('pos-b5'), to: el('bb-1') }));
+  doc.addElement(Connection.of({ id: 'cn-b5-b2', from: el('pos-b5'), to: el('bb-2') }));
+  doc.addElement(Connection.of({ id: 'cn-b5-ext', from: el('pos-b5', 'above'), to: ext('line', 'FEEDER H', 'up') }));
 
   // Transformer bay dropping to the 400 kV level.
-  doc.addElement(new Position('pos-tr', 'T1', 'transformer', 3, 3));
-  doc.addElement(new Connection('cn-tr-b1', '', el('pos-tr'), el('bb-1')));
-  doc.addElement(new Connection('cn-tr-b2', '', el('pos-tr'), el('bb-2')));
+  doc.addElement(Position.of({ id: 'pos-tr', label: 'T1', type: 'transformer', row: 3, col: 3 }));
+  doc.addElement(Connection.of({ id: 'cn-tr-b1', from: el('pos-tr'), to: el('bb-1') }));
+  doc.addElement(Connection.of({ id: 'cn-tr-b2', from: el('pos-tr'), to: el('bb-2') }));
   // Shared id with the 400 kV level's transformer external → composite link.
-  doc.addElement(new Connection(SHARED_LINK_ID, '', el('pos-tr', 'below'), ext('transformer', 'TIE 400 kV', 'down')));
+  doc.addElement(Connection.of({ id: SHARED_LINK_ID, from: el('pos-tr', 'below'), to: ext('transformer', 'TIE 400 kV', 'down') }));
 
   return doc;
 }
@@ -213,19 +213,19 @@ export function buildWest400(): SldDocument {
   );
 
   // Bounding bars are structural — placed directly.
-  doc.addElement(new BusBar('bb-1', 'BB1', 0));
-  doc.addElement(new BusBar('bb-2', 'BB2', 4));
+  doc.addElement(BusBar.of({ id: 'bb-1', label: 'BB1', row: 0 }));
+  doc.addElement(BusBar.of({ id: 'bb-2', label: 'BB2', row: 4 }));
 
   // Centrals first (row 2), then the top feeders (row 1), then the bottom ones
   // (row 3): each AddPositionCommand auto-wires the bay and spawns its feeder.
   const stack = new CommandStack();
-  stack.execute(new AddPositionCommand(new Position('w-c0', 'C1', 'central', 2, 0)), doc);
-  stack.execute(new AddPositionCommand(new Position('w-c1', 'C2', 'central', 2, 1)), doc);
-  stack.execute(new AddPositionCommand(new Position('w-c2', 'C3', 'central', 2, 2)), doc);
-  stack.execute(new AddPositionCommand(new Position('w-l1', 'L1', 'line', 1, 0)), doc);      // top-left     → SOUTH 1
-  stack.execute(new AddPositionCommand(new Position('w-sto1', 'S1', 'storage', 1, 1)), doc); // top-mid      → storage
-  stack.execute(new AddPositionCommand(new Position('w-dem1', 'D1', 'demand', 3, 1)), doc);  // bottom-mid   → consumer
-  stack.execute(new AddPositionCommand(new Position('w-l3', 'L3', 'line', 3, 2)), doc);      // bottom-right → SOUTH 2
+  stack.execute(new AddPositionCommand(Position.of({ id: 'w-c0', label: 'C1', type: 'central', row: 2, col: 0 })), doc);
+  stack.execute(new AddPositionCommand(Position.of({ id: 'w-c1', label: 'C2', type: 'central', row: 2, col: 1 })), doc);
+  stack.execute(new AddPositionCommand(Position.of({ id: 'w-c2', label: 'C3', type: 'central', row: 2, col: 2 })), doc);
+  stack.execute(new AddPositionCommand(Position.of({ id: 'w-l1', label: 'L1', type: 'line', row: 1, col: 0 })), doc); // top-left → SOUTH 1
+  stack.execute(new AddPositionCommand(Position.of({ id: 'w-sto1', label: 'S1', type: 'storage', row: 1, col: 1 })), doc); // top-mid → storage
+  stack.execute(new AddPositionCommand(Position.of({ id: 'w-dem1', label: 'D1', type: 'demand', row: 3, col: 1 })), doc); // bottom-mid → consumer
+  stack.execute(new AddPositionCommand(Position.of({ id: 'w-l3', label: 'L3', type: 'line', row: 3, col: 2 })), doc); // bottom-right → SOUTH 2
 
   // Tie-lines back to South 400 kV get the shared ids + labels; the local
   // storage/demand feeders just get human labels (their wiring is already done).
