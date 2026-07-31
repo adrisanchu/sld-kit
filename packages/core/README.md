@@ -104,6 +104,40 @@ elements (plus optional `pad` empty lanes), so you never have to count
 dimensions up front. It only grows or tightens to fit — it never moves an
 element.
 
+For the fully declarative form, `buildDocument(spec)` composes all of the above:
+describe the bars, the columns of bays, and each bay's outgoing feeder, and get
+back an auto-named, auto-sized, wired **and validated** document (it throws
+`SldParseError` if the spec is inconsistent):
+
+```ts
+import { buildDocument } from '@sld-kit/core';
+
+const doc = buildDocument({
+  meta: { name: 'My substation' },
+  busbars: [
+    { label: 'BB1', row: 0 },
+    { label: 'BB2', row: 4 }
+  ],
+  bays: [
+    {
+      col: 0,
+      positions: [
+        { type: 'line', row: 1 }, // auto-named line-1
+        { type: 'central', row: 2 } // auto-named central-1
+      ],
+      feeder: { asset: 'line', label: 'FEEDER A' } // outgoing line
+    }
+  ]
+});
+```
+
+Positions are auto-named per type (`line-1`, `line-2`, `ren-1`, …) unless you
+pass a `label`; supply `prefixes` to rename the counters. Feeders are
+**explicit** here (a bay's `feeder`, not implied by position type), so the spec
+states exactly what leaves the diagram — each attaches to the bay position whose
+type matches its `asset`. Anything the spec can't express (multi-feeder bays,
+custom taps) stays reachable through the explicit element/command API.
+
 ## Theming
 
 The core is headless: all export colors come from an injected `SldTheme`, and
@@ -232,8 +266,8 @@ when you want to check — e.g. before an export or a save.
 Everything is exported from the package root: document + elements
 (`SldDocument`, `BusBar`, `Position`, `Connection`, the `element` / `external`
 endpoint helpers), `Grid`, `LayoutEngine`,
-the `CommandStack` and command classes, the batch-authoring helper `autoWire`,
-`Serializer` / `SldParseError`,
+the `CommandStack` and command classes, the batch-authoring helpers `autoWire`
+and `buildDocument`, `Serializer` / `SldParseError`,
 `SvgExporter` / `SvgBuilder`, the `SymbolRegistry` and default symbols, the
 theme (`SldTheme`, `DEFAULT_THEME`, `resolveTheme`, `positionColors`),
 `getElementData`, and the composite classes (`CompositeDocument`,
