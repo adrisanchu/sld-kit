@@ -15,6 +15,7 @@
     UpdateLineCommand,
     DiagramInstance,
     CompositeLine,
+    makeCommissioningResolver,
     newId,
     type CompositeDocument,
     type Command,
@@ -35,7 +36,8 @@
     SLD_EXPORT_LABELS,
     SLD_CHILD_NOT_FOUND,
     COMPACT_LAYOUT,
-    voltageToken
+    voltageToken,
+    COMMISSIONING_FORMATS
   } from '$lib/components/sld/theme';
 
   /**
@@ -50,6 +52,10 @@
 
   const svgExporter = new CompositeSvgExporter();
   const stack = new CommandStack<CompositeDocument>();
+
+  // Commissioning overlay (issue #15): a no-op for untagged elements, so it
+  // stays always on; drives both the live children and the SVG export.
+  const commissioningResolver = makeCommissioningResolver(COMMISSIONING_FORMATS);
 
   $: docStore = createDocStore(doc);
   // Hiding position labels compacts each child (and re-packs the composite).
@@ -466,7 +472,10 @@
   }
 
   function exportSvg() {
-    downloadText(`${slugify(doc.meta.name)}.composite.svg`, svgExporter.export(doc), 'image/svg+xml');
+    const svg = svgExporter.export(doc, {
+      theme: { commissioning: { categories: COMMISSIONING_FORMATS } }
+    });
+    downloadText(`${slugify(doc.meta.name)}.composite.svg`, svg, 'image/svg+xml');
   }
 
   // ── Keyboard ───────────────────────────────────────────────────────────────
@@ -514,6 +523,7 @@
     tokens={POSITION_TYPE_TOKENS}
     {childColorClass}
     {lineColorClass}
+    formatResolver={commissioningResolver}
     {showPositionLabels}
     {showBusBarLabels}
     {showConnectionLabels}
