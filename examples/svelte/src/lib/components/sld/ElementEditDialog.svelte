@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import * as Dialog from '$lib/components/ui/dialog';
+  import * as Select from '$lib/components/ui/select';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
@@ -45,6 +46,24 @@
     { value: 'storage', label: 'Storage' },
     { value: 'demand', label: 'Demand' }
   ];
+  // `{ value, label }` option lists for the shadcn Select components.
+  const positionTypeOptions = positionTypes.map((t) => ({ value: t, label: POSITION_TYPE_LABELS[t] }));
+  const directionOptions: { value: 'auto' | ExternalDirection; label: string }[] = [
+    { value: 'auto', label: 'Automatic (derived ↑/↓)' },
+    { value: 'up', label: 'Up' },
+    { value: 'down', label: 'Down' },
+    { value: 'left', label: 'Left' },
+    { value: 'right', label: 'Right' }
+  ];
+  const tapOptions: { value: 'auto' | 'above' | 'below'; label: string }[] = [
+    { value: 'auto', label: 'Automatic' },
+    { value: 'above', label: 'Above' },
+    { value: 'below', label: 'Below' }
+  ];
+  const laneOptions: { value: 'left' | 'right'; label: string }[] = [
+    { value: 'right', label: 'Right' },
+    { value: 'left', label: 'Left' }
+  ];
 
   let label = '';
   let elId = '';
@@ -88,6 +107,14 @@
     }
   }
   $: if (!open) seededId = null;
+
+  // Current selection objects for each Select (bits-ui wants `{ value, label }`).
+  $: selectedPosType = positionTypeOptions.find((o) => o.value === posType);
+  $: selectedAsset = externalAssets.find((o) => o.value === extAsset);
+  $: selectedDirection = directionOptions.find((o) => o.value === extDirection);
+  $: selectedTap = tapOptions.find((o) => o.value === extTap);
+  $: selectedLaneSide = laneOptions.find((o) => o.value === extLaneSide);
+  $: selectedComm = COMMISSIONING_CATEGORY_OPTIONS.find((o) => o.value === commCategory);
 
   $: kind = element?.kind ?? null;
   $: title =
@@ -142,127 +169,141 @@
 
 <Dialog.Root bind:open>
   <Dialog.Overlay class="z-[60]" />
-  <Dialog.Content class="z-[60] max-w-sm">
+  <!-- Capped to the viewport (dvh handles mobile browser chrome); the header and
+       footer stay put while the fields scroll — one column, works down to phones. -->
+  <Dialog.Content class="z-[60] flex max-h-[85dvh] max-w-sm flex-col">
     <Dialog.Header>
       <Dialog.Title>{title}</Dialog.Title>
     </Dialog.Header>
 
-    <div class="space-y-1.5 pt-2">
-      <Label for="sld-id">Identifier</Label>
-      <Input id="sld-id" bind:value={elId} placeholder="e.g. cn-atp1-400-220" />
-      <p class="text-xs text-muted-foreground">
-        Unique within the diagram. Two diagrams sharing the same identifier become connected in the
-        composite model.
-      </p>
-    </div>
-
-    {#if kind === 'position'}
-      <div class="space-y-3 py-2">
-        <div class="space-y-1.5">
-          <Label for="sld-name">Name / code</Label>
-          <Input id="sld-name" bind:value={label} placeholder="e.g. L1" />
-        </div>
-        <div class="space-y-1.5">
-          <Label for="sld-type">Type</Label>
-          <select
-            id="sld-type"
-            bind:value={posType}
-            class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-          >
-            {#each positionTypes as t}
-              <option value={t}>{POSITION_TYPE_LABELS[t]}</option>
-            {/each}
-          </select>
-        </div>
-      </div>
-    {:else if kind === 'busbar'}
-      <div class="space-y-1.5 py-2">
-        <Label for="sld-name">Name</Label>
-        <Input id="sld-name" bind:value={label} placeholder="e.g. BB1" />
-      </div>
-    {:else if kind === 'connection' && externalSide}
-      <div class="space-y-3 py-2">
-        <div class="space-y-1.5">
-          <Label for="sld-name">Name</Label>
-          <Input id="sld-name" bind:value={extLabel} placeholder="e.g. FEEDER A" />
-        </div>
-        <div class="space-y-1.5">
-          <Label for="sld-asset">Asset</Label>
-          <select
-            id="sld-asset"
-            bind:value={extAsset}
-            class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-          >
-            {#each externalAssets as a}
-              <option value={a.value}>{a.label}</option>
-            {/each}
-          </select>
-        </div>
-        <div class="space-y-1.5">
-          <Label for="sld-dir">Direction</Label>
-          <select
-            id="sld-dir"
-            bind:value={extDirection}
-            class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-          >
-            <option value="auto">Automatic (derived ↑/↓)</option>
-            <option value="up">Up</option>
-            <option value="down">Down</option>
-            <option value="left">Left</option>
-            <option value="right">Right</option>
-          </select>
-        </div>
-        <div class="space-y-1.5">
-          <Label for="sld-tap">Connection point</Label>
-          <select
-            id="sld-tap"
-            bind:value={extTap}
-            class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-          >
-            <option value="auto">Automatic</option>
-            <option value="above">Above</option>
-            <option value="below">Below</option>
-          </select>
-        </div>
-        <div class="space-y-1.5">
-          <Label for="sld-lane">Lane side</Label>
-          <select
-            id="sld-lane"
-            bind:value={extLaneSide}
-            disabled={extDirection === 'left' || extDirection === 'right'}
-            class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
-          >
-            <option value="right">Right</option>
-            <option value="left">Left</option>
-          </select>
-        </div>
-      </div>
-    {:else}
-      <div class="space-y-1.5 py-2">
-        <Label for="sld-name">Label</Label>
-        <Input id="sld-name" bind:value={label} placeholder="(no label)" />
-      </div>
-    {/if}
-
-    <div class="space-y-3 border-t pt-3">
-      <div class="space-y-1.5">
-        <Label for="sld-comm-category">Commissioning</Label>
-        <select
-          id="sld-comm-category"
-          bind:value={commCategory}
-          class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-        >
-          {#each COMMISSIONING_CATEGORY_OPTIONS as o}
-            <option value={o.value}>{o.label}</option>
-          {/each}
-        </select>
+    <!-- Scrollable field region. `min-h-0` lets the flex child shrink so it
+         actually scrolls; `-mx-6 px-6` keeps the scrollbar at the dialog edge. -->
+    <div class="-mx-6 min-h-0 flex-1 space-y-4 overflow-y-auto px-6">
+      <div class="space-y-1.5 pt-2">
+        <Label for="sld-id">Identifier</Label>
+        <Input id="sld-id" bind:value={elId} placeholder="e.g. cn-atp1-400-220" />
         <p class="text-xs text-muted-foreground">
-          Distinguishes new vs. existing assets — drives the border/opacity in the diagram and export.
+          Unique within the diagram. Two diagrams sharing the same identifier become connected in the
+          composite model.
         </p>
       </div>
-      <div class="space-y-1.5">
-        <Label for="sld-comm-date">Commissioning date (optional)</Label>
-        <Input id="sld-comm-date" type="date" bind:value={commDate} />
+
+      {#if kind === 'position'}
+        <div class="space-y-3">
+          <div class="space-y-1.5">
+            <Label for="sld-name">Name / code</Label>
+            <Input id="sld-name" bind:value={label} placeholder="e.g. L1" />
+          </div>
+          <div class="space-y-1.5">
+            <Label for="sld-type">Type</Label>
+            <Select.Root selected={selectedPosType} onSelectedChange={(s) => s && (posType = s.value)}>
+              <Select.Trigger id="sld-type">
+                <Select.Value placeholder="Select a type" />
+              </Select.Trigger>
+              <Select.Content>
+                {#each positionTypeOptions as o}
+                  <Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+        </div>
+      {:else if kind === 'busbar'}
+        <div class="space-y-1.5">
+          <Label for="sld-name">Name</Label>
+          <Input id="sld-name" bind:value={label} placeholder="e.g. BB1" />
+        </div>
+      {:else if kind === 'connection' && externalSide}
+        <div class="space-y-3">
+          <div class="space-y-1.5">
+            <Label for="sld-name">Name</Label>
+            <Input id="sld-name" bind:value={extLabel} placeholder="e.g. FEEDER A" />
+          </div>
+          <div class="space-y-1.5">
+            <Label for="sld-asset">Asset</Label>
+            <Select.Root selected={selectedAsset} onSelectedChange={(s) => s && (extAsset = s.value)}>
+              <Select.Trigger id="sld-asset">
+                <Select.Value placeholder="Select an asset" />
+              </Select.Trigger>
+              <Select.Content>
+                {#each externalAssets as a}
+                  <Select.Item value={a.value} label={a.label}>{a.label}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <div class="space-y-1.5">
+            <Label for="sld-dir">Direction</Label>
+            <Select.Root selected={selectedDirection} onSelectedChange={(s) => s && (extDirection = s.value)}>
+              <Select.Trigger id="sld-dir">
+                <Select.Value placeholder="Select a direction" />
+              </Select.Trigger>
+              <Select.Content>
+                {#each directionOptions as o}
+                  <Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <div class="space-y-1.5">
+            <Label for="sld-tap">Connection point</Label>
+            <Select.Root selected={selectedTap} onSelectedChange={(s) => s && (extTap = s.value)}>
+              <Select.Trigger id="sld-tap">
+                <Select.Value placeholder="Select a connection point" />
+              </Select.Trigger>
+              <Select.Content>
+                {#each tapOptions as o}
+                  <Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <div class="space-y-1.5">
+            <Label for="sld-lane">Lane side</Label>
+            <Select.Root
+              selected={selectedLaneSide}
+              disabled={extDirection === 'left' || extDirection === 'right'}
+              onSelectedChange={(s) => s && (extLaneSide = s.value)}
+            >
+              <Select.Trigger id="sld-lane">
+                <Select.Value placeholder="Select a lane side" />
+              </Select.Trigger>
+              <Select.Content>
+                {#each laneOptions as o}
+                  <Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+        </div>
+      {:else}
+        <div class="space-y-1.5">
+          <Label for="sld-name">Label</Label>
+          <Input id="sld-name" bind:value={label} placeholder="(no label)" />
+        </div>
+      {/if}
+
+      <div class="space-y-3 border-t pt-3">
+        <div class="space-y-1.5">
+          <Label for="sld-comm-category">Commissioning</Label>
+          <Select.Root selected={selectedComm} onSelectedChange={(s) => s && (commCategory = s.value)}>
+            <Select.Trigger id="sld-comm-category">
+              <Select.Value placeholder="Untagged" />
+            </Select.Trigger>
+            <Select.Content>
+              {#each COMMISSIONING_CATEGORY_OPTIONS as o}
+                <Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+              {/each}
+            </Select.Content>
+          </Select.Root>
+          <p class="text-xs text-muted-foreground">
+            Distinguishes new vs. existing assets — drives the border/opacity in the diagram and export.
+          </p>
+        </div>
+        <div class="space-y-1.5">
+          <Label for="sld-comm-date">Commissioning date (optional)</Label>
+          <Input id="sld-comm-date" type="date" bind:value={commDate} />
+        </div>
       </div>
     </div>
 
