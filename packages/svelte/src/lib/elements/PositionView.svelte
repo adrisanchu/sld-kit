@@ -4,6 +4,7 @@
   import { SLD_LAYOUT } from '@sld-kit/core';
   import { DEFAULT_POSITION_TOKENS, type PositionTokens } from '../labels';
   import type { FormatResolver } from '../format';
+  import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
 
   export let pos: Position;
   export let geo: PositionGeometry;
@@ -33,6 +34,8 @@
    * the type/voltage color. `null` (the default) leaves the box unchanged.
    */
   export let formatResolver: FormatResolver | null = null;
+  /** Numeric presentation config (stroke widths, opacities, selection halo). */
+  export let style: SldViewStyle = DEFAULT_VIEW_STYLE;
 
   const dispatch = createEventDispatcher<{
     select: { id: string; shiftKey: boolean };
@@ -44,10 +47,11 @@
 
   $: token = colorClass ?? tokens[pos.type];
   $: fmt = (formatResolver?.(pos) ?? null) as ElementFormat | null;
-  $: baseAlpha = hovered && interactive ? 0.3 : 0.15;
+  $: baseAlpha = hovered && interactive ? style.position.hoverFillOpacity : style.position.fillOpacity;
   $: fillAlpha = fmt?.fillOpacity != null ? baseAlpha * fmt.fillOpacity : baseAlpha;
-  $: strokeW = fmt?.strokeWidth ?? 1.5;
+  $: strokeW = fmt?.strokeWidth ?? style.position.strokeWidth;
   $: fontSize = pos.label.length > 13 ? SLD_LAYOUT.labelFontSize - 2 : SLD_LAYOUT.labelFontSize;
+  $: sel = style.selection;
 
   function handlePointerDown(e: PointerEvent) {
     if (!interactive) return;
@@ -61,7 +65,7 @@
 <g
   class="sld-position {token} transition-transform duration-150 ease-out"
   class:cursor-pointer={interactive}
-  opacity={dragging ? 0.4 : 1}
+  opacity={dragging ? style.position.draggingOpacity : 1}
   on:pointerdown={handlePointerDown}
   on:pointerenter={() => (hovered = true)}
   on:pointerleave={() => (hovered = false)}
@@ -69,15 +73,15 @@
 >
   {#if selected}
     <rect
-      x={geo.rect.x - 4}
-      y={geo.rect.y - 4}
-      width={geo.rect.width + 8}
-      height={geo.rect.height + 8}
+      x={geo.rect.x - sel.padding}
+      y={geo.rect.y - sel.padding}
+      width={geo.rect.width + sel.padding * 2}
+      height={geo.rect.height + sel.padding * 2}
       rx={SLD_LAYOUT.positionCornerRadius + 2}
       fill="none"
       class="stroke-primary"
-      stroke-width="1.5"
-      stroke-dasharray="5 3"
+      stroke-width={sel.strokeWidth}
+      stroke-dasharray={sel.dashArray}
     />
   {/if}
   <rect

@@ -7,6 +7,7 @@
   import { createPanZoom } from './panzoom';
   import { DEFAULT_POSITION_TOKENS, type PositionTokens } from './labels';
   import type { FormatResolver } from './format';
+  import { DEFAULT_VIEW_STYLE, type SldViewStyle } from './style';
 
   /**
    * SVG host of the diagram. Owns the viewBox (pan/zoom) and renders the
@@ -37,6 +38,12 @@
    * Build one with `makeCommissioningResolver` from `@sld-kit/core`.
    */
   export let formatResolver: FormatResolver | null = null;
+  /**
+   * Numeric presentation config (stroke widths, opacities, selection halo),
+   * forwarded to every element view. Defaults reproduce today's look; override
+   * via `resolveViewStyle({...})`.
+   */
+  export let style: SldViewStyle = DEFAULT_VIEW_STYLE;
   /** Label-visibility toggles, mapped to each element view's `showLabel`. */
   export let showPositionLabels: boolean = true;
   export let showConnectionLabels: boolean = true;
@@ -165,6 +172,7 @@
       {interactive}
       {colorClass}
       {formatResolver}
+      {style}
       showLabel={showConnectionLabels}
       on:select
       on:editlabel
@@ -178,6 +186,7 @@
       {interactive}
       {colorClass}
       {formatResolver}
+      {style}
       showLabel={showBusBarLabels}
       on:select
       on:editlabel
@@ -193,6 +202,7 @@
       {tokens}
       {colorClass}
       {formatResolver}
+      {style}
       showLabel={showPositionLabels}
       on:select
       on:dragstart={(e) => dispatch('elementdragstart', e.detail)}

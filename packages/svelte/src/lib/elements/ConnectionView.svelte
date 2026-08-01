@@ -3,6 +3,7 @@
   import type { Connection, ConnectionGeometry, ElementFormat } from '@sld-kit/core';
   import { SLD_LAYOUT, arrowheadPath, connectionPath, createDefaultSymbolRegistry } from '@sld-kit/core';
   import type { FormatResolver } from '../format';
+  import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
 
   export let conn: Connection;
   export let geo: ConnectionGeometry;
@@ -20,6 +21,8 @@
   export let showLabel: boolean = true;
   /** Commissioning overlay (stroke width); see PositionView. */
   export let formatResolver: FormatResolver | null = null;
+  /** Numeric presentation config (stroke widths, hit target, symbol). */
+  export let style: SldViewStyle = DEFAULT_VIEW_STYLE;
 
   const dispatch = createEventDispatcher<{
     select: { id: string; shiftKey: boolean };
@@ -33,8 +36,8 @@
   let hovered = false;
 
   $: fmt = (formatResolver?.(conn) ?? null) as ElementFormat | null;
-  $: baseStrokeW = hovered && interactive ? 2.5 : 2;
-  $: strokeW = selected ? 3 : (fmt?.strokeWidth ?? baseStrokeW);
+  $: baseStrokeW = hovered && interactive ? style.connection.hoverStrokeWidth : style.connection.strokeWidth;
+  $: strokeW = selected ? style.connection.selectedStrokeWidth : (fmt?.strokeWidth ?? baseStrokeW);
   $: pathD = connectionPath(geo.points, geo.hops, SLD_LAYOUT.hopRadius);
   $: label = conn.from.kind === 'external' ? conn.from.label : conn.to.kind === 'external' ? conn.to.label : conn.label;
   $: symbolDef = geo.symbol ? symbols.get(geo.symbol.key) : undefined;
@@ -61,7 +64,7 @@
   on:dblclick={() => interactive && dispatch('editlabel', { id: conn.id })}
 >
   <!-- Invisible fat stroke so thin lines are easy to hit. -->
-  <path d={pathD} fill="none" stroke="transparent" stroke-width="12" />
+  <path d={pathD} fill="none" stroke="transparent" stroke-width={style.hitStrokeWidth} />
   <path
     d={pathD}
     fill="none"
@@ -93,7 +96,7 @@
           <path
             d={shape.d}
             fill={shape.fill === 'token' ? 'currentColor' : 'none'}
-            stroke-width={shape.strokeWidth ?? 1.6}
+            stroke-width={shape.strokeWidth ?? style.symbol.strokeWidth}
           />
         {:else if shape.type === 'circle'}
           <circle
@@ -101,10 +104,16 @@
             cy={shape.cy}
             r={shape.r}
             fill={shape.fill === 'token' ? 'currentColor' : 'none'}
-            stroke-width={shape.strokeWidth ?? 1.6}
+            stroke-width={shape.strokeWidth ?? style.symbol.strokeWidth}
           />
         {:else}
-          <line x1={shape.x1} y1={shape.y1} x2={shape.x2} y2={shape.y2} stroke-width={shape.strokeWidth ?? 1.6} />
+          <line
+            x1={shape.x1}
+            y1={shape.y1}
+            x2={shape.x2}
+            y2={shape.y2}
+            stroke-width={shape.strokeWidth ?? style.symbol.strokeWidth}
+          />
         {/if}
       {/each}
     </g>

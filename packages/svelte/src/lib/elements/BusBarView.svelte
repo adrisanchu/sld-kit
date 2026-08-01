@@ -3,6 +3,7 @@
   import type { BusBar, BusBarGeometry, ElementFormat } from '@sld-kit/core';
   import { SLD_LAYOUT } from '@sld-kit/core';
   import type { FormatResolver } from '../format';
+  import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
 
   export let bar: BusBar;
   export let geo: BusBarGeometry;
@@ -20,6 +21,8 @@
   export let showLabel: boolean = true;
   /** Commissioning overlay (stroke width + fill opacity); see PositionView. */
   export let formatResolver: FormatResolver | null = null;
+  /** Numeric presentation config (opacities, selection halo). */
+  export let style: SldViewStyle = DEFAULT_VIEW_STYLE;
 
   const dispatch = createEventDispatcher<{
     select: { id: string; shiftKey: boolean };
@@ -29,8 +32,9 @@
   let hovered = false;
 
   $: fmt = (formatResolver?.(bar) ?? null) as ElementFormat | null;
-  $: baseOpacity = hovered && interactive ? 0.75 : 1;
+  $: baseOpacity = hovered && interactive ? style.busBar.hoverOpacity : style.busBar.opacity;
   $: barOpacity = fmt?.fillOpacity != null ? baseOpacity * fmt.fillOpacity : baseOpacity;
+  $: sel = style.selection;
 
   function handlePointerDown(e: PointerEvent) {
     if (!interactive) return;
@@ -51,14 +55,14 @@
 >
   {#if selected}
     <rect
-      x={geo.rect.x - 4}
-      y={geo.rect.y - 4}
-      width={geo.rect.width + 8}
-      height={geo.rect.height + 8}
+      x={geo.rect.x - sel.padding}
+      y={geo.rect.y - sel.padding}
+      width={geo.rect.width + sel.padding * 2}
+      height={geo.rect.height + sel.padding * 2}
       fill="none"
       class="stroke-primary"
-      stroke-width="1.5"
-      stroke-dasharray="5 3"
+      stroke-width={sel.strokeWidth}
+      stroke-dasharray={sel.dashArray}
     />
   {/if}
   <rect

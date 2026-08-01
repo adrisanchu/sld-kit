@@ -11,6 +11,7 @@
   import { createPanZoom } from '../panzoom';
   import { DEFAULT_POSITION_TOKENS, DEFAULT_CHILD_NOT_FOUND, type PositionTokens } from '../labels';
   import type { FormatResolver } from '../format';
+  import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
   import ChildDiagramView from './ChildDiagramView.svelte';
   import SelectionFrame from './SelectionFrame.svelte';
 
@@ -54,6 +55,12 @@
    * `data`, so one resolver spans all children. `null` (default) = unchanged.
    */
   export let formatResolver: FormatResolver | null = null;
+  /**
+   * Numeric presentation config for the children and the composite chrome
+   * (link/line stroke widths, dash patterns, handle radii). Defaults reproduce
+   * today's look; override via `resolveViewStyle({...})`.
+   */
+  export let style: SldViewStyle = DEFAULT_VIEW_STYLE;
   /** Label-visibility toggles, forwarded to every child. */
   export let showPositionLabels: boolean = true;
   export let showBusBarLabels: boolean = true;
@@ -87,6 +94,7 @@
   let svgEl: SVGSVGElement;
   let suppressNextClick = false;
 
+  $: cs = style.composite;
   $: selectedLine = selectedLineId ? layout.lines.find((l) => l.line.id === selectedLineId) ?? null : null;
 
   function nearestSnap(p: Point): ExternalConnectionTip | null {
@@ -225,8 +233,8 @@
       points={link.points.map((p) => `${p.x},${p.y}`).join(' ')}
       fill="none"
       class="stroke-primary/70"
-      stroke-width="2"
-      stroke-dasharray="6 4"
+      stroke-width={cs.linkStrokeWidth}
+      stroke-dasharray={cs.linkDashArray}
     />
     {#each link.points as p}
       <circle cx={p.x} cy={p.y} r={SLD_LAYOUT.nodeDotRadius} class="fill-primary/70" />
@@ -236,7 +244,7 @@
       points={link.points.map((p) => `${p.x},${p.y}`).join(' ')}
       fill="none"
       stroke="transparent"
-      stroke-width="12"
+      stroke-width={style.hitStrokeWidth}
       class:pointer-events-auto={interactive && !drawMode}
       class:cursor-pointer={interactive && !drawMode}
       on:pointerdown={(e) => handleLinkDown(link.connectionId, e)}
@@ -254,7 +262,7 @@
       stroke={cls ? 'currentColor' : undefined}
       class={cls ?? 'stroke-primary'}
       style={cls ? 'color: hsl(var(--sld-pos))' : ''}
-      stroke-width={ln.line.id === selectedLineId ? 3 : 2}
+      stroke-width={ln.line.id === selectedLineId ? cs.lineSelectedStrokeWidth : cs.lineStrokeWidth}
     />
   {/each}
 
@@ -266,6 +274,7 @@
       {tokens}
       colorClass={childColorClass(child)}
       {formatResolver}
+      {style}
       {showPositionLabels}
       {showBusBarLabels}
       {showConnectionLabels}
@@ -288,7 +297,7 @@
         points={ln.points.map((p) => `${p.x},${p.y}`).join(' ')}
         fill="none"
         stroke="transparent"
-        stroke-width="12"
+        stroke-width={style.hitStrokeWidth}
         class:pointer-events-auto={interactive}
         class:cursor-pointer={interactive}
         on:pointerdown={(e) => handleLineDown(ln.line.id, e)}
@@ -306,10 +315,10 @@
         <circle
           cx={(p.x + selectedLine.points[i + 1].x) / 2}
           cy={(p.y + selectedLine.points[i + 1].y) / 2}
-          r="4"
+          r={cs.addHandleRadius}
           class="fill-background stroke-primary/50 pointer-events-auto cursor-copy"
-          stroke-width="1.5"
-          stroke-dasharray="2 2"
+          stroke-width={cs.handleStrokeWidth}
+          stroke-dasharray={cs.addHandleDashArray}
           on:pointerdown={(e) =>
             handleSegmentDown(
               selectedLine.line.id,
@@ -331,9 +340,9 @@
         <circle
           cx={v.x}
           cy={v.y}
-          r="5"
+          r={cs.vertexHandleRadius}
           class="fill-background stroke-primary pointer-events-auto cursor-grab"
-          stroke-width="1.5"
+          stroke-width={cs.handleStrokeWidth}
           on:pointerdown={(e) => handleVertexDown(selectedLine.line.id, i, e)}
           on:dblclick={(e) => handleVertexDblClick(selectedLine.line.id, i, e)}
         >
@@ -346,7 +355,13 @@
   <!-- Draw-mode overlay: snap targets + in-progress polyline. -->
   {#if drawMode && interactive}
     {#each snapTargets as t}
-      <circle cx={t.point.x} cy={t.point.y} r="5" class="fill-background stroke-primary/60" stroke-width="1.5" />
+      <circle
+        cx={t.point.x}
+        cy={t.point.y}
+        r={cs.snapHandleRadius}
+        class="fill-background stroke-primary/60"
+        stroke-width={cs.handleStrokeWidth}
+      />
     {/each}
     {#if draftPoints.length > 0}
       {#if draftPoints.length > 1}
@@ -354,12 +369,12 @@
           points={draftPoints.map((p) => `${p.x},${p.y}`).join(' ')}
           fill="none"
           class="stroke-primary"
-          stroke-width="2"
-          stroke-dasharray="4 4"
+          stroke-width={cs.draftStrokeWidth}
+          stroke-dasharray={cs.draftDashArray}
         />
       {/if}
       {#each draftPoints as p}
-        <circle cx={p.x} cy={p.y} r="4" class="fill-primary" />
+        <circle cx={p.x} cy={p.y} r={cs.draftPointRadius} class="fill-primary" />
       {/each}
     {/if}
   {/if}
