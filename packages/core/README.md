@@ -183,6 +183,35 @@ const svg = new SvgExporter().export(doc, {
 Live-view theming (dark mode, CSS custom properties) is a renderer concern and
 lives in your app, not here.
 
+### Formatting overlay (commissioning)
+
+Beyond per-type fill colors, a theme can carry an **orthogonal formatting
+overlay** — stroke width and fill opacity layered on top of the color — keyed by
+an element's [commissioning](#commissioning-new-vs-existing-assets) category.
+This is how you distinguish new vs. existing assets (e.g. a thicker border for a
+recently-decreed bay, a ghosted fill for a planned one). Every overlay field is
+an office-safe presentation attribute, so exports still paste into PowerPoint.
+
+```ts
+const svg = new SvgExporter().export(doc, {
+  theme: {
+    commissioning: {
+      categories: {
+        'decree-x': { strokeWidth: 3 },
+        future: { strokeWidth: 3, fillOpacity: 0.45 }
+      }
+    }
+  }
+});
+```
+
+Absent a `commissioning` map (as in `DEFAULT_THEME`) the overlay is a no-op and
+output is byte-for-byte unchanged. For anything the category map can't express —
+e.g. bucketing by commissioning _date_ — supply `theme.resolveElementFormat(el)`
+instead; it wins over the map. The same `makeCommissioningResolver(map)` factory
+produces a resolver you can feed to both the exporter and the live views, so
+screen and export match.
+
 ## Open position types
 
 The five defaults — `line`, `transformer`, `central`, `renewable`, `reserve` —
@@ -236,6 +265,46 @@ database. `data` travels inside the diagram JSON and is not queryable. For
 DB-backed metadata, keep your own table keyed by the element's stable
 `ElementId` and join at render time (the "sidecar" pattern). Use `data` for
 attributes that must travel _with_ the exported file.
+
+### Reserved `data` namespaces (`sld`, `cim`)
+
+To let library conventions and future adapters share the same `data` bag without
+clobbering each other, top-level keys under `data` are **namespaced**: `sld` for
+this library's own conventions, `cim` for the (planned) CIM adapter, and any
+other key is yours.
+
+```
+data: { sld?: {…}, cim?: {…}, /* your keys */ }
+```
+
+### Commissioning: new vs. existing assets
+
+The first `sld` convention is **commissioning** — an orthogonal axis describing
+_when / from where_ an asset enters the system (a `date` and/or an open `category`
+like `'existing'`, `'future'`, `'decree-x'`), used to style new vs. existing
+assets differently. It rides in `data.sld.commissioning`:
+
+```ts
+import { withCommissioning, getCommissioning, UpdateElementCommand } from '@sld-kit/core';
+
+// Tag an element (undoable, preserves other data keys):
+const before = pos.toJSON();
+stack.execute(
+  new UpdateElementCommand(before, {
+    ...before,
+    data: withCommissioning(before.data, { category: 'future', date: '2027-01-01' })
+  }),
+  doc
+);
+
+getCommissioning(doc.getElement(pos.id)!); // { category: 'future', date: '2027-01-01' }
+```
+
+The engine still never reads `data` on the hot path; instead the **theme** reads
+commissioning to style it — see [Formatting overlay](#formatting-overlay-commissioning)
+below. A future `@sld-kit/cim` adapter maps `data.sld.commissioning` onto CIM's
+`Asset.lifecycleDate` (installation/removal/retired dates) and
+`Asset.lifecycleState` / `inUseState`.
 
 ## Composite diagrams ("diagram of diagrams")
 
@@ -292,8 +361,10 @@ options factory — and the `element` / `external` endpoint helpers), `Grid`,
 the `CommandStack` and command classes, the batch-authoring helpers `autoWire`
 and `buildDocument`, `Serializer` / `SldParseError`,
 `SvgExporter` / `SvgBuilder`, the `SymbolRegistry` and default symbols, the
-theme (`SldTheme`, `DEFAULT_THEME`, `resolveTheme`, `positionColors`),
-`getElementData`, and the composite classes (`CompositeDocument`,
+theme (`SldTheme`, `DEFAULT_THEME`, `resolveTheme`, `positionColors`, the
+commissioning overlay `ElementFormat` / `elementFormat` / `makeCommissioningResolver`),
+the metadata helpers `getElementData` / `getCommissioning` / `withCommissioning`,
+and the composite classes (`CompositeDocument`,
 `DiagramInstance`, `CompositeLayoutEngine`, `CompositeSerializer`,
 `CompositeSvgExporter`, `Transform2D`, `MapResolver`).
 
