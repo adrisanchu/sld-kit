@@ -10,6 +10,7 @@
   } from '@sld-kit/core';
   import { createPanZoom } from '../panzoom';
   import { DEFAULT_POSITION_TOKENS, DEFAULT_CHILD_NOT_FOUND, type PositionTokens } from '../labels';
+  import type { FormatResolver } from '../format';
   import ChildDiagramView from './ChildDiagramView.svelte';
   import SelectionFrame from './SelectionFrame.svelte';
 
@@ -47,6 +48,12 @@
    * set `--sld-pos`; `null` falls back to the neutral primary stroke.
    */
   export let lineColorClass: (line: CompositeLineLayout) => string | null = () => null;
+  /**
+   * Commissioning overlay (new vs. existing assets): a single resolver returning
+   * a per-element `ElementFormat`, forwarded to every child. It reads element
+   * `data`, so one resolver spans all children. `null` (default) = unchanged.
+   */
+  export let formatResolver: FormatResolver | null = null;
   /** Label-visibility toggles, forwarded to every child. */
   export let showPositionLabels: boolean = true;
   export let showBusBarLabels: boolean = true;
@@ -258,6 +265,7 @@
       {interactive}
       {tokens}
       colorClass={childColorClass(child)}
+      {formatResolver}
       {showPositionLabels}
       {showBusBarLabels}
       {showConnectionLabels}

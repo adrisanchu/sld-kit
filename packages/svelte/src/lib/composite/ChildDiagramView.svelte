@@ -5,6 +5,7 @@
   import PositionView from '../elements/PositionView.svelte';
   import ConnectionView from '../elements/ConnectionView.svelte';
   import { DEFAULT_POSITION_TOKENS, DEFAULT_CHILD_NOT_FOUND, type PositionTokens } from '../labels';
+  import type { FormatResolver } from '../format';
 
   /**
    * Renders one placed child as a rigid whole inside its `Transform2D` group:
@@ -23,6 +24,8 @@
    * a voltage bucket). The class must set `--sld-pos`.
    */
   export let colorClass: string | null = null;
+  /** Commissioning overlay (stroke width + fill opacity), forwarded to each view. */
+  export let formatResolver: FormatResolver | null = null;
   /** Label-visibility toggles, forwarded to each element view. */
   export let showPositionLabels: boolean = true;
   export let showBusBarLabels: boolean = true;
@@ -82,6 +85,7 @@
         interactive={false}
         {labelAngleDeg}
         {colorClass}
+        {formatResolver}
         showLabel={showConnectionLabels}
       />
     {/each}
@@ -92,6 +96,7 @@
         interactive={false}
         {labelAngleDeg}
         {colorClass}
+        {formatResolver}
         showLabel={showBusBarLabels}
       />
     {/each}
@@ -103,6 +108,7 @@
         {labelAngleDeg}
         {tokens}
         {colorClass}
+        {formatResolver}
         showLabel={showPositionLabels}
       />
     {/each}
