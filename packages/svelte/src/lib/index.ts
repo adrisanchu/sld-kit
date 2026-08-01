@@ -36,6 +36,7 @@ export { createPanZoom, type PanZoom, type ViewBox, type ContentBounds } from '.
 export { createDocStore, type Subscribable } from './docStore';
 export { downloadText, slugify } from './download';
 export { type FormatResolver } from './format';
+export { DEFAULT_VIEW_STYLE, resolveViewStyle, type SldViewStyle } from './style';
 
 // ── Injectable labels + tokens ────────────────────────────────────────────
 export {
