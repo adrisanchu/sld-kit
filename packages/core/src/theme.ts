@@ -46,6 +46,10 @@ export interface SldTheme {
     connection: string;
     label: string;
     background: string;
+    /** Base stroke width of a position box (before any commissioning overlay). */
+    positionStrokeWidth: number;
+    /** Base stroke width of a connection / manual composite line. */
+    connectionStrokeWidth: number;
   };
   /**
    * Optional commissioning overlay: maps an element's `data.sld.commissioning`
@@ -88,7 +92,9 @@ export const DEFAULT_THEME: SldTheme = {
     busbar: '#0f172a',
     connection: '#334155',
     label: '#0f172a',
-    background: '#ffffff'
+    background: '#ffffff',
+    positionStrokeWidth: 1.5,
+    connectionStrokeWidth: 2
   }
 };
 

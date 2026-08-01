@@ -72,7 +72,7 @@ export class CompositeSvgExporter {
         d: connectionPath(line.points, undefined, this.cfg.hopRadius),
         fill: 'none',
         stroke: theme.structure.connection,
-        'stroke-width': 2
+        'stroke-width': theme.structure.connectionStrokeWidth
       });
     }
 

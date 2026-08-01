@@ -94,7 +94,7 @@ export class SvgExporter {
         d: connectionPath(geo.points, geo.hops, cfg.hopRadius),
         fill: 'none',
         stroke: theme.structure.connection,
-        'stroke-width': connFmt?.strokeWidth ?? 2
+        'stroke-width': connFmt?.strokeWidth ?? theme.structure.connectionStrokeWidth
       });
 
       if (geo.arrow) {
@@ -192,7 +192,7 @@ export class SvgExporter {
         fill: posFmt?.fill ?? colors.fill,
         'fill-opacity': posFmt?.fillOpacity,
         stroke: colors.stroke,
-        'stroke-width': posFmt?.strokeWidth ?? 1.5
+        'stroke-width': posFmt?.strokeWidth ?? theme.structure.positionStrokeWidth
       });
       if (pos.label) {
         // Shrink long labels a bit instead of overflowing the box.
