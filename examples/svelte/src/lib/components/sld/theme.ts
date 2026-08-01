@@ -5,14 +5,16 @@
  * each component via its `labels` prop. This example keeps them in English;
  * swap the strings below to localise the editor.
  */
-import type {
-  SldToolbarLabels,
-  MatrixCreatorLabels,
-  ExportFlyoutLabels,
-  ExternalAssetPopoverLabels,
-  LaneOverlayLabels,
-  LaneActionChipLabels,
-  CompositeToolbarLabels
+import {
+  resolveViewStyle,
+  type SldViewStyle,
+  type SldToolbarLabels,
+  type MatrixCreatorLabels,
+  type ExportFlyoutLabels,
+  type ExternalAssetPopoverLabels,
+  type LaneOverlayLabels,
+  type LaneActionChipLabels,
+  type CompositeToolbarLabels
 } from '@sld-kit/svelte';
 import { SLD_LAYOUT, type SldLayoutConfig, type ElementFormat } from '@sld-kit/core';
 
@@ -72,6 +74,14 @@ export const COMMISSIONING_FORMATS: Record<string, ElementFormat> = {
   // Planned / future — ghosted fill and a thick border so it reads as "not yet".
   future: { strokeWidth: 3, fillOpacity: 0.45 }
 };
+
+/**
+ * Numeric presentation config for the live views (stroke widths, opacities,
+ * selection halo, composite handle sizes). One place to tune the look; the
+ * defaults reproduce the package look, so override only what you need — e.g.
+ * `resolveViewStyle({ connection: { strokeWidth: 2.5 } })`.
+ */
+export const SLD_VIEW_STYLE: SldViewStyle = resolveViewStyle();
 
 /** Dropdown options for the commissioning category (empty = clear / untagged). */
 export const COMMISSIONING_CATEGORY_OPTIONS: { value: string; label: string }[] = [

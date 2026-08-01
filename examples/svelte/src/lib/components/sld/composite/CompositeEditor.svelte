@@ -37,7 +37,8 @@
     SLD_CHILD_NOT_FOUND,
     COMPACT_LAYOUT,
     voltageToken,
-    COMMISSIONING_FORMATS
+    COMMISSIONING_FORMATS,
+    SLD_VIEW_STYLE
   } from '$lib/components/sld/theme';
 
   /**
@@ -524,6 +525,7 @@
     {childColorClass}
     {lineColorClass}
     formatResolver={commissioningResolver}
+    style={SLD_VIEW_STYLE}
     {showPositionLabels}
     {showBusBarLabels}
     {showConnectionLabels}

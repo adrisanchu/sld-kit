@@ -60,7 +60,8 @@
     SLD_LANE_ACTION_CHIP_LABELS,
     COMPACT_LAYOUT,
     voltageToken,
-    COMMISSIONING_FORMATS
+    COMMISSIONING_FORMATS,
+    SLD_VIEW_STYLE
   } from '$lib/components/sld/theme';
 
   /**
@@ -567,6 +568,7 @@
     tokens={POSITION_TYPE_TOKENS}
     {colorClass}
     formatResolver={commissioningResolver}
+    style={SLD_VIEW_STYLE}
     {showPositionLabels}
     {showBusBarLabels}
     {showConnectionLabels}
