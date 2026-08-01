@@ -7,8 +7,23 @@
 export * from './types';
 export { newId } from './ids';
 export { SLD_LAYOUT, type SldLayoutConfig } from './layout';
-export { DEFAULT_THEME, positionColors, resolveTheme, type SldTheme, type PositionTypeColors } from './theme';
-export { getElementData } from './data';
+export {
+  DEFAULT_THEME,
+  positionColors,
+  elementFormat,
+  makeCommissioningResolver,
+  resolveTheme,
+  type SldTheme,
+  type PositionTypeColors,
+  type ElementFormat
+} from './theme';
+export {
+  getElementData,
+  getCommissioning,
+  withCommissioning,
+  type CommissioningInfo,
+  type SldNamespaceData
+} from './data';
 
 export { SldElement } from './elements/Element';
 export { BusBar, type BusBarOptions } from './elements/BusBar';

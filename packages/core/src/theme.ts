@@ -10,10 +10,26 @@
  * consumer concern and lives outside this package.
  */
 
+import type { SldElement } from './elements/Element';
+import { getCommissioning } from './data';
+
 export interface PositionTypeColors {
   fill: string;
   stroke: string;
   text: string;
+}
+
+/**
+ * An orthogonal formatting overlay applied *on top of* an element's per-type
+ * fill — the "commissioning" axis (new vs. existing assets). Every field is
+ * optional and every field is an office-safe presentation attribute
+ * (`stroke-width`, `fill-opacity`, `fill`), so it composes without breaking
+ * SVG export. Absent fields leave the existing value untouched.
+ */
+export interface ElementFormat {
+  strokeWidth?: number;
+  fillOpacity?: number;
+  fill?: string;
 }
 
 export interface SldTheme {
@@ -31,6 +47,22 @@ export interface SldTheme {
     label: string;
     background: string;
   };
+  /**
+   * Optional commissioning overlay: maps an element's `data.sld.commissioning`
+   * category to an `ElementFormat` (open-string keys + `fallback`, like
+   * `positionTypes`). Absent (as in `DEFAULT_THEME`) → no overlay, output
+   * unchanged.
+   */
+  commissioning?: {
+    categories?: Record<string, ElementFormat>;
+    fallback?: ElementFormat;
+  };
+  /**
+   * Property-agnostic escape hatch (generalizes ADR 0001 D1 from color to full
+   * formatting): style any element by anything — e.g. bucket by commissioning
+   * *date* instead of category. When present it wins over `commissioning`.
+   */
+  resolveElementFormat?: (el: SldElement) => ElementFormat | undefined;
 }
 
 /**
@@ -69,6 +101,36 @@ export function positionColors(theme: SldTheme, type: string): PositionTypeColor
 }
 
 /**
+ * Resolve the commissioning formatting overlay for an element against a theme.
+ * A custom `resolveElementFormat` wins; otherwise the element's
+ * `data.sld.commissioning.category` is looked up in `theme.commissioning`
+ * (falling back to `commissioning.fallback`). Returns `undefined` when nothing
+ * applies — the caller then leaves the element's default attributes untouched.
+ */
+export function elementFormat(theme: SldTheme, el: SldElement): ElementFormat | undefined {
+  if (theme.resolveElementFormat) return theme.resolveElementFormat(el);
+  const category = getCommissioning(el)?.category;
+  if (!category || !theme.commissioning) return undefined;
+  return theme.commissioning.categories?.[category] ?? theme.commissioning.fallback;
+}
+
+/**
+ * Build a `resolveElementFormat` from a category → format map, so the same
+ * config drives both SVG export (as `theme.commissioning`) and the live Svelte
+ * views (as a `formatResolver` prop). Reads `data.sld.commissioning.category`.
+ */
+export function makeCommissioningResolver(
+  categories: Record<string, ElementFormat>,
+  fallback?: ElementFormat
+): (el: SldElement) => ElementFormat | undefined {
+  return (el) => {
+    const category = getCommissioning(el)?.category;
+    if (!category) return undefined;
+    return categories[category] ?? fallback;
+  };
+}
+
+/**
  * Deep-merge a partial theme over `DEFAULT_THEME`. `positionTypes` entries are
  * merged by key (a partial override of one type keeps the default's other
  * types); `structure` and `fallbackPositionType` are shallow-merged.
@@ -78,6 +140,8 @@ export function resolveTheme(theme?: Partial<SldTheme>): SldTheme {
   return {
     positionTypes: { ...DEFAULT_THEME.positionTypes, ...theme.positionTypes },
     fallbackPositionType: { ...DEFAULT_THEME.fallbackPositionType, ...theme.fallbackPositionType },
-    structure: { ...DEFAULT_THEME.structure, ...theme.structure }
+    structure: { ...DEFAULT_THEME.structure, ...theme.structure },
+    ...(theme.commissioning !== undefined ? { commissioning: theme.commissioning } : {}),
+    ...(theme.resolveElementFormat !== undefined ? { resolveElementFormat: theme.resolveElementFormat } : {})
   };
 }
