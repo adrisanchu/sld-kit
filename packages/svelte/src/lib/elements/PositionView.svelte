@@ -1,8 +1,9 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { Position, PositionGeometry } from '@sld-kit/core';
+  import type { Position, PositionGeometry, ElementFormat } from '@sld-kit/core';
   import { SLD_LAYOUT } from '@sld-kit/core';
   import { DEFAULT_POSITION_TOKENS, type PositionTokens } from '../labels';
+  import type { FormatResolver } from '../format';
 
   export let pos: Position;
   export let geo: PositionGeometry;
@@ -26,6 +27,12 @@
   export let colorClass: string | null = null;
   /** Hide the position's inside-box label (e.g. to compact the diagram). */
   export let showLabel: boolean = true;
+  /**
+   * Orthogonal commissioning overlay (new vs. existing assets): returns a
+   * per-element `ElementFormat` (stroke width + fill opacity) layered on top of
+   * the type/voltage color. `null` (the default) leaves the box unchanged.
+   */
+  export let formatResolver: FormatResolver | null = null;
 
   const dispatch = createEventDispatcher<{
     select: { id: string; shiftKey: boolean };
@@ -36,6 +43,10 @@
   let hovered = false;
 
   $: token = colorClass ?? tokens[pos.type];
+  $: fmt = (formatResolver?.(pos) ?? null) as ElementFormat | null;
+  $: baseAlpha = hovered && interactive ? 0.3 : 0.15;
+  $: fillAlpha = fmt?.fillOpacity != null ? baseAlpha * fmt.fillOpacity : baseAlpha;
+  $: strokeW = fmt?.strokeWidth ?? 1.5;
   $: fontSize = pos.label.length > 13 ? SLD_LAYOUT.labelFontSize - 2 : SLD_LAYOUT.labelFontSize;
 
   function handlePointerDown(e: PointerEvent) {
@@ -75,8 +86,8 @@
     width={geo.rect.width}
     height={geo.rect.height}
     rx={SLD_LAYOUT.positionCornerRadius}
-    style="fill: hsl(var(--sld-pos) / {hovered && interactive ? 0.3 : 0.15}); stroke: hsl(var(--sld-pos));"
-    stroke-width="1.5"
+    style="fill: hsl(var(--sld-pos) / {fillAlpha}); stroke: hsl(var(--sld-pos));"
+    stroke-width={strokeW}
   />
   {#if showLabel && pos.label}
     <g

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { BusBar, BusBarGeometry } from '@sld-kit/core';
+  import type { BusBar, BusBarGeometry, ElementFormat } from '@sld-kit/core';
   import { SLD_LAYOUT } from '@sld-kit/core';
+  import type { FormatResolver } from '../format';
 
   export let bar: BusBar;
   export let geo: BusBarGeometry;
@@ -17,6 +18,8 @@
   export let colorClass: string | null = null;
   /** Hide the bar's label (e.g. to compact the diagram). */
   export let showLabel: boolean = true;
+  /** Commissioning overlay (stroke width + fill opacity); see PositionView. */
+  export let formatResolver: FormatResolver | null = null;
 
   const dispatch = createEventDispatcher<{
     select: { id: string; shiftKey: boolean };
@@ -24,6 +27,10 @@
   }>();
 
   let hovered = false;
+
+  $: fmt = (formatResolver?.(bar) ?? null) as ElementFormat | null;
+  $: baseOpacity = hovered && interactive ? 0.75 : 1;
+  $: barOpacity = fmt?.fillOpacity != null ? baseOpacity * fmt.fillOpacity : baseOpacity;
 
   function handlePointerDown(e: PointerEvent) {
     if (!interactive) return;
@@ -60,7 +67,9 @@
     width={geo.rect.width}
     height={geo.rect.height}
     fill="currentColor"
-    opacity={hovered && interactive ? 0.75 : 1}
+    opacity={barOpacity}
+    stroke={fmt?.strokeWidth != null ? 'currentColor' : undefined}
+    stroke-width={fmt?.strokeWidth}
   />
   {#if showLabel && bar.label}
     <g transform={labelAngleDeg ? `rotate(${labelAngleDeg} ${geo.labelAt.x} ${geo.labelAt.y})` : undefined}>

@@ -6,6 +6,7 @@
   import ConnectionView from './elements/ConnectionView.svelte';
   import { createPanZoom } from './panzoom';
   import { DEFAULT_POSITION_TOKENS, type PositionTokens } from './labels';
+  import type { FormatResolver } from './format';
 
   /**
    * SVG host of the diagram. Owns the viewBox (pan/zoom) and renders the
@@ -29,6 +30,13 @@
    * diagram (e.g. a voltage bucket). The class must set `--sld-pos`.
    */
   export let colorClass: string | null = null;
+  /**
+   * Orthogonal commissioning overlay (new vs. existing assets): a resolver
+   * returning a per-element `ElementFormat` (stroke width + fill opacity),
+   * threaded to every element view. `null` (default) leaves rendering unchanged.
+   * Build one with `makeCommissioningResolver` from `@sld-kit/core`.
+   */
+  export let formatResolver: FormatResolver | null = null;
   /** Label-visibility toggles, mapped to each element view's `showLabel`. */
   export let showPositionLabels: boolean = true;
   export let showConnectionLabels: boolean = true;
@@ -156,6 +164,7 @@
       selected={selectedIds.has(item.el.id)}
       {interactive}
       {colorClass}
+      {formatResolver}
       showLabel={showConnectionLabels}
       on:select
       on:editlabel
@@ -168,6 +177,7 @@
       selected={selectedIds.has(item.el.id)}
       {interactive}
       {colorClass}
+      {formatResolver}
       showLabel={showBusBarLabels}
       on:select
       on:editlabel
@@ -182,6 +192,7 @@
       {interactive}
       {tokens}
       {colorClass}
+      {formatResolver}
       showLabel={showPositionLabels}
       on:select
       on:dragstart={(e) => dispatch('elementdragstart', e.detail)}

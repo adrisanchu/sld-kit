@@ -1,7 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { Connection, ConnectionGeometry } from '@sld-kit/core';
+  import type { Connection, ConnectionGeometry, ElementFormat } from '@sld-kit/core';
   import { SLD_LAYOUT, arrowheadPath, connectionPath, createDefaultSymbolRegistry } from '@sld-kit/core';
+  import type { FormatResolver } from '../format';
 
   export let conn: Connection;
   export let geo: ConnectionGeometry;
@@ -17,6 +18,8 @@
   export let colorClass: string | null = null;
   /** Hide the connection's (external endpoint) label. */
   export let showLabel: boolean = true;
+  /** Commissioning overlay (stroke width); see PositionView. */
+  export let formatResolver: FormatResolver | null = null;
 
   const dispatch = createEventDispatcher<{
     select: { id: string; shiftKey: boolean };
@@ -29,6 +32,9 @@
 
   let hovered = false;
 
+  $: fmt = (formatResolver?.(conn) ?? null) as ElementFormat | null;
+  $: baseStrokeW = hovered && interactive ? 2.5 : 2;
+  $: strokeW = selected ? 3 : (fmt?.strokeWidth ?? baseStrokeW);
   $: pathD = connectionPath(geo.points, geo.hops, SLD_LAYOUT.hopRadius);
   $: label = conn.from.kind === 'external' ? conn.from.label : conn.to.kind === 'external' ? conn.to.label : conn.label;
   $: symbolDef = geo.symbol ? symbols.get(geo.symbol.key) : undefined;
@@ -60,7 +66,7 @@
     d={pathD}
     fill="none"
     stroke="currentColor"
-    stroke-width={selected ? 3 : hovered && interactive ? 2.5 : 2}
+    stroke-width={strokeW}
     class={selected ? 'text-primary' : ''}
   />
   {#if geo.arrow}
