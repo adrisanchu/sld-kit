@@ -13,9 +13,11 @@
     type ConnectionJson,
     type PositionType,
     type ExternalAssetKind,
-    type ExternalDirection
+    type ExternalDirection,
+    getCommissioning,
+    withCommissioning
   } from '@sld-kit/core';
-  import { POSITION_TYPE_LABELS } from '$lib/components/sld/theme';
+  import { POSITION_TYPE_LABELS, COMMISSIONING_CATEGORY_OPTIONS } from '$lib/components/sld/theme';
 
   /**
    * Properties dialog for a single element, opened by double-clicking it.
@@ -54,6 +56,10 @@
   let extLaneSide: 'left' | 'right' = 'right';
   let externalSide: 'from' | 'to' | null = null;
   let seededId: string | null = null;
+  // Commissioning: the "new vs. existing" axis, stored in
+  // data.sld.commissioning and read by the theme to style stroke/fill.
+  let commCategory = '';
+  let commDate = '';
 
   // Seed the working fields once when a new element opens.
   $: if (element && element.id !== seededId) {
@@ -63,6 +69,9 @@
     externalSide = null;
     extTap = 'auto';
     extLaneSide = 'right';
+    const comm = getCommissioning(element);
+    commCategory = comm?.category ?? '';
+    commDate = comm?.date ?? '';
     if (element instanceof Position) posType = element.type;
     if (element instanceof Connection) {
       externalSide = element.from.kind === 'external' ? 'from' : element.to.kind === 'external' ? 'to' : null;
@@ -117,6 +126,15 @@
         conn[elKey] = { kind: 'element', id: elEnd.id, ...(extTap === 'auto' ? {} : { tap: extTap }) };
       }
     }
+    // Commissioning tag lives in the opaque data.sld namespace; the theme reads
+    // it to style the element. `withCommissioning` preserves other data keys and
+    // drops the tag when both fields are empty.
+    const nextData = withCommissioning(json.data, {
+      category: commCategory || undefined,
+      date: commDate || undefined
+    });
+    if (nextData === undefined) delete json.data;
+    else json.data = nextData;
     dispatch('save', { json });
     open = false;
   }
@@ -225,6 +243,28 @@
         <Input id="sld-name" bind:value={label} placeholder="(no label)" />
       </div>
     {/if}
+
+    <div class="space-y-3 border-t pt-3">
+      <div class="space-y-1.5">
+        <Label for="sld-comm-category">Commissioning</Label>
+        <select
+          id="sld-comm-category"
+          bind:value={commCategory}
+          class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+        >
+          {#each COMMISSIONING_CATEGORY_OPTIONS as o}
+            <option value={o.value}>{o.label}</option>
+          {/each}
+        </select>
+        <p class="text-xs text-muted-foreground">
+          Distinguishes new vs. existing assets — drives the border/opacity in the diagram and export.
+        </p>
+      </div>
+      <div class="space-y-1.5">
+        <Label for="sld-comm-date">Commissioning date (optional)</Label>
+        <Input id="sld-comm-date" type="date" bind:value={commDate} />
+      </div>
+    </div>
 
     <Dialog.Footer>
       <Button variant="outline" on:click={() => (open = false)}>Cancel</Button>

@@ -14,7 +14,7 @@ import type {
   LaneActionChipLabels,
   CompositeToolbarLabels
 } from '@sld-kit/svelte';
-import { SLD_LAYOUT, type SldLayoutConfig } from '@sld-kit/core';
+import { SLD_LAYOUT, type SldLayoutConfig, type ElementFormat } from '@sld-kit/core';
 
 /**
  * Maps a document's voltage (kV) to a CSS class from `app.css` used in the
@@ -56,6 +56,30 @@ export const POSITION_TYPE_TOKENS: Record<string, string> = {
   storage: 'sld-pos-storage',
   demand: 'sld-pos-demand'
 };
+
+/**
+ * The orthogonal "commissioning" axis: *from where / when* an asset
+ * enters the system, layered on top of the per-type fill as stroke width +
+ * fill opacity. Categories are open strings stored in `data.sld.commissioning`;
+ * an absent/`existing` category renders exactly as today (no entry → no overlay).
+ *
+ * The same map drives both the SVG export (as `theme.commissioning.categories`)
+ * and the live views (via `makeCommissioningResolver`), so screen and export match.
+ */
+export const COMMISSIONING_FORMATS: Record<string, ElementFormat> = {
+  // Committed by an older decree — real but recently added: a thicker border.
+  'decree-x': { strokeWidth: 3 },
+  // Planned / future — ghosted fill and a thick border so it reads as "not yet".
+  future: { strokeWidth: 3, fillOpacity: 0.45 }
+};
+
+/** Dropdown options for the commissioning category (empty = clear / untagged). */
+export const COMMISSIONING_CATEGORY_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'Untagged' },
+  { value: 'existing', label: 'Existing' },
+  { value: 'decree-x', label: 'New — decree X' },
+  { value: 'future', label: 'Future / planned' }
+];
 
 /** Human-readable labels for position types — UI + tooltips. */
 export const POSITION_TYPE_LABELS: Record<string, string> = {
