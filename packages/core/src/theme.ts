@@ -30,6 +30,11 @@ export interface ElementFormat {
   strokeWidth?: number;
   fillOpacity?: number;
   fill?: string;
+  /**
+   * `stroke-dasharray` value (e.g. `'6 3'`) for the border/line — the clearest
+   * signal for new vs. existing assets. Absent → solid (unchanged).
+   */
+  dashArray?: string;
 }
 
 export interface SldTheme {

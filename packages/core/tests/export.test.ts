@@ -56,7 +56,7 @@ describe('theme injection', () => {
 describe('commissioning format overlay', () => {
   const commissioningTheme = {
     commissioning: {
-      categories: { future: { strokeWidth: 3, fillOpacity: 0.4 } }
+      categories: { future: { strokeWidth: 3, fillOpacity: 0.4, dashArray: '6 3' } }
     }
   };
 
@@ -75,6 +75,7 @@ describe('commissioning format overlay', () => {
     const svg = new SvgExporter().export(doc, { theme: commissioningTheme });
     expect(svg).toContain('stroke-width="3"');
     expect(svg).toContain('fill-opacity="0.4"');
+    expect(svg).toContain('stroke-dasharray="6 3"');
   });
 
   it('honors a custom resolveElementFormat (e.g. by date), overriding the map', () => {

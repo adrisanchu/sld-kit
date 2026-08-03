@@ -94,7 +94,8 @@ export class SvgExporter {
         d: connectionPath(geo.points, geo.hops, cfg.hopRadius),
         fill: 'none',
         stroke: theme.structure.connection,
-        'stroke-width': connFmt?.strokeWidth ?? theme.structure.connectionStrokeWidth
+        'stroke-width': connFmt?.strokeWidth ?? theme.structure.connectionStrokeWidth,
+        'stroke-dasharray': connFmt?.dashArray
       });
 
       if (geo.arrow) {
@@ -153,9 +154,10 @@ export class SvgExporter {
         fill: barFmt?.fill ?? theme.structure.busbar,
         'fill-opacity': barFmt?.fillOpacity,
         // A bar has no stroke by default; a commissioning overlay that asks for
-        // a border reuses the structural bar color (no new color axis).
-        stroke: barFmt?.strokeWidth !== undefined ? theme.structure.busbar : undefined,
-        'stroke-width': barFmt?.strokeWidth
+        // a border (width or dash) reuses the structural bar color (no new color axis).
+        stroke: barFmt?.strokeWidth !== undefined || barFmt?.dashArray !== undefined ? theme.structure.busbar : undefined,
+        'stroke-width': barFmt?.strokeWidth,
+        'stroke-dasharray': barFmt?.dashArray
       });
       if (bar.label) {
         this.emitLabel(
@@ -192,7 +194,8 @@ export class SvgExporter {
         fill: posFmt?.fill ?? colors.fill,
         'fill-opacity': posFmt?.fillOpacity,
         stroke: colors.stroke,
-        'stroke-width': posFmt?.strokeWidth ?? theme.structure.positionStrokeWidth
+        'stroke-width': posFmt?.strokeWidth ?? theme.structure.positionStrokeWidth,
+        'stroke-dasharray': posFmt?.dashArray
       });
       if (pos.label) {
         // Shrink long labels a bit instead of overflowing the box.

@@ -69,10 +69,10 @@ export const POSITION_TYPE_TOKENS: Record<string, string> = {
  * and the live views (via `makeCommissioningResolver`), so screen and export match.
  */
 export const COMMISSIONING_FORMATS: Record<string, ElementFormat> = {
-  // Committed by an older decree — real but recently added: a thicker border.
-  'decree-x': { strokeWidth: 3 },
-  // Planned / future — ghosted fill and a thick border so it reads as "not yet".
-  future: { strokeWidth: 3, fillOpacity: 0.45 }
+  // Committed by an older decree — real but recently added: a dashed border.
+  'decree-x': { strokeWidth: 2, dashArray: '6 3' },
+  // Planned / future — ghosted fill and a finer dotted-dash so it reads as "not yet".
+  future: { strokeWidth: 2, fillOpacity: 0.45, dashArray: '2 3' }
 };
 
 /**

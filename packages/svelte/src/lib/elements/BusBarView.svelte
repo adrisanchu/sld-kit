@@ -72,8 +72,9 @@
     height={geo.rect.height}
     fill="currentColor"
     opacity={barOpacity}
-    stroke={fmt?.strokeWidth != null ? 'currentColor' : undefined}
+    stroke={fmt?.strokeWidth != null || fmt?.dashArray != null ? 'currentColor' : undefined}
     stroke-width={fmt?.strokeWidth}
+    stroke-dasharray={fmt?.dashArray ?? undefined}
   />
   {#if showLabel && bar.label}
     <g transform={labelAngleDeg ? `rotate(${labelAngleDeg} ${geo.labelAt.x} ${geo.labelAt.y})` : undefined}>

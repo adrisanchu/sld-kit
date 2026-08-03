@@ -92,6 +92,7 @@
     rx={SLD_LAYOUT.positionCornerRadius}
     style="fill: hsl(var(--sld-pos) / {fillAlpha}); stroke: hsl(var(--sld-pos));"
     stroke-width={strokeW}
+    stroke-dasharray={fmt?.dashArray ?? undefined}
   />
   {#if showLabel && pos.label}
     <g

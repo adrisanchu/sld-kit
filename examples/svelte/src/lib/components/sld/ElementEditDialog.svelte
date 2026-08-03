@@ -6,7 +6,6 @@
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
   import {
-    BusBar,
     Position,
     Connection,
     type SldElement,

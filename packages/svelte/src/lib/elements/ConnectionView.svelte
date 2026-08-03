@@ -70,6 +70,7 @@
     fill="none"
     stroke="currentColor"
     stroke-width={strokeW}
+    stroke-dasharray={fmt?.dashArray ?? undefined}
     class={selected ? 'text-primary' : ''}
   />
   {#if geo.arrow}
