@@ -15,7 +15,6 @@
     UpdateLineCommand,
     DiagramInstance,
     CompositeLine,
-    makeCommissioningResolver,
     newId,
     type CompositeDocument,
     type Command,
@@ -37,9 +36,9 @@
     SLD_CHILD_NOT_FOUND,
     COMPACT_LAYOUT,
     voltageToken,
-    COMMISSIONING_FORMATS,
     SLD_VIEW_STYLE
   } from '$lib/components/sld/theme';
+  import { commissioningResolver } from '$lib/components/sld/commissioning';
 
   /**
    * Composition root of the composite ("diagram of diagrams") editor. A small
@@ -53,10 +52,6 @@
 
   const svgExporter = new CompositeSvgExporter();
   const stack = new CommandStack<CompositeDocument>();
-
-  // Commissioning overlay (issue #15): a no-op for untagged elements, so it
-  // stays always on; drives both the live children and the SVG export.
-  const commissioningResolver = makeCommissioningResolver(COMMISSIONING_FORMATS);
 
   $: docStore = createDocStore(doc);
   // Hiding position labels compacts each child (and re-packs the composite).
@@ -474,7 +469,7 @@
 
   function exportSvg() {
     const svg = svgExporter.export(doc, {
-      theme: { commissioning: { categories: COMMISSIONING_FORMATS } }
+      theme: { resolveElementFormat: commissioningResolver }
     });
     downloadText(`${slugify(doc.meta.name)}.composite.svg`, svg, 'image/svg+xml');
   }

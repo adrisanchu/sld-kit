@@ -32,10 +32,10 @@
    */
   export let colorClass: string | null = null;
   /**
-   * Orthogonal commissioning overlay (new vs. existing assets): a resolver
-   * returning a per-element `ElementFormat` (stroke width + fill opacity),
-   * threaded to every element view. `null` (default) leaves rendering unchanged.
-   * Build one with `makeCommissioningResolver` from `@sld-kit/core`.
+   * Generic per-element formatting overlay: `(el) => ElementFormat` (stroke
+   * width / dash / fill opacity), threaded to every element view. The app owns
+   * the policy (e.g. style by a `data` field); `null` (default) leaves rendering
+   * unchanged. Pass the same function as the exporter's `theme.resolveElementFormat`.
    */
   export let formatResolver: FormatResolver | null = null;
   /**

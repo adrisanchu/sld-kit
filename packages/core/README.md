@@ -183,34 +183,32 @@ const svg = new SvgExporter().export(doc, {
 Live-view theming (dark mode, CSS custom properties) is a renderer concern and
 lives in your app, not here.
 
-### Formatting overlay (commissioning)
+### Formatting overlay (`resolveElementFormat`)
 
-Beyond per-type fill colors, a theme can carry an **orthogonal formatting
-overlay** — stroke width and fill opacity layered on top of the color — keyed by
-an element's [commissioning](#commissioning-new-vs-existing-assets) category.
-This is how you distinguish new vs. existing assets (e.g. a thicker border for a
-recently-decreed bay, a ghosted fill for a planned one). Every overlay field is
-an office-safe presentation attribute, so exports still paste into PowerPoint.
+Beyond per-type fill colors, a theme can carry **one property-agnostic styling
+seam**: `resolveElementFormat(el) => ElementFormat`. The core never reads `data`
+or knows any domain concept — **the consumer** supplies a function that inspects
+whatever it wants (a `data` field, a CIM class, a commissioning date) and returns
+a generic `ElementFormat`, layered on top of the per-type color. `ElementFormat`
+fields — `strokeWidth`, `dashArray`, `fillOpacity`, `fill` — are all office-safe
+presentation attributes, so exports still paste into PowerPoint.
 
 ```ts
-const svg = new SvgExporter().export(doc, {
-  theme: {
-    commissioning: {
-      categories: {
-        'decree-x': { strokeWidth: 3 },
-        future: { strokeWidth: 3, fillOpacity: 0.45 }
-      }
-    }
-  }
-});
+// Consumer policy: dash + ghost anything the app considers "future".
+const byFuture = (el) => (getElementData<{ future?: boolean }>(el)?.future ? { dashArray: '6 3', fillOpacity: 0.45 } : undefined);
+
+const svg = new SvgExporter().export(doc, { theme: { resolveElementFormat: byFuture } });
 ```
 
-Absent a `commissioning` map (as in `DEFAULT_THEME`) the overlay is a no-op and
-output is byte-for-byte unchanged. For anything the category map can't express —
-e.g. bucketing by commissioning _date_ — supply `theme.resolveElementFormat(el)`
-instead; it wins over the map. The same `makeCommissioningResolver(map)` factory
-produces a resolver you can feed to both the exporter and the live views, so
-screen and export match.
+Absent a resolver (as in `DEFAULT_THEME`) the overlay is a no-op and output is
+byte-for-byte unchanged. Feed the **same** resolver to the live Svelte views
+(their `formatResolver` prop) so screen and export match. Composite tie-lines are
+backed by more than one connection; `firstFormat(linkConnections(link, children),
+resolve)` (and `lineConnections` for hand-drawn lines) styles a tie-line from the
+first backing connection the resolver formats — so tagging **either** diagram is
+enough, still with zero domain knowledge in the core. A worked commissioning
+example (a `data.sld.commissioning` reader mapped to formats) lives in the Svelte
+example app, not in the library.
 
 ## Open position types
 
@@ -277,34 +275,14 @@ other key is yours.
 data: { sld?: {…}, cim?: {…}, /* your keys */ }
 ```
 
-### Commissioning: new vs. existing assets
-
-The first `sld` convention is **commissioning** — an orthogonal axis describing
-_when / from where_ an asset enters the system (a `date` and/or an open `category`
-like `'existing'`, `'future'`, `'decree-x'`), used to style new vs. existing
-assets differently. It rides in `data.sld.commissioning`:
-
-```ts
-import { withCommissioning, getCommissioning, UpdateElementCommand } from '@sld-kit/core';
-
-// Tag an element (undoable, preserves other data keys):
-const before = pos.toJSON();
-stack.execute(
-  new UpdateElementCommand(before, {
-    ...before,
-    data: withCommissioning(before.data, { category: 'future', date: '2027-01-01' })
-  }),
-  doc
-);
-
-getCommissioning(doc.getElement(pos.id)!); // { category: 'future', date: '2027-01-01' }
-```
-
-The engine still never reads `data` on the hot path; instead the **theme** reads
-commissioning to style it — see [Formatting overlay](#formatting-overlay-commissioning)
-below. A future `@sld-kit/cim` adapter maps `data.sld.commissioning` onto CIM's
-`Asset.lifecycleDate` (installation/removal/retired dates) and
-`Asset.lifecycleState` / `inUseState`.
+Domain conventions like **commissioning** (new vs. existing assets — a `date`
+and/or open `category` under `data.sld.commissioning`) are **consumer-owned**,
+not part of this library: the Svelte example app ships a small `commissioning`
+module (typed accessors + a `resolveElementFormat` policy) demonstrating the
+pattern. The core stays domain-agnostic — it only roundtrips `data` and applies
+whatever [`resolveElementFormat`](#formatting-overlay-resolveelementformat) you
+give it. A future `@sld-kit/cim` adapter would map `data.sld.commissioning` onto
+CIM's `Asset.lifecycleDate` / `lifecycleState`.
 
 ## Composite diagrams ("diagram of diagrams")
 
@@ -361,9 +339,9 @@ options factory — and the `element` / `external` endpoint helpers), `Grid`,
 the `CommandStack` and command classes, the batch-authoring helpers `autoWire`
 and `buildDocument`, `Serializer` / `SldParseError`,
 `SvgExporter` / `SvgBuilder`, the `SymbolRegistry` and default symbols, the
-theme (`SldTheme`, `DEFAULT_THEME`, `resolveTheme`, `positionColors`, the
-commissioning overlay `ElementFormat` / `elementFormat` / `makeCommissioningResolver`),
-the metadata helpers `getElementData` / `getCommissioning` / `withCommissioning`,
+theme (`SldTheme`, `DEFAULT_THEME`, `resolveTheme`, `positionColors`, and the
+generic formatting seam `ElementFormat` / `elementFormat` / `firstFormat`),
+the metadata helper `getElementData`,
 and the composite classes (`CompositeDocument`,
 `DiagramInstance`, `CompositeLayoutEngine`, `CompositeSerializer`,
 `CompositeSvgExporter`, `Transform2D`, `MapResolver`).

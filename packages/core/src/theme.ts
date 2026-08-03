@@ -11,7 +11,6 @@
  */
 
 import type { SldElement } from './elements/Element';
-import { getCommissioning } from './data';
 
 export interface PositionTypeColors {
   fill: string;
@@ -20,20 +19,22 @@ export interface PositionTypeColors {
 }
 
 /**
- * An orthogonal formatting overlay applied *on top of* an element's per-type
- * fill — the "commissioning" axis (new vs. existing assets). Every field is
- * optional and every field is an office-safe presentation attribute
- * (`stroke-width`, `fill-opacity`, `fill`), so it composes without breaking
- * SVG export. Absent fields leave the existing value untouched.
+ * A generic, domain-agnostic formatting overlay applied *on top of* an element's
+ * per-type fill. Every field is optional and every field is an office-safe
+ * presentation attribute (`stroke-width`, `stroke-dasharray`, `fill-opacity`,
+ * `fill`), so it composes without breaking SVG export. Absent fields leave the
+ * existing value untouched.
+ *
+ * The core never decides *when* to apply one — a consumer supplies a
+ * `resolveElementFormat` that inspects whatever it wants (an element's `data`,
+ * e.g. a commissioning date/category) and returns this. That keeps the styling
+ * policy in the consuming package and the core free of domain concepts.
  */
 export interface ElementFormat {
   strokeWidth?: number;
   fillOpacity?: number;
   fill?: string;
-  /**
-   * `stroke-dasharray` value (e.g. `'6 3'`) for the border/line — the clearest
-   * signal for new vs. existing assets. Absent → solid (unchanged).
-   */
+  /** `stroke-dasharray` value (e.g. `'6 3'`) for the border/line. Absent → solid. */
   dashArray?: string;
 }
 
@@ -51,25 +52,16 @@ export interface SldTheme {
     connection: string;
     label: string;
     background: string;
-    /** Base stroke width of a position box (before any commissioning overlay). */
+    /** Base stroke width of a position box (before any per-element overlay). */
     positionStrokeWidth: number;
     /** Base stroke width of a connection / manual composite line. */
     connectionStrokeWidth: number;
   };
   /**
-   * Optional commissioning overlay: maps an element's `data.sld.commissioning`
-   * category to an `ElementFormat` (open-string keys + `fallback`, like
-   * `positionTypes`). Absent (as in `DEFAULT_THEME`) → no overlay, output
-   * unchanged.
-   */
-  commissioning?: {
-    categories?: Record<string, ElementFormat>;
-    fallback?: ElementFormat;
-  };
-  /**
-   * Property-agnostic escape hatch (generalizes ADR 0001 D1 from color to full
-   * formatting): style any element by anything — e.g. bucket by commissioning
-   * *date* instead of category. When present it wins over `commissioning`.
+   * The single, property-agnostic styling seam (ADR 0001 D1): style any element
+   * by anything the consumer wants — a `data` field, a CIM class, a commissioning
+   * date — by returning an `ElementFormat`. The core never reads `data` itself.
+   * Absent (as in `DEFAULT_THEME`) → no overlay, output unchanged.
    */
   resolveElementFormat?: (el: SldElement) => ElementFormat | undefined;
 }
@@ -112,33 +104,31 @@ export function positionColors(theme: SldTheme, type: string): PositionTypeColor
 }
 
 /**
- * Resolve the commissioning formatting overlay for an element against a theme.
- * A custom `resolveElementFormat` wins; otherwise the element's
- * `data.sld.commissioning.category` is looked up in `theme.commissioning`
- * (falling back to `commissioning.fallback`). Returns `undefined` when nothing
- * applies — the caller then leaves the element's default attributes untouched.
+ * Resolve an element's formatting overlay against a theme — simply the theme's
+ * `resolveElementFormat` applied to the element (or `undefined` when the theme
+ * defines none, leaving the element's default attributes untouched).
  */
 export function elementFormat(theme: SldTheme, el: SldElement): ElementFormat | undefined {
-  if (theme.resolveElementFormat) return theme.resolveElementFormat(el);
-  const category = getCommissioning(el)?.category;
-  if (!category || !theme.commissioning) return undefined;
-  return theme.commissioning.categories?.[category] ?? theme.commissioning.fallback;
+  return theme.resolveElementFormat?.(el);
 }
 
 /**
- * Build a `resolveElementFormat` from a category → format map, so the same
- * config drives both SVG export (as `theme.commissioning`) and the live Svelte
- * views (as a `formatResolver` prop). Reads `data.sld.commissioning.category`.
+ * The first `ElementFormat` a resolver produces across `elements`, or `undefined`.
+ * Used for composite tie-lines, which are backed by more than one underlying
+ * connection (both ends share the id): styling the tie-line = the first backing
+ * connection the consumer's resolver formats, so tagging *either* diagram is
+ * enough — with zero domain knowledge in the core.
  */
-export function makeCommissioningResolver(
-  categories: Record<string, ElementFormat>,
-  fallback?: ElementFormat
-): (el: SldElement) => ElementFormat | undefined {
-  return (el) => {
-    const category = getCommissioning(el)?.category;
-    if (!category) return undefined;
-    return categories[category] ?? fallback;
-  };
+export function firstFormat(
+  elements: SldElement[],
+  resolve?: (el: SldElement) => ElementFormat | null | undefined
+): ElementFormat | undefined {
+  if (!resolve) return undefined;
+  for (const el of elements) {
+    const fmt = resolve(el);
+    if (fmt) return fmt;
+  }
+  return undefined;
 }
 
 /**
@@ -152,7 +142,6 @@ export function resolveTheme(theme?: Partial<SldTheme>): SldTheme {
     positionTypes: { ...DEFAULT_THEME.positionTypes, ...theme.positionTypes },
     fallbackPositionType: { ...DEFAULT_THEME.fallbackPositionType, ...theme.fallbackPositionType },
     structure: { ...DEFAULT_THEME.structure, ...theme.structure },
-    ...(theme.commissioning !== undefined ? { commissioning: theme.commissioning } : {}),
     ...(theme.resolveElementFormat !== undefined ? { resolveElementFormat: theme.resolveElementFormat } : {})
   };
 }

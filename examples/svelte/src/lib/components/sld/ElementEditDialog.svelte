@@ -13,11 +13,10 @@
     type ConnectionJson,
     type PositionType,
     type ExternalAssetKind,
-    type ExternalDirection,
-    getCommissioning,
-    withCommissioning
+    type ExternalDirection
   } from '@sld-kit/core';
   import { POSITION_TYPE_LABELS, COMMISSIONING_CATEGORY_OPTIONS } from '$lib/components/sld/theme';
+  import { getCommissioning, withCommissioning } from '$lib/components/sld/commissioning';
 
   /**
    * Properties dialog for a single element, opened by double-clicking it.

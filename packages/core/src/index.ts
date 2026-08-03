@@ -11,19 +11,13 @@ export {
   DEFAULT_THEME,
   positionColors,
   elementFormat,
-  makeCommissioningResolver,
+  firstFormat,
   resolveTheme,
   type SldTheme,
   type PositionTypeColors,
   type ElementFormat
 } from './theme';
-export {
-  getElementData,
-  getCommissioning,
-  withCommissioning,
-  type CommissioningInfo,
-  type SldNamespaceData
-} from './data';
+export { getElementData } from './data';
 
 export { SldElement } from './elements/Element';
 export { BusBar, type BusBarOptions } from './elements/BusBar';
@@ -94,6 +88,8 @@ export { CompositeDocument, type CompositeMeta, type CompositeChange } from './c
 export {
   CompositeLayoutEngine,
   labelFlipDeg,
+  linkConnections,
+  lineConnections,
   resolveNameLabelLayout,
   PLACEHOLDER_FRAME,
   NAME_LABEL_PAD,

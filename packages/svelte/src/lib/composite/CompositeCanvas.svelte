@@ -2,6 +2,9 @@
   import { onMount, createEventDispatcher } from 'svelte';
   import {
     SLD_LAYOUT,
+    firstFormat,
+    linkConnections,
+    lineConnections,
     type CompositeLayout,
     type ChildLayout,
     type CompositeLineLayout,
@@ -227,14 +230,17 @@
   on:click={handleClick}
   on:dblclick={handleDblClick}
 >
-  <!-- Inter-diagram auto-links (dashed), underneath the children. -->
+  <!-- Inter-diagram auto-links (dashed), underneath the children. A commissioning
+       overlay on the shared child connection restyles the tie-line (dash / width);
+       tagging it in either diagram is enough (see `linkConnections`). -->
   {#each layout.links as link (link.connectionId)}
+    {@const lf = firstFormat(linkConnections(link, layout.children), formatResolver ?? undefined)}
     <polyline
       points={link.points.map((p) => `${p.x},${p.y}`).join(' ')}
       fill="none"
       class="stroke-primary/70"
-      stroke-width={cs.linkStrokeWidth}
-      stroke-dasharray={cs.linkDashArray}
+      stroke-width={lf?.strokeWidth ?? cs.linkStrokeWidth}
+      stroke-dasharray={lf?.dashArray ?? cs.linkDashArray}
     />
     {#each link.points as p}
       <circle cx={p.x} cy={p.y} r={SLD_LAYOUT.nodeDotRadius} class="fill-primary/70" />
@@ -256,13 +262,17 @@
        like a child's connections; falls back to the neutral primary stroke. -->
   {#each layout.lines as ln (ln.line.id)}
     {@const cls = lineColorClass(ln)}
+    {@const lf = firstFormat(lineConnections(ln.line, layout.children), formatResolver ?? undefined)}
     <polyline
       points={ln.points.map((p) => `${p.x},${p.y}`).join(' ')}
       fill="none"
       stroke={cls ? 'currentColor' : undefined}
       class={cls ?? 'stroke-primary'}
       style={cls ? 'color: hsl(var(--sld-pos))' : ''}
-      stroke-width={ln.line.id === selectedLineId ? cs.lineSelectedStrokeWidth : cs.lineStrokeWidth}
+      stroke-width={ln.line.id === selectedLineId
+        ? cs.lineSelectedStrokeWidth
+        : (lf?.strokeWidth ?? cs.lineStrokeWidth)}
+      stroke-dasharray={lf?.dashArray ?? undefined}
     />
   {/each}
 

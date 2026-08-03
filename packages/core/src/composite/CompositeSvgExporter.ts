@@ -2,9 +2,9 @@ import { SvgBuilder } from '../export/SvgBuilder';
 import { SvgExporter } from '../export/SvgExporter';
 import { SLD_LAYOUT, type SldLayoutConfig } from '../layout';
 import { connectionPath } from '../layout/paths';
-import { DEFAULT_THEME, resolveTheme, type SldTheme } from '../theme';
+import { DEFAULT_THEME, firstFormat, resolveTheme, type SldTheme } from '../theme';
 import { CompositeDocument } from './CompositeDocument';
-import { CompositeLayoutEngine, type ChildLayout } from './CompositeLayoutEngine';
+import { CompositeLayoutEngine, linkConnections, lineConnections, type ChildLayout } from './CompositeLayoutEngine';
 
 export interface CompositeSvgExportOptions {
   /** Paint an opaque background rect (default true — slides are light). */
@@ -52,27 +52,32 @@ export class CompositeSvgExporter {
       b.element('rect', { x: minX, y: minY, width, height, fill: theme.structure.background });
     }
 
-    // Links first (underneath the children).
+    // Links first (underneath the children). A commissioning overlay on the
+    // shared child connection restyles the whole tie-line (dash / width).
     for (const link of layout.links) {
+      const lf = firstFormat(linkConnections(link, layout.children), theme.resolveElementFormat);
       b.element('polyline', {
         points: link.points.map((p) => `${p.x},${p.y}`).join(' '),
         fill: 'none',
         stroke: theme.structure.connection,
-        'stroke-width': 2,
-        'stroke-dasharray': '6 4'
+        'stroke-width': lf?.strokeWidth ?? 2,
+        'stroke-dasharray': lf?.dashArray ?? '6 4'
       });
       for (const p of link.points) {
         b.element('circle', { cx: p.x, cy: p.y, r: this.cfg.nodeDotRadius, fill: theme.structure.connection });
       }
     }
 
-    // Manual lines: plain solid stroked paths (distinct from the dashed auto-links).
+    // Manual lines: solid by default, but a commissioning tag on the anchored
+    // child connection restyles them (dash / width) just like the auto-links.
     for (const line of layout.lines) {
+      const lf = firstFormat(lineConnections(line.line, layout.children), theme.resolveElementFormat);
       b.element('path', {
         d: connectionPath(line.points, undefined, this.cfg.hopRadius),
         fill: 'none',
         stroke: theme.structure.connection,
-        'stroke-width': theme.structure.connectionStrokeWidth
+        'stroke-width': lf?.strokeWidth ?? theme.structure.connectionStrokeWidth,
+        'stroke-dasharray': lf?.dashArray
       });
     }
 

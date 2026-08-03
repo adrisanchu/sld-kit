@@ -65,8 +65,9 @@ export const POSITION_TYPE_TOKENS: Record<string, string> = {
  * fill opacity. Categories are open strings stored in `data.sld.commissioning`;
  * an absent/`existing` category renders exactly as today (no entry → no overlay).
  *
- * The same map drives both the SVG export (as `theme.commissioning.categories`)
- * and the live views (via `makeCommissioningResolver`), so screen and export match.
+ * `commissioningResolver` (in `./commissioning`) maps a category to one of these
+ * and is passed to both the SVG export (`theme.resolveElementFormat`) and the
+ * live views (`formatResolver`), so screen and export match.
  */
 export const COMMISSIONING_FORMATS: Record<string, ElementFormat> = {
   // Committed by an older decree — real but recently added: a dashed border.

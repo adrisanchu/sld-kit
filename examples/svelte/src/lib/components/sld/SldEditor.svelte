@@ -19,7 +19,6 @@
     AddLaneCommand,
     RemoveLaneCommand,
     SvgExporter,
-    makeCommissioningResolver,
     nextPositionLabel,
     nextExternalLabel,
     newId,
@@ -60,9 +59,9 @@
     SLD_LANE_ACTION_CHIP_LABELS,
     COMPACT_LAYOUT,
     voltageToken,
-    COMMISSIONING_FORMATS,
     SLD_VIEW_STYLE
   } from '$lib/components/sld/theme';
+  import { commissioningResolver } from '$lib/components/sld/commissioning';
 
   /**
    * Composition root of the SLD editor. Owns per-instance editor state (the
@@ -76,11 +75,6 @@
 
   const svgExporter = new SvgExporter();
   const stack = new CommandStack();
-
-  // Commissioning overlay: one resolver drives both the live canvas
-  // and the SVG export, so a tagged asset looks the same on screen and exported.
-  // A no-op for untagged elements, so it's safe to leave always on.
-  const commissioningResolver = makeCommissioningResolver(COMMISSIONING_FORMATS);
 
   $: docStore = createDocStore(doc);
   // Hiding position labels compacts the layout (no name to read inside a box).
@@ -479,9 +473,9 @@
 
   function exportSvg() {
     // Standalone, PowerPoint-safe SVG from the same layout the view uses.
-    // Carry the commissioning overlay so exported borders match the screen.
+    // The same resolver drives export, so exported borders match the screen.
     const svg = svgExporter.export(doc, {
-      theme: { commissioning: { categories: COMMISSIONING_FORMATS } }
+      theme: { resolveElementFormat: commissioningResolver }
     });
     downloadText(`${slugify(doc.meta.name)}.sld.svg`, svg, 'image/svg+xml');
   }
