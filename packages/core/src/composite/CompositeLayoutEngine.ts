@@ -164,6 +164,50 @@ export interface CompositeLink {
   points: Point[];
 }
 
+/** Resolve child `Connection`s from `(instanceId, connectionId)` references. */
+function connectionsFor(
+  refs: { instanceId: string; connectionId: string }[],
+  children: ChildLayout[]
+): Connection[] {
+  const out: Connection[] = [];
+  for (const { instanceId, connectionId } of refs) {
+    const el = children.find((c) => c.instance.id === instanceId)?.instance.resolved?.getElement(connectionId);
+    if (el instanceof Connection) out.push(el);
+  }
+  return out;
+}
+
+/**
+ * The child `Connection`s behind an **auto-link** — both children share the
+ * link's `connectionId`. Purely structural (no styling policy): a consumer runs
+ * its own `resolveElementFormat` over these (see `firstFormat`) to style the
+ * tie-line, so tagging *either* diagram is enough without the core knowing what
+ * the tag means.
+ */
+export function linkConnections(link: CompositeLink, children: ChildLayout[]): Connection[] {
+  return connectionsFor(
+    [
+      { instanceId: link.a.instanceId, connectionId: link.connectionId },
+      { instanceId: link.b.instanceId, connectionId: link.connectionId }
+    ],
+    children
+  );
+}
+
+/**
+ * The child `Connection`s a **hand-drawn manual line** anchors to. Its `anchor`
+ * vertices reference the same shared `connectionId` (which also suppresses the
+ * auto-link). A line with only free `point` vertices returns `[]`.
+ */
+export function lineConnections(line: CompositeLine, children: ChildLayout[]): Connection[] {
+  return connectionsFor(
+    line.vertices.flatMap((v) =>
+      v.kind === 'anchor' ? [{ instanceId: v.instanceId, connectionId: v.connectionId }] : []
+    ),
+    children
+  );
+}
+
 export interface CompositeLineLayout {
   line: CompositeLine;
   /**

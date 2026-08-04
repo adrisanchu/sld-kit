@@ -7,7 +7,7 @@ import { SvgBuilder } from './SvgBuilder';
 import { SymbolRegistry } from '../symbols/SymbolRegistry';
 import { createDefaultSymbolRegistry } from '../symbols/defaults';
 import { SLD_LAYOUT, type SldLayoutConfig } from '../layout';
-import { DEFAULT_THEME, positionColors, resolveTheme, type SldTheme } from '../theme';
+import { DEFAULT_THEME, elementFormat, positionColors, resolveTheme, type SldTheme } from '../theme';
 
 export interface SvgExportOptions {
   /** Paint an opaque background rect (default true — slides are light). */
@@ -89,11 +89,13 @@ export class SvgExporter {
       const geo = layout.geometry.get(conn.id);
       if (geo?.kind !== 'connection') continue;
 
+      const connFmt = elementFormat(theme, conn);
       b.element('path', {
         d: connectionPath(geo.points, geo.hops, cfg.hopRadius),
         fill: 'none',
         stroke: theme.structure.connection,
-        'stroke-width': 2
+        'stroke-width': connFmt?.strokeWidth ?? theme.structure.connectionStrokeWidth,
+        'stroke-dasharray': connFmt?.dashArray
       });
 
       if (geo.arrow) {
@@ -143,12 +145,19 @@ export class SvgExporter {
     for (const bar of doc.busBars()) {
       const geo = layout.geometry.get(bar.id);
       if (geo?.kind !== 'busbar') continue;
+      const barFmt = elementFormat(theme, bar);
       b.element('rect', {
         x: geo.rect.x,
         y: geo.rect.y,
         width: geo.rect.width,
         height: geo.rect.height,
-        fill: theme.structure.busbar
+        fill: barFmt?.fill ?? theme.structure.busbar,
+        'fill-opacity': barFmt?.fillOpacity,
+        // A bar has no stroke by default; a commissioning overlay that asks for
+        // a border (width or dash) reuses the structural bar color (no new color axis).
+        stroke: barFmt?.strokeWidth !== undefined || barFmt?.dashArray !== undefined ? theme.structure.busbar : undefined,
+        'stroke-width': barFmt?.strokeWidth,
+        'stroke-dasharray': barFmt?.dashArray
       });
       if (bar.label) {
         this.emitLabel(
@@ -175,15 +184,18 @@ export class SvgExporter {
       const geo = layout.geometry.get(pos.id);
       if (geo?.kind !== 'position') continue;
       const colors = positionColors(theme, pos.type);
+      const posFmt = elementFormat(theme, pos);
       b.element('rect', {
         x: geo.rect.x,
         y: geo.rect.y,
         width: geo.rect.width,
         height: geo.rect.height,
         rx: cfg.positionCornerRadius,
-        fill: colors.fill,
+        fill: posFmt?.fill ?? colors.fill,
+        'fill-opacity': posFmt?.fillOpacity,
         stroke: colors.stroke,
-        'stroke-width': 1.5
+        'stroke-width': posFmt?.strokeWidth ?? theme.structure.positionStrokeWidth,
+        'stroke-dasharray': posFmt?.dashArray
       });
       if (pos.label) {
         // Shrink long labels a bit instead of overflowing the box.

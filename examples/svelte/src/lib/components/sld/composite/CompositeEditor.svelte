@@ -35,8 +35,10 @@
     SLD_EXPORT_LABELS,
     SLD_CHILD_NOT_FOUND,
     COMPACT_LAYOUT,
-    voltageToken
+    voltageToken,
+    SLD_VIEW_STYLE
   } from '$lib/components/sld/theme';
+  import { commissioningResolver } from '$lib/components/sld/commissioning';
 
   /**
    * Composition root of the composite ("diagram of diagrams") editor. A small
@@ -466,7 +468,10 @@
   }
 
   function exportSvg() {
-    downloadText(`${slugify(doc.meta.name)}.composite.svg`, svgExporter.export(doc), 'image/svg+xml');
+    const svg = svgExporter.export(doc, {
+      theme: { resolveElementFormat: commissioningResolver }
+    });
+    downloadText(`${slugify(doc.meta.name)}.composite.svg`, svg, 'image/svg+xml');
   }
 
   // ── Keyboard ───────────────────────────────────────────────────────────────
@@ -514,6 +519,8 @@
     tokens={POSITION_TYPE_TOKENS}
     {childColorClass}
     {lineColorClass}
+    formatResolver={commissioningResolver}
+    style={SLD_VIEW_STYLE}
     {showPositionLabels}
     {showBusBarLabels}
     {showConnectionLabels}

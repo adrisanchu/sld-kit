@@ -7,7 +7,16 @@
 export * from './types';
 export { newId } from './ids';
 export { SLD_LAYOUT, type SldLayoutConfig } from './layout';
-export { DEFAULT_THEME, positionColors, resolveTheme, type SldTheme, type PositionTypeColors } from './theme';
+export {
+  DEFAULT_THEME,
+  positionColors,
+  elementFormat,
+  firstFormat,
+  resolveTheme,
+  type SldTheme,
+  type PositionTypeColors,
+  type ElementFormat
+} from './theme';
 export { getElementData } from './data';
 
 export { SldElement } from './elements/Element';
@@ -79,6 +88,8 @@ export { CompositeDocument, type CompositeMeta, type CompositeChange } from './c
 export {
   CompositeLayoutEngine,
   labelFlipDeg,
+  linkConnections,
+  lineConnections,
   resolveNameLabelLayout,
   PLACEHOLDER_FRAME,
   NAME_LABEL_PAD,

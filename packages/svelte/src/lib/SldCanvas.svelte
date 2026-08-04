@@ -6,6 +6,8 @@
   import ConnectionView from './elements/ConnectionView.svelte';
   import { createPanZoom } from './panzoom';
   import { DEFAULT_POSITION_TOKENS, type PositionTokens } from './labels';
+  import type { FormatResolver } from './format';
+  import { DEFAULT_VIEW_STYLE, type SldViewStyle } from './style';
 
   /**
    * SVG host of the diagram. Owns the viewBox (pan/zoom) and renders the
@@ -29,6 +31,19 @@
    * diagram (e.g. a voltage bucket). The class must set `--sld-pos`.
    */
   export let colorClass: string | null = null;
+  /**
+   * Generic per-element formatting overlay: `(el) => ElementFormat` (stroke
+   * width / dash / fill opacity), threaded to every element view. The app owns
+   * the policy (e.g. style by a `data` field); `null` (default) leaves rendering
+   * unchanged. Pass the same function as the exporter's `theme.resolveElementFormat`.
+   */
+  export let formatResolver: FormatResolver | null = null;
+  /**
+   * Numeric presentation config (stroke widths, opacities, selection halo),
+   * forwarded to every element view. Defaults reproduce today's look; override
+   * via `resolveViewStyle({...})`.
+   */
+  export let style: SldViewStyle = DEFAULT_VIEW_STYLE;
   /** Label-visibility toggles, mapped to each element view's `showLabel`. */
   export let showPositionLabels: boolean = true;
   export let showConnectionLabels: boolean = true;
@@ -156,6 +171,8 @@
       selected={selectedIds.has(item.el.id)}
       {interactive}
       {colorClass}
+      {formatResolver}
+      {style}
       showLabel={showConnectionLabels}
       on:select
       on:editlabel
@@ -168,6 +185,8 @@
       selected={selectedIds.has(item.el.id)}
       {interactive}
       {colorClass}
+      {formatResolver}
+      {style}
       showLabel={showBusBarLabels}
       on:select
       on:editlabel
@@ -182,6 +201,8 @@
       {interactive}
       {tokens}
       {colorClass}
+      {formatResolver}
+      {style}
       showLabel={showPositionLabels}
       on:select
       on:dragstart={(e) => dispatch('elementdragstart', e.detail)}

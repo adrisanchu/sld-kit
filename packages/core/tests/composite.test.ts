@@ -13,6 +13,9 @@ import {
   resolveNameLabelLayout,
   MapResolver,
   Transform2D,
+  linkConnections,
+  lineConnections,
+  type SldElement,
   type CompositeDocument,
   type SldDocumentJson
 } from '../src';
@@ -335,6 +338,56 @@ describe('CompositeSvgExporter', () => {
     expect(svg).toContain('font-weight="700"');
     expect(svg).not.toContain('class=');
     expect(svg).not.toContain('<style');
+  });
+
+  // A consumer-side resolver: style any element flagged `data.mark`. The core
+  // never reads `data` — it just applies this over the tie-line's backing
+  // connections (see `firstFormat` + `linkConnections`/`lineConnections`).
+  const byMark = (el: SldElement) =>
+    (el.data as { mark?: boolean } | undefined)?.mark ? { strokeWidth: 4, dashArray: '2 3' } : undefined;
+
+  function taggedResolver(id: string) {
+    const s400 = buildSouth400();
+    s400.getElement(id)!.data = { mark: true };
+    return new MapResolver(
+      new Map<string, SldDocumentJson>([
+        [SOUTH_400_ID, Serializer.toJSON(s400)],
+        [SOUTH_220_ID, Serializer.toJSON(buildSouth220())]
+      ])
+    );
+  }
+
+  it('restyles the auto-link tie-line from a resolver match in one child', () => {
+    // Flag the shared connection in the 400 kV child only; the tie-line must pick it up.
+    const doc = buildSouthComposite();
+    doc.resolveChildren(taggedResolver(SHARED_LINK_ID));
+    const svg = new CompositeSvgExporter().export(doc, { theme: { resolveElementFormat: byMark } });
+    expect(svg).toContain('stroke-dasharray="2 3"');
+    expect(svg).toContain('stroke-width="4"');
+  });
+
+  it('exposes the backing connections of an auto-link (both ends, structural)', () => {
+    const doc = buildSouthComposite();
+    doc.resolveChildren(taggedResolver(SHARED_LINK_ID));
+    const layout = new CompositeLayoutEngine().layout(doc);
+    const link = layout.links.find((l) => l.connectionId === SHARED_LINK_ID)!;
+    const conns = linkConnections(link, layout.children);
+    // Two ends resolve; exactly the flagged one carries the consumer's tag.
+    expect(conns.length).toBe(2);
+    expect(conns.filter((c) => (c.data as { mark?: boolean } | undefined)?.mark)).toHaveLength(1);
+  });
+
+  it('restyles a hand-drawn manual line from a resolver match on its anchored connection', () => {
+    // `buildSouthCompositeWithLine` draws a manual line anchored to SHARED_LINK_ID.
+    const doc = buildSouthCompositeWithLine();
+    doc.resolveChildren(taggedResolver(SHARED_LINK_ID));
+    const layout = new CompositeLayoutEngine().layout(doc);
+    const line = layout.lines.find((l) => l.line.id === 'line-1')!;
+    // The tag is reachable through the manual line's anchor vertices.
+    expect(lineConnections(line.line, layout.children).some((c) => (c.data as { mark?: boolean }).mark)).toBe(true);
+
+    const svg = new CompositeSvgExporter().export(doc, { theme: { resolveElementFormat: byMark } });
+    expect(svg).toContain('stroke-dasharray="2 3"');
   });
 });
 

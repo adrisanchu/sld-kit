@@ -35,6 +35,8 @@ export { default as SelectionFrame } from './composite/SelectionFrame.svelte';
 export { createPanZoom, type PanZoom, type ViewBox, type ContentBounds } from './panzoom';
 export { createDocStore, type Subscribable } from './docStore';
 export { downloadText, slugify } from './download';
+export { type FormatResolver } from './format';
+export { DEFAULT_VIEW_STYLE, resolveViewStyle, type SldViewStyle } from './style';
 
 // ── Injectable labels + tokens ────────────────────────────────────────────
 export {

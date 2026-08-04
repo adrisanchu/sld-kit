@@ -1,6 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import * as Dialog from '$lib/components/ui/dialog';
+  import * as Select from '$lib/components/ui/select';
+  import { Label } from '$lib/components/ui/label';
   import RotateCw from 'lucide-svelte/icons/rotate-cw';
   import { LABEL_ANCHORS, type LabelAnchor } from '@sld-kit/core';
 
@@ -28,10 +30,9 @@
     'bottom-center': 'Bottom · center',
     'bottom-right': 'Bottom · right'
   };
+  const anchorOptions = LABEL_ANCHORS.map((a) => ({ value: a, label: ANCHOR_LABELS[a] }));
 
-  function pickAnchor(e: Event) {
-    dispatch('change', { anchor: (e.currentTarget as HTMLSelectElement).value as LabelAnchor, direction });
-  }
+  $: selectedAnchor = anchorOptions.find((o) => o.value === anchor);
 
   function rotate() {
     dispatch('change', { anchor, direction: direction + 90 });
@@ -46,18 +47,22 @@
     </Dialog.Header>
 
     <div class="space-y-4 py-2">
-      <label class="block space-y-1.5">
-        <span class="text-sm font-medium">Position</span>
-        <select
-          class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          value={anchor}
-          on:change={pickAnchor}
+      <div class="space-y-1.5">
+        <Label for="diagram-anchor">Position</Label>
+        <Select.Root
+          selected={selectedAnchor}
+          onSelectedChange={(s) => s && dispatch('change', { anchor: s.value, direction })}
         >
-          {#each LABEL_ANCHORS as a}
-            <option value={a}>{ANCHOR_LABELS[a]}</option>
-          {/each}
-        </select>
-      </label>
+          <Select.Trigger id="diagram-anchor">
+            <Select.Value placeholder="Select a position" />
+          </Select.Trigger>
+          <Select.Content>
+            {#each anchorOptions as o}
+              <Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      </div>
 
       <div class="flex items-center justify-between">
         <span class="text-sm font-medium">Direction <span class="text-muted-foreground">({direction}°)</span></span>

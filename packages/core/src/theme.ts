@@ -10,10 +10,32 @@
  * consumer concern and lives outside this package.
  */
 
+import type { SldElement } from './elements/Element';
+
 export interface PositionTypeColors {
   fill: string;
   stroke: string;
   text: string;
+}
+
+/**
+ * A generic, domain-agnostic formatting overlay applied *on top of* an element's
+ * per-type fill. Every field is optional and every field is an office-safe
+ * presentation attribute (`stroke-width`, `stroke-dasharray`, `fill-opacity`,
+ * `fill`), so it composes without breaking SVG export. Absent fields leave the
+ * existing value untouched.
+ *
+ * The core never decides *when* to apply one — a consumer supplies a
+ * `resolveElementFormat` that inspects whatever it wants (an element's `data`,
+ * e.g. a commissioning date/category) and returns this. That keeps the styling
+ * policy in the consuming package and the core free of domain concepts.
+ */
+export interface ElementFormat {
+  strokeWidth?: number;
+  fillOpacity?: number;
+  fill?: string;
+  /** `stroke-dasharray` value (e.g. `'6 3'`) for the border/line. Absent → solid. */
+  dashArray?: string;
 }
 
 export interface SldTheme {
@@ -30,7 +52,18 @@ export interface SldTheme {
     connection: string;
     label: string;
     background: string;
+    /** Base stroke width of a position box (before any per-element overlay). */
+    positionStrokeWidth: number;
+    /** Base stroke width of a connection / manual composite line. */
+    connectionStrokeWidth: number;
   };
+  /**
+   * The single, property-agnostic styling seam (ADR 0001 D1): style any element
+   * by anything the consumer wants — a `data` field, a CIM class, a commissioning
+   * date — by returning an `ElementFormat`. The core never reads `data` itself.
+   * Absent (as in `DEFAULT_THEME`) → no overlay, output unchanged.
+   */
+  resolveElementFormat?: (el: SldElement) => ElementFormat | undefined;
 }
 
 /**
@@ -56,7 +89,9 @@ export const DEFAULT_THEME: SldTheme = {
     busbar: '#0f172a',
     connection: '#334155',
     label: '#0f172a',
-    background: '#ffffff'
+    background: '#ffffff',
+    positionStrokeWidth: 1.5,
+    connectionStrokeWidth: 2
   }
 };
 
@@ -69,6 +104,34 @@ export function positionColors(theme: SldTheme, type: string): PositionTypeColor
 }
 
 /**
+ * Resolve an element's formatting overlay against a theme — simply the theme's
+ * `resolveElementFormat` applied to the element (or `undefined` when the theme
+ * defines none, leaving the element's default attributes untouched).
+ */
+export function elementFormat(theme: SldTheme, el: SldElement): ElementFormat | undefined {
+  return theme.resolveElementFormat?.(el);
+}
+
+/**
+ * The first `ElementFormat` a resolver produces across `elements`, or `undefined`.
+ * Used for composite tie-lines, which are backed by more than one underlying
+ * connection (both ends share the id): styling the tie-line = the first backing
+ * connection the consumer's resolver formats, so tagging *either* diagram is
+ * enough — with zero domain knowledge in the core.
+ */
+export function firstFormat(
+  elements: SldElement[],
+  resolve?: (el: SldElement) => ElementFormat | null | undefined
+): ElementFormat | undefined {
+  if (!resolve) return undefined;
+  for (const el of elements) {
+    const fmt = resolve(el);
+    if (fmt) return fmt;
+  }
+  return undefined;
+}
+
+/**
  * Deep-merge a partial theme over `DEFAULT_THEME`. `positionTypes` entries are
  * merged by key (a partial override of one type keeps the default's other
  * types); `structure` and `fallbackPositionType` are shallow-merged.
@@ -78,6 +141,7 @@ export function resolveTheme(theme?: Partial<SldTheme>): SldTheme {
   return {
     positionTypes: { ...DEFAULT_THEME.positionTypes, ...theme.positionTypes },
     fallbackPositionType: { ...DEFAULT_THEME.fallbackPositionType, ...theme.fallbackPositionType },
-    structure: { ...DEFAULT_THEME.structure, ...theme.structure }
+    structure: { ...DEFAULT_THEME.structure, ...theme.structure },
+    ...(theme.resolveElementFormat !== undefined ? { resolveElementFormat: theme.resolveElementFormat } : {})
   };
 }

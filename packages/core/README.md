@@ -183,6 +183,33 @@ const svg = new SvgExporter().export(doc, {
 Live-view theming (dark mode, CSS custom properties) is a renderer concern and
 lives in your app, not here.
 
+### Formatting overlay (`resolveElementFormat`)
+
+Beyond per-type fill colors, a theme can carry **one property-agnostic styling
+seam**: `resolveElementFormat(el) => ElementFormat`. The core never reads `data`
+or knows any domain concept — **the consumer** supplies a function that inspects
+whatever it wants (a `data` field, a CIM class, a commissioning date) and returns
+a generic `ElementFormat`, layered on top of the per-type color. `ElementFormat`
+fields — `strokeWidth`, `dashArray`, `fillOpacity`, `fill` — are all office-safe
+presentation attributes, so exports still paste into PowerPoint.
+
+```ts
+// Consumer policy: dash + ghost anything the app considers "future".
+const byFuture = (el) => (getElementData<{ future?: boolean }>(el)?.future ? { dashArray: '6 3', fillOpacity: 0.45 } : undefined);
+
+const svg = new SvgExporter().export(doc, { theme: { resolveElementFormat: byFuture } });
+```
+
+Absent a resolver (as in `DEFAULT_THEME`) the overlay is a no-op and output is
+byte-for-byte unchanged. Feed the **same** resolver to the live Svelte views
+(their `formatResolver` prop) so screen and export match. Composite tie-lines are
+backed by more than one connection; `firstFormat(linkConnections(link, children),
+resolve)` (and `lineConnections` for hand-drawn lines) styles a tie-line from the
+first backing connection the resolver formats — so tagging **either** diagram is
+enough, still with zero domain knowledge in the core. A worked commissioning
+example (a `data.sld.commissioning` reader mapped to formats) lives in the Svelte
+example app, not in the library.
+
 ## Open position types
 
 The five defaults — `line`, `transformer`, `central`, `renewable`, `reserve` —
@@ -236,6 +263,26 @@ database. `data` travels inside the diagram JSON and is not queryable. For
 DB-backed metadata, keep your own table keyed by the element's stable
 `ElementId` and join at render time (the "sidecar" pattern). Use `data` for
 attributes that must travel _with_ the exported file.
+
+### Reserved `data` namespaces (`sld`, `cim`)
+
+To let library conventions and future adapters share the same `data` bag without
+clobbering each other, top-level keys under `data` are **namespaced**: `sld` for
+this library's own conventions, `cim` for the (planned) CIM adapter, and any
+other key is yours.
+
+```
+data: { sld?: {…}, cim?: {…}, /* your keys */ }
+```
+
+Domain conventions like **commissioning** (new vs. existing assets — a `date`
+and/or open `category` under `data.sld.commissioning`) are **consumer-owned**,
+not part of this library: the Svelte example app ships a small `commissioning`
+module (typed accessors + a `resolveElementFormat` policy) demonstrating the
+pattern. The core stays domain-agnostic — it only roundtrips `data` and applies
+whatever [`resolveElementFormat`](#formatting-overlay-resolveelementformat) you
+give it. A future `@sld-kit/cim` adapter would map `data.sld.commissioning` onto
+CIM's `Asset.lifecycleDate` / `lifecycleState`.
 
 ## Composite diagrams ("diagram of diagrams")
 
@@ -292,8 +339,10 @@ options factory — and the `element` / `external` endpoint helpers), `Grid`,
 the `CommandStack` and command classes, the batch-authoring helpers `autoWire`
 and `buildDocument`, `Serializer` / `SldParseError`,
 `SvgExporter` / `SvgBuilder`, the `SymbolRegistry` and default symbols, the
-theme (`SldTheme`, `DEFAULT_THEME`, `resolveTheme`, `positionColors`),
-`getElementData`, and the composite classes (`CompositeDocument`,
+theme (`SldTheme`, `DEFAULT_THEME`, `resolveTheme`, `positionColors`, and the
+generic formatting seam `ElementFormat` / `elementFormat` / `firstFormat`),
+the metadata helper `getElementData`,
+and the composite classes (`CompositeDocument`,
 `DiagramInstance`, `CompositeLayoutEngine`, `CompositeSerializer`,
 `CompositeSvgExporter`, `Transform2D`, `MapResolver`).
 

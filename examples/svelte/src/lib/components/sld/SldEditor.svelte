@@ -58,8 +58,10 @@
     SLD_LANE_OVERLAY_LABELS,
     SLD_LANE_ACTION_CHIP_LABELS,
     COMPACT_LAYOUT,
-    voltageToken
+    voltageToken,
+    SLD_VIEW_STYLE
   } from '$lib/components/sld/theme';
+  import { commissioningResolver } from '$lib/components/sld/commissioning';
 
   /**
    * Composition root of the SLD editor. Owns per-instance editor state (the
@@ -471,7 +473,11 @@
 
   function exportSvg() {
     // Standalone, PowerPoint-safe SVG from the same layout the view uses.
-    downloadText(`${slugify(doc.meta.name)}.sld.svg`, svgExporter.export(doc), 'image/svg+xml');
+    // The same resolver drives export, so exported borders match the screen.
+    const svg = svgExporter.export(doc, {
+      theme: { resolveElementFormat: commissioningResolver }
+    });
+    downloadText(`${slugify(doc.meta.name)}.sld.svg`, svg, 'image/svg+xml');
   }
 
   // ── Keyboard ───────────────────────────────────────────────────────────────
@@ -555,6 +561,8 @@
     interactive={true}
     tokens={POSITION_TYPE_TOKENS}
     {colorClass}
+    formatResolver={commissioningResolver}
+    style={SLD_VIEW_STYLE}
     {showPositionLabels}
     {showBusBarLabels}
     {showConnectionLabels}

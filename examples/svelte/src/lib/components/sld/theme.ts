@@ -5,16 +5,18 @@
  * each component via its `labels` prop. This example keeps them in English;
  * swap the strings below to localise the editor.
  */
-import type {
-  SldToolbarLabels,
-  MatrixCreatorLabels,
-  ExportFlyoutLabels,
-  ExternalAssetPopoverLabels,
-  LaneOverlayLabels,
-  LaneActionChipLabels,
-  CompositeToolbarLabels
+import {
+  resolveViewStyle,
+  type SldViewStyle,
+  type SldToolbarLabels,
+  type MatrixCreatorLabels,
+  type ExportFlyoutLabels,
+  type ExternalAssetPopoverLabels,
+  type LaneOverlayLabels,
+  type LaneActionChipLabels,
+  type CompositeToolbarLabels
 } from '@sld-kit/svelte';
-import { SLD_LAYOUT, type SldLayoutConfig } from '@sld-kit/core';
+import { SLD_LAYOUT, type SldLayoutConfig, type ElementFormat } from '@sld-kit/core';
 
 /**
  * Maps a document's voltage (kV) to a CSS class from `app.css` used in the
@@ -56,6 +58,39 @@ export const POSITION_TYPE_TOKENS: Record<string, string> = {
   storage: 'sld-pos-storage',
   demand: 'sld-pos-demand'
 };
+
+/**
+ * The orthogonal "commissioning" axis: *from where / when* an asset
+ * enters the system, layered on top of the per-type fill as stroke width +
+ * fill opacity. Categories are open strings stored in `data.sld.commissioning`;
+ * an absent/`existing` category renders exactly as today (no entry → no overlay).
+ *
+ * `commissioningResolver` (in `./commissioning`) maps a category to one of these
+ * and is passed to both the SVG export (`theme.resolveElementFormat`) and the
+ * live views (`formatResolver`), so screen and export match.
+ */
+export const COMMISSIONING_FORMATS: Record<string, ElementFormat> = {
+  // Committed by an older decree — real but recently added: a dashed border.
+  'decree-x': { strokeWidth: 2, dashArray: '6 3' },
+  // Planned / future — ghosted fill and a finer dotted-dash so it reads as "not yet".
+  future: { strokeWidth: 2, fillOpacity: 0.45, dashArray: '2 3' }
+};
+
+/**
+ * Numeric presentation config for the live views (stroke widths, opacities,
+ * selection halo, composite handle sizes). One place to tune the look; the
+ * defaults reproduce the package look, so override only what you need — e.g.
+ * `resolveViewStyle({ connection: { strokeWidth: 2.5 } })`.
+ */
+export const SLD_VIEW_STYLE: SldViewStyle = resolveViewStyle();
+
+/** Dropdown options for the commissioning category (empty = clear / untagged). */
+export const COMMISSIONING_CATEGORY_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'Untagged' },
+  { value: 'existing', label: 'Existing' },
+  { value: 'decree-x', label: 'New — decree X' },
+  { value: 'future', label: 'Future / planned' }
+];
 
 /** Human-readable labels for position types — UI + tooltips. */
 export const POSITION_TYPE_LABELS: Record<string, string> = {
