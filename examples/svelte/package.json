@@ -13,10 +13,11 @@
     "test": "echo \"no tests yet\" && exit 0"
   },
   "dependencies": {
+    "@babel/runtime": "^8.0.0",
     "@codemirror/lang-javascript": "^6.2.2",
-    "@codemirror/theme-one-dark": "^6.1.2",
     "@sld-kit/core": "workspace:*",
     "@sld-kit/svelte": "workspace:*",
+    "@uiw/codemirror-theme-github": "^4.25.11",
     "bits-ui": "^0.22.0",
     "clsx": "^2.1.0",
     "codemirror": "^6.0.1",
