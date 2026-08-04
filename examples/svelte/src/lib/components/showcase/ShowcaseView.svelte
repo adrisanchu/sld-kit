@@ -61,14 +61,14 @@
         <div class="flex items-center justify-between">
           <span class="text-xs font-medium text-muted-foreground">1 · Builder code (editable)</span>
         </div>
-        <div class="min-h-0 flex-1">
+        <div class="min-h-0 max-lg:h-[85vh] lg:flex-1">
           <CodeEditor bind:value={codeById[active]} />
         </div>
       </div>
 
       <div class="flex min-h-[22rem] flex-col gap-1.5 lg:min-h-0">
         <span class="text-xs font-medium text-muted-foreground">2 · Serializer.toJSON(doc)</span>
-        <div class="min-h-0 flex-1">
+        <div class="min-h-0 max-lg:h-[85vh] lg:flex-1">
           {#if result.error}
             <div
               class="flex h-full items-start gap-2 overflow-auto rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive"
