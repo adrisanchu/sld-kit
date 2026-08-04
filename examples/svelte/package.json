@@ -13,12 +13,18 @@
     "test": "echo \"no tests yet\" && exit 0"
   },
   "dependencies": {
+    "@codemirror/lang-javascript": "^6.2.2",
+    "@codemirror/theme-one-dark": "^6.1.2",
     "@sld-kit/core": "workspace:*",
     "@sld-kit/svelte": "workspace:*",
     "bits-ui": "^0.22.0",
     "clsx": "^2.1.0",
+    "codemirror": "^6.0.1",
+    "highlight.js": "^11.11.1",
     "lucide-svelte": "^0.483.0",
     "mode-watcher": "^0.3.1",
+    "sucrase": "^3.35.0",
+    "svelte-codemirror-editor": "^1.4.1",
     "svelte-sonner": "^0.3.28",
     "tailwind-merge": "^2.3.0",
     "tailwind-variants": "^0.2.1"
