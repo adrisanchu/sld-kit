@@ -81,21 +81,52 @@
           <div class="mb-3 flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
             <span>substation · 400 kV</span><span>svg</span>
           </div>
-          <svg viewBox="0 0 320 210" class="w-full" role="img" aria-label="Single-line diagram schematic">
+          <svg viewBox="0 0 320 228" class="w-full" role="img" aria-label="Single-line diagram schematic">
             <!-- bus bars -->
-            <line x1="30" y1="40" x2="290" y2="40" class="bar" />
-            <line x1="30" y1="170" x2="290" y2="170" class="bar" />
+            <line x1="30" y1="62" x2="290" y2="62" class="bar" />
+            <line x1="30" y1="178" x2="290" y2="178" class="bar" />
+
+            <!-- bays: vertical wire + two central nodes -->
             {#each [80, 160, 240] as x, i}
-              <!-- bay chain: top bar → node → node → bottom bar -->
-              <line x1={x} y1="40" x2={x} y2="170" class="wire" style="animation-delay:{i * 0.4}s" />
-              <rect x={x - 12} y="82" width="24" height="18" rx="3" class="node" />
-              <rect x={x - 12} y="112" width="24" height="18" rx="3" class="node" />
-              <!-- feeder stub -->
-              <line x1={x} y1="40" x2={x} y2="14" class="wire" style="animation-delay:{i * 0.4 + 0.2}s" />
-              <circle cx={x} cy="10" r="3" class="terminal" />
+              <line x1={x} y1={i % 2 != 0 ? "62" : "178"} x2={x} y2={i % 2 == 0  ? "62" : "178"} class="wire" style="animation-delay:{i * 0.4}s" />
+              <rect x={x - 12} y="90" width="24" height="18" rx="3" class="node" />
+              <rect x={x - 12} y="128" width="24" height="18" rx="3" class="node" />
             {/each}
-            <circle cx="30" cy="40" r="3" class="terminal" />
-            <circle cx="290" cy="170" r="3" class="terminal" />
+
+            <!-- Feeder ends (the app's external symbols): 2 lines leaving, a
+                 generator and a storage replacing dots, plus two plain terminals. -->
+
+            <!-- top-left · line leaving upward (tip aligned with the top symbols) -->
+            <line x1="80" y1="62" x2="80" y2="31" class="wire" style="animation-delay:.6s" />
+            <path d="M 80 17 L 74.5 31 L 85.5 31 Z" class="glyph-fill" />
+
+            <!-- top-mid · generator (renewable: circle + sine) -->
+            <line x1="160" y1="36" x2="160" y2="62" class="wire" style="animation-delay:.8s" />
+            <g transform="translate(148 14)" class="glyph">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M 6.5 12 C 8.5 8, 10.5 8, 12 12 C 13.5 16, 15.5 16, 17.5 12" />
+            </g>
+
+            <!-- top-right · storage (battery) -->
+            <line x1="240" y1="62" x2="240" y2="33" class="wire" style="animation-delay:1s" />
+            <g transform="translate(228 13)" class="glyph">
+              <path d="M 5 8 H 19 V 19 H 5 Z" />
+              <line x1="9.5" y1="8" x2="9.5" y2="5" />
+              <line x1="14.5" y1="8" x2="14.5" y2="5" />
+              <line x1="8" y1="12" x2="16" y2="12" />
+            </g>
+
+            <!-- bottom-left · terminal -->
+            <line x1="80" y1="178" x2="80" y2="206" class="wire" style="animation-delay:.7s" />
+            <circle cx="80" cy="210" r="3.5" class="terminal" />
+
+            <!-- bottom-mid · line leaving downward (tip aligned with the terminals) -->
+            <line x1="160" y1="178" x2="160" y2="206" class="wire" style="animation-delay:.9s" />
+            <path d="M 160 218 L 154.5 206 L 165.5 206 Z" class="glyph-fill" />
+
+            <!-- bottom-right · terminal -->
+            <line x1="240" y1="178" x2="240" y2="206" class="wire" style="animation-delay:1.1s" />
+            <circle cx="240" cy="210" r="3.5" class="terminal" />
           </svg>
         </div>
       </div>
@@ -198,6 +229,18 @@
     fill: hsl(var(--card));
     stroke: hsl(var(--foreground) / 0.7);
     stroke-width: 1.5;
+  }
+  /* External equipment glyphs (generator, storage) — outlined like the app's. */
+  .glyph {
+    fill: none;
+    stroke: hsl(var(--foreground) / 0.75);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  /* Filled arrowheads on lines leaving the substation. */
+  .glyph-fill {
+    fill: hsl(var(--primary));
   }
   .terminal {
     fill: hsl(var(--primary));
