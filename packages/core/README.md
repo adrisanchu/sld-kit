@@ -19,6 +19,9 @@ renderer (Svelte, React, plain DOM) and your own theme.
 npm install @sld-kit/core
 ```
 
+Prefer to run something first? The [`examples/node`](../../examples/node) folder is a
+copy-paste quickstart (build a diagram → export an SVG) you can run in seconds.
+
 ## Quickstart
 
 Build a document, run undoable commands, compute layout, export SVG.

@@ -17,7 +17,8 @@
     "format:check": "prettier --check \"**/*.{ts,js,json,md}\"",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run test",
     "dev:example": "pnpm --filter @sld-kit-examples/svelte dev",
-    "build:example": "pnpm --filter @sld-kit-examples/svelte build"
+    "build:example": "pnpm --filter @sld-kit-examples/svelte build",
+    "start:node": "pnpm --filter @sld-kit-examples/node start"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
