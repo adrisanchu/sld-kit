@@ -126,7 +126,7 @@
   }
 </script>
 
-<div class="mx-auto flex h-screen max-w-7xl flex-col p-4">
+<div class="mx-auto flex h-full max-w-7xl flex-col p-4">
   <div class="flex shrink-0 items-center gap-3 py-1">
     <a
       href="{base}/sld"
@@ -154,36 +154,39 @@
     {/if}
   </div>
   {#if doc || compositeDoc}
-    <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 pl-11 text-sm text-muted-foreground">
+    <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 pl-11 pt-1 text-sm text-muted-foreground">
       {#if doc}
         <label class="flex items-center gap-1.5">
-          Substation:
+          <span>Substation</span>
           <input
-            class="w-36 rounded border border-transparent bg-transparent px-1.5 py-0.5 text-foreground outline-none hover:border-input focus:border-input"
+            class="w-32 rounded-md border border-input bg-muted/40 px-2 py-1 text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground hover:bg-muted/70 focus:border-ring focus:bg-background focus:ring-1 focus:ring-ring"
             bind:value={substation}
             on:change={commitMeta}
             on:blur={commitMeta}
-            placeholder="-"
+            placeholder="—"
           />
         </label>
         <label class="flex items-center gap-1.5">
-          Voltage:
-          <input
-            type="number"
-            min="0"
-            step="any"
-            class="w-20 rounded border border-transparent bg-transparent px-1.5 py-0.5 text-right text-foreground outline-none hover:border-input focus:border-input"
-            bind:value={voltage}
-            on:change={commitMeta}
-            on:blur={commitMeta}
-            placeholder="-"
-          />
-          kV
+          <span>Voltage</span>
+          <span class="relative inline-flex items-center">
+            <input
+              type="number"
+              min="0"
+              step="any"
+              class="w-24 rounded-md border border-input bg-muted/40 py-1 pl-2 pr-8 text-right text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground hover:bg-muted/70 focus:border-ring focus:bg-background focus:ring-1 focus:ring-ring"
+              bind:value={voltage}
+              on:change={commitMeta}
+              on:blur={commitMeta}
+              placeholder="—"
+            />
+            <span class="pointer-events-none absolute right-2 text-xs text-muted-foreground">kV</span>
+          </span>
         </label>
       {/if}
-      <div class="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-0.5 text-xs">
-        <span title={createdAt}>Created: {fmtDate(createdAt)}</span>
-        <span title={updatedAt}>Modified: {fmtDate(updatedAt)}</span>
+      <div class="flex items-center gap-x-2 whitespace-nowrap text-xs max-sm:w-full sm:ml-auto">
+        <span title={createdAt}>Created {fmtDate(createdAt)}</span>
+        <span aria-hidden="true" class="text-muted-foreground/40">·</span>
+        <span title={updatedAt}>Modified {fmtDate(updatedAt)}</span>
       </div>
     </div>
   {/if}

@@ -40,7 +40,7 @@
   onDestroy(() => clearTimeout(debounce));
 </script>
 
-<div class="flex h-full flex-col gap-4">
+<div class="flex flex-col gap-4 lg:h-full">
   <Tabs.Root bind:value={active} class="flex min-h-0 flex-1 flex-col">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <Tabs.List>

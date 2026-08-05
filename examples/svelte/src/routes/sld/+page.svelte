@@ -160,11 +160,11 @@
               New diagram
             </Button>
           </div>
-          <div class="space-y-3 lg:max-h-[85vh] lg:overflow-y-auto lg:pr-1">
+          <div class="grid grid-cols-1 gap-3 lg:max-h-[85vh] lg:overflow-y-auto lg:pr-1 xl:grid-cols-2">
             {#each diagrams as entry (entry.id)}
               <Card.Root class="group relative transition-colors hover:bg-accent/50">
                 <a href="{base}/sld/{entry.id}" class="block">
-                  <Card.Header>
+                  <Card.Header class="p-4">
                     <div class="flex items-center gap-2">
                       <Workflow class="h-5 w-5 shrink-0 text-muted-foreground" />
                       <Card.Title class="truncate text-base">{entry.name}</Card.Title>
@@ -195,7 +195,9 @@
                 </div>
               </Card.Root>
             {:else}
-              <div class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
+              <div
+                class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground xl:col-span-2"
+              >
                 {q ? 'No diagrams match your search.' : 'No diagrams yet. Create a new one or import a JSON file.'}
               </div>
             {/each}
@@ -215,11 +217,11 @@
               New composition
             </Button>
           </div>
-          <div class="space-y-3 lg:max-h-[85vh] lg:overflow-y-auto lg:pr-1">
+          <div class="grid grid-cols-1 gap-3 lg:max-h-[85vh] lg:overflow-y-auto lg:pr-1 xl:grid-cols-2">
             {#each compositions as entry (entry.id)}
               <Card.Root class="group relative transition-colors hover:bg-accent/50">
                 <a href="{base}/sld/{entry.id}" class="block">
-                  <Card.Header>
+                  <Card.Header class="p-4">
                     <div class="flex items-center gap-2">
                       <Layers class="h-5 w-5 shrink-0 text-muted-foreground" />
                       <Card.Title class="truncate text-base">{entry.name}</Card.Title>
@@ -246,7 +248,9 @@
                 </div>
               </Card.Root>
             {:else}
-              <div class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
+              <div
+                class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground xl:col-span-2"
+              >
                 {q ? 'No compositions match your search.' : 'No compositions yet. Create one to combine diagrams.'}
               </div>
             {/each}

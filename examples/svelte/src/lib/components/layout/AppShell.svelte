@@ -24,11 +24,11 @@
   }
 </script>
 
-<div class="flex min-h-screen bg-background">
+<div class="flex h-dvh overflow-hidden bg-background">
   <!-- Desktop sidebar -->
   <aside
     class={cn(
-      'sticky top-0 hidden h-screen shrink-0 flex-col border-r bg-background transition-[width] duration-200 md:flex',
+      'hidden h-full shrink-0 flex-col border-r bg-background transition-[width] duration-200 md:flex',
       collapsed ? 'w-16' : 'w-56'
     )}
   >
@@ -69,7 +69,7 @@
       </a>
     </header>
 
-    <main class="min-w-0 flex-1">
+    <main class="min-h-0 min-w-0 flex-1 overflow-y-auto">
       <slot />
     </main>
   </div>

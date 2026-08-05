@@ -7,7 +7,7 @@
   <title>API Showcase · SLD-KIT</title>
 </svelte:head>
 
-<div class="flex min-h-0 flex-col md:h-screen">
+<div class="flex min-h-0 flex-col lg:h-screen">
   <header class="border-b px-6 py-4">
     <p class="font-mono text-xs uppercase tracking-[0.25em] text-muted-foreground">Example 01</p>
     <h1 class="mt-1 text-xl font-semibold tracking-tight">Core API showcase</h1>
