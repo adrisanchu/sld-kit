@@ -154,7 +154,7 @@
     {/if}
   </div>
   {#if doc || compositeDoc}
-    <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 pl-11 pt-1 text-sm text-muted-foreground">
+    <div class="flex justify-between flex-wrap items-center gap-x-3 gap-y-2 pt-1 text-sm text-muted-foreground sm:pl-11 lg:shrink-0">
       {#if doc}
         <label class="flex items-center gap-1.5">
           <span>Substation</span>
