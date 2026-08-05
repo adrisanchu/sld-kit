@@ -22,7 +22,7 @@
     <TabsContent value={m.id}>
       <div class="flex items-center gap-2 rounded-md border border-border bg-muted/40 py-2 pl-3 pr-2">
         <span aria-hidden="true" class="select-none font-mono text-sm text-primary">&gt;</span>
-        <code class="flex-1 overflow-x-auto whitespace-nowrap font-mono text-sm text-foreground">{m.cmd}</code>
+        <code class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-sm text-foreground">{m.cmd}</code>
         <CopyButton text={m.cmd} label={`Copy ${m.id} command`} />
       </div>
     </TabsContent>
