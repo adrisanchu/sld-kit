@@ -1,0 +1,19 @@
+{
+  "name": "@sld-kit-examples/node",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Minimal Node quickstart consuming @sld-kit/core (not published).",
+  "type": "module",
+  "scripts": {
+    "start": "tsx index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"no tests yet\" && exit 0"
+  },
+  "dependencies": {
+    "@sld-kit/core": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

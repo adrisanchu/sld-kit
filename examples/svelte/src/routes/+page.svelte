@@ -9,6 +9,11 @@
   import Boxes from 'lucide-svelte/icons/boxes';
   import Github from 'lucide-svelte/icons/github';
   import { GITHUB_URL } from '$lib/components/layout/navItems';
+  import InstallBox from '$lib/components/landing/InstallBox.svelte';
+  import OpenInCodePen from '$lib/components/landing/OpenInCodePen.svelte';
+  import CodeBlock from '$lib/components/showcase/CodeBlock.svelte';
+  // Single-sourced from the runnable Node example so the two never drift.
+  import quickstart from '../../../node/index.ts?raw';
 
   const props = [
     {
@@ -128,6 +133,42 @@
             <line x1="240" y1="178" x2="240" y2="206" class="wire" style="animation-delay:1.1s" />
             <circle cx="240" cy="210" r="3.5" class="terminal" />
           </svg>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Install & Quickstart -->
+  <section class="mx-auto max-w-6xl px-6 pb-8">
+    <p class="mb-4 font-mono text-xs uppercase tracking-[0.25em] text-muted-foreground">Install</p>
+    <div class="grid items-start gap-6 lg:grid-cols-[0.85fr_1.15fr]">
+      <div class="reveal">
+        <InstallBox />
+        <p class="mt-4 text-sm leading-relaxed text-muted-foreground">
+          Zero-dependency ESM core · Node ≥ 20. The snippet builds a diagram and exports an
+          office-safe SVG — no browser or framework required.
+        </p>
+        <div class="mt-5 flex flex-wrap items-center gap-3">
+          <OpenInCodePen />
+          <a
+            href="{base}/showcase"
+            class="group inline-flex items-center gap-2 px-2 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Or edit it live <ArrowRight class="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          </a>
+        </div>
+      </div>
+
+      <!-- min-w-0 lets the grid track shrink below its content width so the code
+           block scrolls horizontally instead of overflowing the viewport. -->
+      <div class="reveal reveal-2 min-w-0">
+        <div class="overflow-hidden rounded-xl border bg-card/60 p-1 shadow-sm backdrop-blur-sm">
+          <div class="flex items-center justify-between px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            <span>quickstart · index.ts</span><span>@sld-kit/core</span>
+          </div>
+          <div class="h-[22rem] min-w-0">
+            <CodeBlock lang="typescript" text={quickstart} />
+          </div>
         </div>
       </div>
     </div>
