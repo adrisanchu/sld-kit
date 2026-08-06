@@ -69,8 +69,15 @@ export class CompositeSerializer {
     }
     const json = input as Record<string, unknown>;
 
-    if (json.version !== COMPOSITE_SCHEMA_VERSION) {
-      throw new SldParseError(`Unsupported composite version ${json.version} (expected ${COMPOSITE_SCHEMA_VERSION})`);
+    // Accept the current schema and any older one; reject only versions newer
+    // than we understand (forward compat we can't honor). There are no versions
+    // below the current one yet — when past versions actually diverge in shape,
+    // per-version migrations slot in here.
+    if (typeof json.version !== 'number' || !Number.isInteger(json.version)) {
+      throw new SldParseError('Missing composite schema version number');
+    }
+    if (json.version > COMPOSITE_SCHEMA_VERSION) {
+      throw new SldParseError(`Unsupported composite version ${json.version} (maximum: ${COMPOSITE_SCHEMA_VERSION})`);
     }
 
     if (json.kind !== 'composite') throw new SldParseError('Document is not a composite');
