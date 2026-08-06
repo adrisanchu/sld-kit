@@ -4,6 +4,7 @@ import { Transform2D } from '../layout/Transform2D';
 import type { Point, Rect } from '../layout/geometry';
 import { CompositeDocument } from './CompositeDocument';
 import { CompositeLine } from './CompositeLine';
+import { chordFrame } from './lineFrame';
 import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
 
 /** Fixed frame for an unresolved child, so it stays selectable and movable. */
@@ -299,16 +300,38 @@ export class CompositeLayoutEngine {
     const byId = new Map(children.map((c) => [c.instance.id, c]));
     const out: CompositeLineLayout[] = [];
     for (const line of lines) {
-      const points: Point[] = [];
-      for (const v of line.vertices) {
-        if (v.kind === 'point') {
-          points.push({ x: v.x, y: v.y });
-          continue;
-        }
+      // First pass: resolve every anchor to its world tip. This also fixes the
+      // chord frame that `rel` bends live in — the segment between the line's
+      // first and last resolvable anchor, rebuilt each layout so the bends
+      // follow the endpoints under any move, rotation or config change.
+      const anchorTips = new Map<number, Point>();
+      let firstAnchor: Point | null = null;
+      let lastAnchor: Point | null = null;
+      line.vertices.forEach((v, i) => {
+        if (v.kind !== 'anchor') return;
         const child = byId.get(v.instanceId);
         const tip = child ? this.externalTip(child, v.connectionId) : null;
-        if (tip) points.push(tip);
-      }
+        if (!tip) return;
+        anchorTips.set(i, tip);
+        if (!firstAnchor) firstAnchor = tip;
+        lastAnchor = tip;
+      });
+      const frame = firstAnchor && lastAnchor ? chordFrame(firstAnchor, lastAnchor) : null;
+
+      // Second pass: emit the world polyline in vertex order. `rel` bends without
+      // a frame (fewer than two resolvable anchors) are dropped, mirroring how an
+      // unresolvable anchor is dropped.
+      const points: Point[] = [];
+      line.vertices.forEach((v, i) => {
+        if (v.kind === 'point') {
+          points.push({ x: v.x, y: v.y });
+        } else if (v.kind === 'rel') {
+          if (frame) points.push(frame.toWorld({ t: v.t, ox: v.ox, oy: v.oy }));
+        } else {
+          const tip = anchorTips.get(i);
+          if (tip) points.push(tip);
+        }
+      });
       if (points.length >= 2) out.push({ line, points });
     }
     return out;

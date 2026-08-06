@@ -9,7 +9,9 @@ import {
   type LabelAnchor
 } from './DiagramInstance';
 
-export const COMPOSITE_SCHEMA_VERSION = 3;
+// Single, current-only schema — no migrations. This is early-stage software;
+// documents authored against older shapes are rebuilt, not migrated.
+export const COMPOSITE_SCHEMA_VERSION = 1;
 
 export interface CompositeDocumentJson {
   version: number;
@@ -18,8 +20,6 @@ export interface CompositeDocumentJson {
   children: DiagramInstanceJson[];
   lines: CompositeLineJson[];
 }
-
-type Migration = (json: Record<string, unknown>) => Record<string, unknown>;
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const normalizeAngle = (a: number) => round2(((a % 360) + 360) % 360);
@@ -35,12 +35,6 @@ const normalizeAngle = (a: number) => round2(((a % 360) + 360) % 360);
  * Dangling `libraryId`s are legal — they render as placeholders.
  */
 export class CompositeSerializer {
-  private static migrations = new Map<number, Migration>();
-
-  static registerMigration(fromVersion: number, migrate: Migration): void {
-    this.migrations.set(fromVersion, migrate);
-  }
-
   static toJSON(doc: CompositeDocument): CompositeDocumentJson {
     return {
       version: COMPOSITE_SCHEMA_VERSION,
@@ -73,18 +67,10 @@ export class CompositeSerializer {
     if (typeof input !== 'object' || input === null || Array.isArray(input)) {
       throw new SldParseError('Composite is not a valid JSON object');
     }
-    let json = input as Record<string, unknown>;
+    const json = input as Record<string, unknown>;
 
-    if (typeof json.version !== 'number' || !Number.isInteger(json.version)) {
-      throw new SldParseError('Missing composite schema version number');
-    }
-    if (json.version > COMPOSITE_SCHEMA_VERSION) {
-      throw new SldParseError(`Unsupported composite version ${json.version} (maximum: ${COMPOSITE_SCHEMA_VERSION})`);
-    }
-    while ((json.version as number) < COMPOSITE_SCHEMA_VERSION) {
-      const migrate = this.migrations.get(json.version as number);
-      if (!migrate) throw new SldParseError(`No migration available from version ${json.version}`);
-      json = migrate(json);
+    if (json.version !== COMPOSITE_SCHEMA_VERSION) {
+      throw new SldParseError(`Unsupported composite version ${json.version} (expected ${COMPOSITE_SCHEMA_VERSION})`);
     }
 
     if (json.kind !== 'composite') throw new SldParseError('Document is not a composite');
@@ -165,6 +151,11 @@ export class CompositeSerializer {
         if (v?.kind === 'point') {
           if (!isFinite(v.x) || !isFinite(v.y)) throw new SldParseError(`Line ${raw.id}: invalid point vertex`);
           vertices.push({ kind: 'point', x: round2(v.x as number), y: round2(v.y as number) });
+        } else if (v?.kind === 'rel') {
+          if (!isFinite(v.t) || !isFinite(v.ox) || !isFinite(v.oy)) {
+            throw new SldParseError(`Line ${raw.id}: invalid rel vertex`);
+          }
+          vertices.push({ kind: 'rel', t: round2(v.t as number), ox: round2(v.ox as number), oy: round2(v.oy as number) });
         } else if (v?.kind === 'anchor') {
           if (typeof v.instanceId !== 'string' || !v.instanceId || typeof v.connectionId !== 'string' || !v.connectionId) {
             throw new SldParseError(`Line ${raw.id}: invalid anchor vertex`);
@@ -183,8 +174,3 @@ export class CompositeSerializer {
 function isFinite(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
 }
-
-// v1 → v2 added the manual-line list; older documents simply have none.
-CompositeSerializer.registerMigration(1, (json) => ({ ...json, version: 2, lines: [] }));
-// v2 → v3 added per-child name-label placement; children default to `top-left` / 0.
-CompositeSerializer.registerMigration(2, (json) => ({ ...json, version: 3 }));
