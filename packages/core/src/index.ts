@@ -84,6 +84,7 @@ export {
   type LabelAnchor
 } from './composite/DiagramInstance';
 export { CompositeLine, type CompositeLineJson, type LineVertexJson } from './composite/CompositeLine';
+export { chordFrame, type ChordFrame, type RelCoord } from './composite/lineFrame';
 export { CompositeDocument, type CompositeMeta, type CompositeChange } from './composite/CompositeDocument';
 export {
   CompositeLayoutEngine,

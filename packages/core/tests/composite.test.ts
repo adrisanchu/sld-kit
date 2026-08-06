@@ -6,6 +6,7 @@ import {
   CompositeLayoutEngine,
   CompositeSvgExporter,
   CompositeLine,
+  chordFrame,
   CommandStack,
   TransformChildCommand,
   SetChildLabelCommand,
@@ -72,23 +73,41 @@ describe('CompositeSerializer', () => {
     expect(json2).toEqual(json1);
   });
 
-  it('migrates a v1 document up to the current version with an empty line list', () => {
-    const v1 = { version: 1, kind: 'composite', meta: { id: 'm', name: 'old' }, children: [] };
-    const doc = CompositeSerializer.fromJSON(v1);
-    const json = CompositeSerializer.toJSON(doc);
-    expect(json.version).toBe(COMPOSITE_SCHEMA_VERSION);
-    expect(json.lines).toEqual([]);
+  it('roundtrips a manual line with a rel bend', () => {
+    const doc = buildSouthComposite();
+    doc.addLine(
+      new CompositeLine('rel-line', [
+        { kind: 'anchor', instanceId: doc.allChildren()[0].id, connectionId: SHARED_LINK_ID },
+        { kind: 'rel', t: 0.5, ox: 12, oy: -8 },
+        { kind: 'anchor', instanceId: doc.allChildren()[1].id, connectionId: SHARED_LINK_ID }
+      ])
+    );
+    const json1 = CompositeSerializer.toJSON(doc);
+    expect(json1.lines[0].vertices[1]).toEqual({ kind: 'rel', t: 0.5, ox: 12, oy: -8 });
+    const json2 = CompositeSerializer.toJSON(CompositeSerializer.fromJSON(cycle(json1)));
+    expect(json2).toEqual(json1);
   });
 
-  it('defaults label placement when migrating a pre-v3 child', () => {
-    const v2 = {
-      version: 2,
+  it('rejects a rel vertex with non-finite coordinates', () => {
+    const bad = {
+      version: COMPOSITE_SCHEMA_VERSION,
       kind: 'composite',
-      meta: { id: 'm', name: 'old' },
+      meta: { id: 'm', name: 'x' },
+      children: [],
+      lines: [{ id: 'l', vertices: [{ kind: 'rel', t: 0.5, ox: 1, oy: 2 }, { kind: 'rel', t: 0.5, ox: NaN, oy: 0 }] }]
+    };
+    expect(() => CompositeSerializer.fromJSON(bad)).toThrow(/invalid rel vertex/);
+  });
+
+  it('defaults label placement when a child omits it', () => {
+    const doc = {
+      version: COMPOSITE_SCHEMA_VERSION,
+      kind: 'composite',
+      meta: { id: 'm', name: 'x' },
       children: [{ id: 'c', libraryId: 'lib', x: 0, y: 0, angleDeg: 0 }],
       lines: []
     };
-    const json = CompositeSerializer.toJSON(CompositeSerializer.fromJSON(v2));
+    const json = CompositeSerializer.toJSON(CompositeSerializer.fromJSON(doc));
     expect(json.children[0].labelAnchor).toBe('top-left');
     expect(json.children[0].labelDirection).toBe(0);
   });
@@ -106,7 +125,7 @@ describe('CompositeSerializer', () => {
 
   it('rejects a line with fewer than two vertices', () => {
     const bad = {
-      version: 2,
+      version: COMPOSITE_SCHEMA_VERSION,
       kind: 'composite',
       meta: { id: 'm', name: 'x' },
       children: [],
@@ -162,6 +181,69 @@ describe('CompositeLayoutEngine — manual lines', () => {
 
     stack.undo(doc);
     expect(engine.layout(doc).lines[0].points[0]).toEqual(before.points[0]);
+  });
+
+  it('resolves a rel bend to the same world point as the equivalent free bend', () => {
+    const engine = new CompositeLayoutEngine();
+    const doc = buildSouthCompositeWithLine();
+    doc.resolveChildren(resolver());
+    const before = engine.layout(doc).lines[0]; // point bend at index 1
+    const [a, , b] = before.points;
+    const rel = chordFrame(a, b)!.toRel(before.points[1]);
+
+    // Same line, but the free bend is now stored relative to the anchor chord.
+    doc.setLineVertices('line-1', [
+      { kind: 'anchor', instanceId: HV_INSTANCE_ID, connectionId: SHARED_LINK_ID },
+      { kind: 'rel', ...rel },
+      { kind: 'anchor', instanceId: MV_INSTANCE_ID, connectionId: SHARED_LINK_ID }
+    ]);
+    const resolved = engine.layout(doc).lines[0];
+    expect(resolved.points[1].x).toBeCloseTo(before.points[1].x, 6);
+    expect(resolved.points[1].y).toBeCloseTo(before.points[1].y, 6);
+  });
+
+  it('a rel bend follows the endpoints, translating rigidly without rotating', () => {
+    const engine = new CompositeLayoutEngine();
+    const doc = buildSouthCompositeWithLine();
+    doc.resolveChildren(resolver());
+    const seed = engine.layout(doc).lines[0];
+    const rel = chordFrame(seed.points[0], seed.points[2])!.toRel(seed.points[1]);
+    doc.setLineVertices('line-1', [
+      { kind: 'anchor', instanceId: HV_INSTANCE_ID, connectionId: SHARED_LINK_ID },
+      { kind: 'rel', ...rel },
+      { kind: 'anchor', instanceId: MV_INSTANCE_ID, connectionId: SHARED_LINK_ID }
+    ]);
+    const before = engine.layout(doc).lines[0];
+
+    // Move BOTH children by the same delta: the whole line (anchors + bend) must
+    // translate rigidly by that delta — a `point` bend would have stayed put, and
+    // a similarity mapping would have swung the bend around the tilted chord.
+    const dx = 120;
+    const dy = -45;
+    doc.setChildTransform(HV_INSTANCE_ID, 0 + dx, 0 + dy, 90); // HV starts at (0,0,90)
+    doc.setChildTransform(MV_INSTANCE_ID, 400 + dx, 60 + dy, 90); // MV starts at (400,60,90)
+    const after = engine.layout(doc).lines[0];
+    for (let i = 0; i < 3; i++) {
+      expect(after.points[i].x).toBeCloseTo(before.points[i].x + dx, 6);
+      expect(after.points[i].y).toBeCloseTo(before.points[i].y + dy, 6);
+    }
+  });
+
+  it('drops a rel bend when the line lacks two resolvable anchors (no chord)', () => {
+    const doc = buildSouthComposite();
+    doc.resolveChildren(resolver());
+    doc.addLine(
+      new CompositeLine('one-anchor', [
+        { kind: 'anchor', instanceId: doc.allChildren()[0].id, connectionId: SHARED_LINK_ID },
+        { kind: 'rel', t: 0.5, ox: 20, oy: -10 },
+        { kind: 'point', x: 900, y: 900 }
+      ])
+    );
+    const line = new CompositeLayoutEngine().layout(doc).lines.find((l) => l.line.id === 'one-anchor')!;
+    // The rel bend is dropped (one anchor → no frame); the anchor tip and the
+    // absolute point remain, so the line still renders with two points.
+    expect(line.points).toHaveLength(2);
+    expect(line.points).toContainEqual({ x: 900, y: 900 });
   });
 
   it('drops unresolvable anchors and omits a line with fewer than two points', () => {

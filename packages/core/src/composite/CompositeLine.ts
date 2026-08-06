@@ -3,14 +3,26 @@ import { newId } from '../ids';
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
- * One vertex of a manual composite line. A `point` is a free bend fixed in
- * composite coordinates; an `anchor` references a child's external connection
- * dot by `(instanceId, connectionId)` and is resolved to a world point at
- * layout time, so it follows the child when it moves or rotates — the same
- * "reference by id, never by geometry" invariant the single-diagram model uses.
+ * One vertex of a manual composite line.
+ *
+ * - `anchor` references a child's external connection dot by
+ *   `(instanceId, connectionId)` and resolves to a world point at layout time,
+ *   so it follows the child when it moves or rotates — the "reference by id,
+ *   never by geometry" invariant the single-diagram model uses.
+ * - `rel` is a free bend stored **relative to the line's anchored endpoints**:
+ *   `t` is a fraction along the chord spanned by the line's first and last
+ *   resolvable anchor tips and `(ox, oy)` is a frozen world-space offset from
+ *   that chord point (see `lineFrame.ts`). Because the chord is rebuilt every
+ *   layout, a `rel` bend translates with its endpoints — it never desyncs when a
+ *   child moves or the layout config changes (e.g. label-mode compaction), and
+ *   the world-space offset means it never rotates as the chord tilts.
+ * - `point` is a free bend fixed in absolute composite coordinates. It's the
+ *   fallback for lines that lack two anchored ends (no chord to be relative to),
+ *   and the legacy shape for documents authored before `rel` existed.
  */
 export type LineVertexJson =
   | { kind: 'point'; x: number; y: number }
+  | { kind: 'rel'; t: number; ox: number; oy: number }
   | { kind: 'anchor'; instanceId: string; connectionId: string };
 
 export interface CompositeLineJson {
@@ -48,7 +60,9 @@ export class CompositeLine {
       vertices: this.vertices.map((v) =>
         v.kind === 'point'
           ? { kind: 'point', x: round2(v.x), y: round2(v.y) }
-          : { kind: 'anchor', instanceId: v.instanceId, connectionId: v.connectionId }
+          : v.kind === 'rel'
+            ? { kind: 'rel', t: round2(v.t), ox: round2(v.ox), oy: round2(v.oy) }
+            : { kind: 'anchor', instanceId: v.instanceId, connectionId: v.connectionId }
       )
     };
   }
