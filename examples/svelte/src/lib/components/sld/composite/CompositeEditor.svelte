@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import {
     CompositeLayoutEngine,
     CompositeSerializer,
@@ -15,11 +15,13 @@
     UpdateLineCommand,
     DiagramInstance,
     CompositeLine,
+    chordFrame,
     newId,
     type CompositeDocument,
     type Command,
     type Point,
     type ChildLayout,
+    type ChordFrame,
     type CompositeLineLayout,
     type LineVertexJson,
     type LabelAnchor
@@ -269,6 +271,57 @@
     rotate = null;
   }
 
+  // ── Relative bends ─────────────────────────────────────────────────────────
+  // Free bends are stored relative to a line's two anchored ends (a `rel` vertex),
+  // so they follow the endpoints when a child moves or the layout config changes
+  // (e.g. label-mode compaction) instead of freezing in absolute pixels. All the
+  // pointer maths below works in world coords; we convert to/from `rel` only at
+  // the anchor chord, using the same helper the core layout engine resolves with.
+
+  /** The chord frame (first→last anchor) for a set of vertices given their aligned
+   *  resolved world points, or null when there aren't two distinct anchored ends. */
+  function frameFor(vertices: LineVertexJson[], points: Point[]): ChordFrame | null {
+    if (points.length !== vertices.length) return null;
+    let first = -1;
+    let last = -1;
+    vertices.forEach((v, i) => {
+      if (v.kind === 'anchor') {
+        if (first < 0) first = i;
+        last = i;
+      }
+    });
+    if (first < 0 || first === last) return null;
+    return chordFrame(points[first], points[last]);
+  }
+
+  /** Rewrite a line's free `point` bends to `rel` against its anchor chord; a no-op
+   *  when the line lacks two anchored ends (bends stay absolute). */
+  function relativize(vertices: LineVertexJson[], points: Point[]): LineVertexJson[] {
+    const frame = frameFor(vertices, points);
+    if (!frame) return vertices;
+    return vertices.map((v, i) => (v.kind === 'point' ? { kind: 'rel', ...frame.toRel(points[i]) } : v));
+  }
+
+  /** The live resolved layout for a line already in the doc, if its vertices ↔ points map 1:1. */
+  function resolvedLine(id: string): CompositeLineLayout | null {
+    const rl = layout.lines.find((l) => l.line.id === id);
+    return rl && rl.points.length === rl.line.vertices.length ? rl : null;
+  }
+
+  // One-time upgrade on open: rewrite any legacy absolute (`point`) bends on lines
+  // that have an anchor chord to relative bends, so seeded/imported lines follow
+  // their endpoints too (children resolve before mount; the route autosaves the
+  // result). Idempotent — lines already `rel`, or without two anchors, are left.
+  onMount(() => {
+    for (const line of doc.allLines()) {
+      if (!line.vertices.some((v) => v.kind === 'point')) continue;
+      const rl = resolvedLine(line.id);
+      if (!rl) continue;
+      const next = relativize(line.vertices, rl.points);
+      if (next !== line.vertices) doc.setLineVertices(line.id, next);
+    }
+  });
+
   // ── Draw line ────────────────────────────────────────────────────────────
   function toggleDraw() {
     drawActive = !drawActive;
@@ -300,10 +353,16 @@
 
   function handleDrawCommit() {
     // The double-click that finishes drawing also fires two clicks at the same
-    // spot; collapse consecutive duplicate vertices before committing.
-    const vertices = draftVertices.filter((v, i) => i === 0 || !sameVertex(v, draftVertices[i - 1]));
+    // spot; collapse consecutive duplicate vertices before committing. `draftPoints`
+    // holds each vertex's world position (1:1 with `draftVertices`), so filter both
+    // in lockstep to keep them aligned for `relativize`.
+    const keep = draftVertices
+      .map((_, i) => i)
+      .filter((i) => i === 0 || !sameVertex(draftVertices[i], draftVertices[i - 1]));
+    const vertices = keep.map((i) => draftVertices[i]);
+    const points = keep.map((i) => draftPoints[i]);
     if (vertices.length >= 2) {
-      const line = new CompositeLine(newId(), vertices);
+      const line = new CompositeLine(newId(), relativize(vertices, points));
       run(new AddLineCommand(line));
       selectedLineId = line.id;
       selectedId = null;
@@ -318,9 +377,13 @@
     const link = layout.links.find((l) => l.connectionId === selectedLinkId);
     if (!link) return;
     const mid = { x: (link.a.point.x + link.b.point.x) / 2, y: (link.a.point.y + link.b.point.y) / 2 };
+    // Store the bend relative to the two anchored ends (t=0.5, n=0), so it stays
+    // centred as the diagrams move or compact instead of freezing in place.
+    const frame = chordFrame(link.a.point, link.b.point);
+    const bend: LineVertexJson = frame ? { kind: 'rel', ...frame.toRel(mid) } : { kind: 'point', x: mid.x, y: mid.y };
     const line = new CompositeLine(newId(), [
       { kind: 'anchor', instanceId: link.a.instanceId, connectionId: link.connectionId },
-      { kind: 'point', x: mid.x, y: mid.y },
+      bend,
       { kind: 'anchor', instanceId: link.b.instanceId, connectionId: link.connectionId }
     ]);
     run(new AddLineCommand(line));
@@ -336,6 +399,10 @@
     id: string;
     index: number;
     startClient: { x: number; y: number };
+    // World position of the dragged bend at gesture start, plus the anchor chord
+    // it's expressed against, so deltas apply in world space and convert to `rel`.
+    startWorld: Point;
+    frame: ChordFrame | null;
     base: LineVertexJson[];
     commitBefore: LineVertexJson[];
     moved: boolean;
@@ -347,12 +414,16 @@
     if (!canEdit) return;
     const { id, index, event } = e.detail;
     const line = doc.getLine(id);
-    if (!line) return;
+    const rl = resolvedLine(id);
+    // Handles only render when vertices ↔ points map 1:1, so `rl` is present here.
+    if (!line || !rl) return;
     const snapshot = line.vertices.map((v) => ({ ...v }));
     lineDrag = {
       id,
       index,
       startClient: { x: event.clientX, y: event.clientY },
+      startWorld: rl.points[index],
+      frame: frameFor(line.vertices, rl.points),
       base: snapshot,
       commitBefore: snapshot,
       moved: false,
@@ -368,19 +439,25 @@
     if (!canEdit) return;
     const { id, index, point, event } = e.detail;
     const line = doc.getLine(id);
-    if (!line) return;
+    const rl = resolvedLine(id);
+    if (!line || !rl) return;
     // Keep the line selected so the new dot is visibly part of the selection.
     selectedLineId = id;
     selectedId = null;
     selectedLinkId = null;
     const commitBefore = line.vertices.map((v) => ({ ...v }));
-    const inserted: LineVertexJson = { kind: 'point', x: point.x, y: point.y };
+    // A new bend is a free `point`, never an anchor, so the anchor chord is
+    // unchanged by the insert — the pre-insert frame stays valid.
+    const frame = frameFor(line.vertices, rl.points);
+    const inserted: LineVertexJson = frame ? { kind: 'rel', ...frame.toRel(point) } : { kind: 'point', x: point.x, y: point.y };
     const base = [...commitBefore.slice(0, index + 1), inserted, ...commitBefore.slice(index + 1)];
     doc.setLineVertices(id, base.map((v) => ({ ...v }))); // transient insert
     lineDrag = {
       id,
       index: index + 1,
       startClient: { x: event.clientX, y: event.clientY },
+      startWorld: { x: point.x, y: point.y },
+      frame,
       base,
       commitBefore,
       moved: false,
@@ -399,9 +476,12 @@
     lineDrag.moved = true;
     const p0 = canvas.clientToSvg(lineDrag.startClient.x, lineDrag.startClient.y);
     const p1 = canvas.clientToSvg(e.clientX, e.clientY);
-    const next = lineDrag.base.map((v, i) =>
-      i === lineDrag!.index && v.kind === 'point' ? { kind: 'point' as const, x: v.x + (p1.x - p0.x), y: v.y + (p1.y - p0.y) } : v
-    );
+    const world = { x: lineDrag.startWorld.x + (p1.x - p0.x), y: lineDrag.startWorld.y + (p1.y - p0.y) };
+    // Store as `rel` when the line has an anchor chord, else fall back to absolute.
+    const bend: LineVertexJson = lineDrag.frame
+      ? { kind: 'rel', ...lineDrag.frame.toRel(world) }
+      : { kind: 'point', x: world.x, y: world.y };
+    const next = lineDrag.base.map((v, i) => (i === lineDrag!.index ? bend : v));
     doc.setLineVertices(lineDrag.id, next);
   }
 
@@ -421,7 +501,8 @@
     if (!canEdit) return;
     const { id, index } = e.detail;
     const line = doc.getLine(id);
-    if (!line || line.vertices[index]?.kind !== 'point' || line.vertices.length <= 2) return;
+    const kind = line?.vertices[index]?.kind;
+    if (!line || (kind !== 'point' && kind !== 'rel') || line.vertices.length <= 2) return;
     const before = line.vertices.map((v) => ({ ...v }));
     const after = before.filter((_, i) => i !== index);
     run(new UpdateLineCommand('Delete line vertex', id, before, after));

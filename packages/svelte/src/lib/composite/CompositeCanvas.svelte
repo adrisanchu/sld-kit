@@ -315,41 +315,42 @@
     {/each}
   {/if}
 
-  {#if selectedLine && interactive && !drawMode}
+  <!-- All bend chrome needs vertex ↔ point 1:1 so a vertex index maps straight to
+       its resolved world position (a `rel` bend has no absolute coords of its own,
+       so handles are drawn at the resolved point). If some vertex didn't resolve,
+       the mapping breaks and we hide the handles rather than misplace them. -->
+  {#if selectedLine && interactive && !drawMode && selectedLine.points.length === selectedLine.line.vertices.length}
     <!-- Hollow "add" handles at each segment midpoint: click-drag to insert a
-         new bend. Shown only when every vertex resolved (points ↔ vertices 1:1),
-         so the segment index maps straight to a vertex insert position. -->
-    {#if selectedLine.points.length === selectedLine.line.vertices.length}
-      {#each selectedLine.points.slice(0, -1) as p, i}
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
-        <circle
-          cx={(p.x + selectedLine.points[i + 1].x) / 2}
-          cy={(p.y + selectedLine.points[i + 1].y) / 2}
-          r={cs.addHandleRadius}
-          class="fill-background stroke-primary/50 pointer-events-auto cursor-copy"
-          stroke-width={cs.handleStrokeWidth}
-          stroke-dasharray={cs.addHandleDashArray}
-          on:pointerdown={(e) =>
-            handleSegmentDown(
-              selectedLine.line.id,
-              i,
-              { x: (p.x + selectedLine.points[i + 1].x) / 2, y: (p.y + selectedLine.points[i + 1].y) / 2 },
-              e
-            )}
-        >
-          <title>Click to add a bend</title>
-        </circle>
-      {/each}
-    {/if}
+         new bend; the segment index maps straight to a vertex insert position. -->
+    {#each selectedLine.points.slice(0, -1) as p, i}
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <circle
+        cx={(p.x + selectedLine.points[i + 1].x) / 2}
+        cy={(p.y + selectedLine.points[i + 1].y) / 2}
+        r={cs.addHandleRadius}
+        class="fill-background stroke-primary/50 pointer-events-auto cursor-copy"
+        stroke-width={cs.handleStrokeWidth}
+        stroke-dasharray={cs.addHandleDashArray}
+        on:pointerdown={(e) =>
+          handleSegmentDown(
+            selectedLine.line.id,
+            i,
+            { x: (p.x + selectedLine.points[i + 1].x) / 2, y: (p.y + selectedLine.points[i + 1].y) / 2 },
+            e
+          )}
+      >
+        <title>Click to add a bend</title>
+      </circle>
+    {/each}
 
     <!-- Only free bend vertices are draggable; anchored ends follow their child.
-         Double-click removes the bend. -->
+         Drawn at the resolved point, not the vertex's own coords. Double-click removes. -->
     {#each selectedLine.line.vertices as v, i}
-      {#if v.kind === 'point'}
+      {#if v.kind === 'point' || v.kind === 'rel'}
         <!-- svelte-ignore a11y-no-static-element-interactions -->
         <circle
-          cx={v.x}
-          cy={v.y}
+          cx={selectedLine.points[i].x}
+          cy={selectedLine.points[i].y}
           r={cs.vertexHandleRadius}
           class="fill-background stroke-primary pointer-events-auto cursor-grab"
           stroke-width={cs.handleStrokeWidth}
