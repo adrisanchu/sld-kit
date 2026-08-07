@@ -524,4 +524,62 @@ describe('South ⇄ West 400 kV (high-level authoring)', () => {
     expect(linkIds).not.toContain(SOUTH_WEST_1);
     expect(linkIds).not.toContain(SOUTH_WEST_2);
   });
+
+  it('the seed tie-lines relativize on open and then follow the diagrams', () => {
+    // The demo authors these lines with absolute `point` bends; the editor's
+    // on-load upgrade converts them to `rel`. Replicate that here against the
+    // real seed data and confirm the bends then translate with the diagrams
+    // instead of staying frozen.
+    const engine = new CompositeLayoutEngine();
+    const doc = buildSouthWestComposite();
+    doc.resolveChildren(
+      new MapResolver(
+        new Map<string, SldDocumentJson>([
+          [SOUTH_400_ID, Serializer.toJSON(buildSouth400())],
+          [WEST_400_ID, Serializer.toJSON(buildWest400())]
+        ])
+      )
+    );
+
+    for (const ln of engine.layout(doc).lines) {
+      const vs = ln.line.vertices;
+      if (ln.points.length !== vs.length) continue;
+      let first = -1;
+      let last = -1;
+      vs.forEach((v, i) => {
+        if (v.kind === 'anchor') {
+          if (first < 0) first = i;
+          last = i;
+        }
+      });
+      if (first < 0 || first === last) continue;
+      const frame = chordFrame(ln.points[first], ln.points[last]);
+      if (!frame) continue;
+      doc.setLineVertices(
+        ln.line.id,
+        vs.map((v, i) => (v.kind === 'point' ? { kind: 'rel' as const, ...frame.toRel(ln.points[i]) } : v))
+      );
+    }
+
+    // Every free bend on both seed lines is now relative — nothing left absolute.
+    for (const line of doc.allLines()) {
+      expect(line.vertices.some((v) => v.kind === 'rel')).toBe(true);
+      expect(line.vertices.filter((v) => v.kind === 'point')).toHaveLength(0);
+    }
+
+    // Shift both diagrams by the same delta: the whole line must translate rigidly.
+    const before = engine.layout(doc);
+    const [a, b] = doc.allChildren();
+    const dx = 200;
+    const dy = -120;
+    doc.setChildTransform(a.id, a.x + dx, a.y + dy, a.angleDeg);
+    doc.setChildTransform(b.id, b.x + dx, b.y + dy, b.angleDeg);
+    const after = engine.layout(doc);
+    for (let li = 0; li < before.lines.length; li++) {
+      for (let i = 0; i < before.lines[li].points.length; i++) {
+        expect(after.lines[li].points[i].x).toBeCloseTo(before.lines[li].points[i].x + dx, 6);
+        expect(after.lines[li].points[i].y).toBeCloseTo(before.lines[li].points[i].y + dy, 6);
+      }
+    }
+  });
 });
