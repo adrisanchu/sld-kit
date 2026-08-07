@@ -27,6 +27,7 @@ export { default as LaneActionChip } from './LaneActionChip.svelte';
 
 // ── Composite ("diagram of diagrams") canvas primitives ───────────────────
 export { default as CompositeCanvas } from './composite/CompositeCanvas.svelte';
+export { default as CompositeExplorer } from './composite/CompositeExplorer.svelte';
 export { default as CompositeToolbar } from './composite/CompositeToolbar.svelte';
 export { default as ChildDiagramView } from './composite/ChildDiagramView.svelte';
 export { default as SelectionFrame } from './composite/SelectionFrame.svelte';
