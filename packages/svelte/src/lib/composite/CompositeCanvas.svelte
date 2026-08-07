@@ -11,7 +11,7 @@
     type ExternalConnectionTip,
     type Point
   } from '@sld-kit/core';
-  import { createPanZoom } from '../panzoom';
+  import { createPanZoom, type ContentBounds } from '../panzoom';
   import { DEFAULT_POSITION_TOKENS, DEFAULT_CHILD_NOT_FOUND, type PositionTokens } from '../labels';
   import type { FormatResolver } from '../format';
   import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
@@ -29,6 +29,14 @@
   /** Currently selected manual line (shows its draggable bend handles). */
   export let selectedLineId: string | null = null;
   export let interactive: boolean = true;
+  /**
+   * Explore mode: children's transforms are read-only, but a click flies into a
+   * child (`childfocus`) and the `focusedId` child's operable internals emit
+   * `elementactivate`. Editing chrome (selection/rotation/draw) is inert here.
+   */
+  export let explore: boolean = false;
+  /** In explore mode, the child currently flown into (its internals are live). */
+  export let focusedId: string | null = null;
   /**
    * Draw mode: clicking the canvas emits `canvaspoint` (snapped to the nearest
    * connection dot when close) instead of clearing the selection. The consumer
@@ -167,6 +175,16 @@
     pz.zoomToFit();
   }
 
+  /** Smoothly frame an arbitrary world rect (e.g. a child's `worldBounds`). */
+  export function flyTo(bounds: ContentBounds, opts?: { durationMs?: number }) {
+    pz.flyTo(bounds, opts);
+  }
+
+  /** Smoothly return to the whole-composite fit. */
+  export function flyToFit(opts?: { durationMs?: number }) {
+    pz.flyToFit(opts);
+  }
+
   function handlePointerDown(e: PointerEvent) {
     if (pz.tryStartPan(e)) return;
   }
@@ -281,6 +299,8 @@
     <ChildDiagramView
       {child}
       {interactive}
+      {explore}
+      focused={explore && child.instance.id === focusedId}
       {tokens}
       colorClass={childColorClass(child)}
       {formatResolver}
@@ -291,6 +311,8 @@
       {showChildNames}
       {notFoundLabel}
       on:childdown
+      on:childfocus
+      on:elementactivate
       on:labeldown
     />
   {/each}

@@ -18,6 +18,15 @@
    */
   export let child: ChildLayout;
   export let interactive: boolean = true;
+  /**
+   * Explore mode (read-only transforms, operable internals). When set, a click
+   * on a non-focused child emits `childfocus`; a `focused` child's positions
+   * become interactive and emit `elementactivate` instead of selecting the whole
+   * child. Independent of the editor's `interactive` selection/drag path.
+   */
+  export let explore: boolean = false;
+  /** In explore mode, this child is the one flown into — its internals are live. */
+  export let focused: boolean = false;
   /** CSS class per position type; the consumer's stylesheet supplies the colors. */
   export let tokens: PositionTokens = DEFAULT_POSITION_TOKENS;
   /**
@@ -41,7 +50,13 @@
   /** Fallback text when a child diagram can't be resolved. */
   export let notFoundLabel: string = DEFAULT_CHILD_NOT_FOUND;
 
-  const dispatch = createEventDispatcher<{ childdown: { id: string; event: PointerEvent } }>();
+  const dispatch = createEventDispatcher<{
+    childdown: { id: string; event: PointerEvent };
+    /** Explore mode: the user clicked this (non-focused) child to fly into it. */
+    childfocus: { id: string; event: PointerEvent };
+    /** Explore mode: the user clicked an operable element inside the focused child. */
+    elementactivate: { instanceId: string; elementId: string };
+  }>();
 
   $: instance = child.instance;
   $: layout = child.layout;
@@ -75,7 +90,12 @@
   function handleDown(e: PointerEvent) {
     if (!interactive) return;
     e.stopPropagation();
-    dispatch('childdown', { id: instance.id, event: e });
+    if (explore) dispatch('childfocus', { id: instance.id, event: e });
+    else dispatch('childdown', { id: instance.id, event: e });
+  }
+
+  function handleElementActivate(elementId: string) {
+    dispatch('elementactivate', { instanceId: instance.id, elementId });
   }
 </script>
 
@@ -109,13 +129,14 @@
       <PositionView
         pos={item.el}
         geo={item.geo}
-        interactive={false}
+        interactive={explore && focused}
         {labelAngleDeg}
         {tokens}
         {colorClass}
         {formatResolver}
         {style}
         showLabel={showPositionLabels}
+        on:select={() => handleElementActivate(item.el.id)}
       />
     {/each}
   {:else}
@@ -169,15 +190,21 @@
     </text>
   {/if}
 
-  <!-- Transparent capture rect for whole-child pointer interaction. -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <rect
-    x={child.frame.x}
-    y={child.frame.y}
-    width={child.frame.width}
-    height={child.frame.height}
-    fill="transparent"
-    class:cursor-move={interactive}
-    on:pointerdown={handleDown}
-  />
+  <!-- Transparent capture rect for whole-child pointer interaction. In explore
+       mode it selects the child to fly into (childfocus); the editor uses it for
+       select/drag (childdown). Dropped for the focused child so its internal
+       positions receive the clicks directly. -->
+  {#if !(explore && focused)}
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <rect
+      x={child.frame.x}
+      y={child.frame.y}
+      width={child.frame.width}
+      height={child.frame.height}
+      fill="transparent"
+      class:cursor-move={interactive && !explore}
+      class:cursor-pointer={interactive && explore}
+      on:pointerdown={handleDown}
+    />
+  {/if}
 </g>
