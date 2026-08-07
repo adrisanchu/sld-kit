@@ -31,6 +31,11 @@ export { default as CompositeToolbar } from './composite/CompositeToolbar.svelte
 export { default as ChildDiagramView } from './composite/ChildDiagramView.svelte';
 export { default as SelectionFrame } from './composite/SelectionFrame.svelte';
 
+// ── Flow overlay (generic animated lines; domain-agnostic) ────────────────
+export { default as FlowOverlay } from './flow/FlowOverlay.svelte';
+export { worldLines, type WorldLine } from './flow/worldLines';
+export { type FlowStyle, type FlowResolver } from './flow/flow';
+
 // ── Utilities ─────────────────────────────────────────────────────────────
 export { createPanZoom, type PanZoom, type ViewBox, type ContentBounds } from './panzoom';
 export { createDocStore, type Subscribable } from './docStore';
