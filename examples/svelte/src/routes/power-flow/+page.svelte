@@ -33,11 +33,28 @@
   let focusedId: string | null = null;
   let explorer: CompositeExplorer;
 
+  // Stop animating when the flow isn't actually on screen (tab hidden or the
+  // canvas scrolled out of view) — hundreds of CSS animations cost nothing when
+  // paused, and it keeps a backgrounded tab from spinning the compositor.
+  let canvasWrap: HTMLDivElement;
+  let onScreen = true;
+  let tabVisible = true;
+  $: paused = !onScreen || !tabVisible;
+
   onMount(() => {
     const demo = buildPowerFlowDemo();
     composite = demo.composite;
     for (const inst of composite.allChildren()) inst.resolve(demo.resolver);
     ready = true;
+
+    const io = new IntersectionObserver(([e]) => (onScreen = e.isIntersecting), { threshold: 0 });
+    if (canvasWrap) io.observe(canvasWrap);
+    const onVis = () => (tabVisible = document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      io.disconnect();
+      document.removeEventListener('visibilitychange', onVis);
+    };
   });
 
   // Re-derive on flowTick: mutating a *child* doc doesn't notify the composite,
@@ -116,13 +133,14 @@
     </p>
   </header>
 
-  <div class="relative min-h-0 flex-1">
+  <div bind:this={canvasWrap} class="relative min-h-0 flex-1">
     {#if layout}
       <CompositeExplorer
         bind:this={explorer}
         bind:focusedId
         {layout}
         {resolveFlow}
+        {paused}
         formatResolver={flowFormat}
         {childColorClass}
         tokens={POSITION_TYPE_TOKENS}
