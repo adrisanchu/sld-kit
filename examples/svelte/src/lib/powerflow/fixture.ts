@@ -15,7 +15,6 @@ import {
   BusBar,
   Position,
   Connection,
-  CommandStack,
   CompositeDocument,
   DiagramInstance,
   MapResolver,
@@ -24,8 +23,7 @@ import {
   external,
   type SldDocumentJson,
   type PositionType,
-  type ExternalAssetKind,
-  SetChildLabelCommand
+  type ExternalAssetKind
 } from '@sld-kit/core';
 import type { FlowData } from './flow-data';
 
@@ -140,39 +138,22 @@ export function buildPowerFlowDemo(): { composite: CompositeDocument; resolver: 
   for (const s of stations) libraryJson.set(s.meta.id, Serializer.toJSON(s));
   const resolver = new MapResolver(libraryJson);
 
+  // Each child is placed *and* its name label positioned in one pass via
+  // `DiagramInstance.of` — anchor + direction chosen so the name stays readable
+  // at each station's rotation, no follow-up SetChildLabelCommand needed.
   const composite = new CompositeDocument({ id: PF_COMPOSITE_ID, name: 'Power Flow — demo grid' });
-  composite.addChild(new DiagramInstance('inst-a', 'pf-a', 0, 0, 90));
-  composite.addChild(new DiagramInstance('inst-b', 'pf-b', 800, 500, 0));
-  composite.addChild(new DiagramInstance('inst-c', 'pf-c', 1400, -300, 270));
-  composite.addChild(new DiagramInstance('inst-d', 'pf-d', 500, -600, 180));
-
-  // Customize substation name positioning
-  // TODO: rather than editing the diagram, add a method to infer 
-  //  both anchor and direction when adding the diagram on the composite!
-  const stack = new CommandStack<CompositeDocument>();
-  stack.execute(new SetChildLabelCommand(
-    'inst-a',
-    { anchor: 'center-left', direction: 90 },
-    { anchor: 'center-left', direction: 90 }
-  ), composite);
-
-  stack.execute(new SetChildLabelCommand(
-    'inst-b',
-    { anchor: 'bottom-center', direction: 0 },
-    { anchor: 'bottom-center', direction: 0 }
-  ), composite);
-
-  stack.execute(new SetChildLabelCommand(
-    'inst-c',
-    { anchor: 'center-left', direction: 90 },
-    { anchor: 'center-left', direction: 90 }
-  ), composite);
-
-  stack.execute(new SetChildLabelCommand(
-    'inst-d',
-    { anchor: 'bottom-center', direction: 0 },
-    { anchor: 'bottom-center', direction: 0 }
-  ), composite);
+  composite.addChild(
+    DiagramInstance.of({ id: 'inst-a', libraryId: 'pf-a', x: 0, y: 0, angleDeg: 90, label: { anchor: 'center-left', direction: 90 } })
+  );
+  composite.addChild(
+    DiagramInstance.of({ id: 'inst-b', libraryId: 'pf-b', x: 800, y: 500, angleDeg: 0, label: { anchor: 'bottom-center', direction: 0 } })
+  );
+  composite.addChild(
+    DiagramInstance.of({ id: 'inst-c', libraryId: 'pf-c', x: 1400, y: -300, angleDeg: 270, label: { anchor: 'center-left', direction: 90 } })
+  );
+  composite.addChild(
+    DiagramInstance.of({ id: 'inst-d', libraryId: 'pf-d', x: 500, y: -600, angleDeg: 180, label: { anchor: 'bottom-center', direction: 0 } })
+  );
 
   return { composite, resolver };
 }
