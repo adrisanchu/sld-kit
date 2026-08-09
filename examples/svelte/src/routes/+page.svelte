@@ -6,7 +6,7 @@
   import ArrowRight from 'lucide-svelte/icons/arrow-right';
   import Code from 'lucide-svelte/icons/code-xml';
   import PencilRuler from 'lucide-svelte/icons/pencil-ruler';
-  import Boxes from 'lucide-svelte/icons/boxes';
+  import Zap from 'lucide-svelte/icons/zap';
   import Github from 'lucide-svelte/icons/github';
   import { GITHUB_URL } from '$lib/components/layout/navItems';
   import InstallBox from '$lib/components/landing/InstallBox.svelte';
@@ -208,15 +208,20 @@
         </span>
       </a>
 
-      <div class="reveal reveal-3 flex flex-col rounded-xl border border-dashed bg-card/40 p-6">
-        <Boxes class="mb-4 h-6 w-6 text-muted-foreground" />
-        <h3 class="text-lg font-semibold text-muted-foreground">More soon</h3>
+      <a
+        href="{base}/power-flow"
+        class="reveal reveal-3 group relative flex flex-col rounded-xl border bg-card p-6 transition-all hover:-translate-y-1 hover:border-primary/50 hover:shadow-md"
+      >
+        <Zap class="mb-4 h-6 w-6 text-primary" />
+        <h3 class="text-lg font-semibold">Power flow</h3>
         <p class="mt-2 flex-1 text-sm text-muted-foreground">
-          Further examples are on the way — composites, theming galleries and framework adapters beyond
-          Svelte.
+          Operate a read-only grid: fly into a substation, open/close line switches, and watch the flow
+          animate and re-route — generic interaction + animation primitives driven by the opaque data channel.
         </p>
-        <span class="mt-4 font-mono text-xs uppercase tracking-widest text-muted-foreground">wip</span>
-      </div>
+        <span class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary">
+          Open <ArrowRight class="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+        </span>
+      </a>
     </div>
   </section>
 
