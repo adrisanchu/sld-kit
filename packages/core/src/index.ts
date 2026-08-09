@@ -81,7 +81,9 @@ export {
   LABEL_ANCHORS,
   normalizeQuarterTurn,
   type DiagramInstanceJson,
-  type LabelAnchor
+  type DiagramInstanceOptions,
+  type LabelAnchor,
+  type LabelPlacement
 } from './composite/DiagramInstance';
 export { CompositeLine, type CompositeLineJson, type LineVertexJson } from './composite/CompositeLine';
 export { chordFrame, type ChordFrame, type RelCoord } from './composite/lineFrame';
@@ -115,6 +117,5 @@ export {
   SetChildLabelCommand,
   AddLineCommand,
   RemoveLineCommand,
-  UpdateLineCommand,
-  type LabelPlacement
+  UpdateLineCommand
 } from './composite/commands';
