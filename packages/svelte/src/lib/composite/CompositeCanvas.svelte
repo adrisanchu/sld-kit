@@ -301,6 +301,7 @@
       {interactive}
       {explore}
       focused={explore && child.instance.id === focusedId}
+      dimmed={explore && focusedId !== null && child.instance.id !== focusedId}
       {tokens}
       colorClass={childColorClass(child)}
       {formatResolver}

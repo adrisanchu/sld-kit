@@ -27,6 +27,8 @@
   export let explore: boolean = false;
   /** In explore mode, this child is the one flown into — its internals are live. */
   export let focused: boolean = false;
+  /** Fade this child back (e.g. it's not the one currently focused). */
+  export let dimmed: boolean = false;
   /** CSS class per position type; the consumer's stylesheet supplies the colors. */
   export let tokens: PositionTokens = DEFAULT_POSITION_TOKENS;
   /**
@@ -99,7 +101,7 @@
   }
 </script>
 
-<g transform={child.transform.toSvgTransform()}>
+<g transform={child.transform.toSvgTransform()} opacity={dimmed ? 0.3 : 1} class="sld-child">
   {#if resolved && layout}
     {#each connectionItems as item (item.el.id)}
       <ConnectionView
@@ -208,3 +210,15 @@
     />
   {/if}
 </g>
+
+<style>
+  /* Smooth the dim/undim as focus flies between children. */
+  .sld-child {
+    transition: opacity 0.3s ease;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sld-child {
+      transition: none;
+    }
+  }
+</style>
