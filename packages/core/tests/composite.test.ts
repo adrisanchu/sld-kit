@@ -10,6 +10,7 @@ import {
   CommandStack,
   TransformChildCommand,
   SetChildLabelCommand,
+  DiagramInstance,
   LABEL_ANCHORS,
   resolveNameLabelLayout,
   MapResolver,
@@ -374,6 +375,44 @@ describe('SetChildLabelCommand', () => {
         }
       }
     }
+  });
+});
+
+describe('DiagramInstance.of', () => {
+  it('fills constructor defaults (fresh id, origin, no rotation, top-left label)', () => {
+    const inst = DiagramInstance.of({ libraryId: 'lib-x' });
+    expect(inst.libraryId).toBe('lib-x');
+    expect(inst.id).toBeTruthy();
+    expect([inst.x, inst.y, inst.angleDeg]).toEqual([0, 0, 0]);
+    expect(inst.labelAnchor).toBe('top-left');
+    expect(inst.labelDirection).toBe(0);
+  });
+
+  it('places a child with an explicit label anchor + direction in one pass', () => {
+    const inst = DiagramInstance.of({
+      id: 'inst-a',
+      libraryId: 'lib-x',
+      x: 10,
+      y: 20,
+      angleDeg: 90,
+      label: { anchor: 'center-left', direction: 90 }
+    });
+    expect(inst.id).toBe('inst-a');
+    expect([inst.x, inst.y, inst.angleDeg]).toEqual([10, 20, 90]);
+    expect(inst.labelAnchor).toBe('center-left');
+    expect(inst.labelDirection).toBe(90);
+  });
+
+  it('normalizes an off-quarter label direction', () => {
+    const inst = DiagramInstance.of({ libraryId: 'lib-x', label: { anchor: 'top-right', direction: 100 } });
+    expect(inst.labelDirection).toBe(90);
+  });
+
+  it('roundtrips the label through toJSON/fromJSON', () => {
+    const inst = DiagramInstance.of({ libraryId: 'lib-x', label: { anchor: 'bottom-center', direction: 270 } });
+    const back = DiagramInstance.fromJSON(cycle(inst.toJSON()));
+    expect(back.labelAnchor).toBe('bottom-center');
+    expect(back.labelDirection).toBe(270);
   });
 });
 

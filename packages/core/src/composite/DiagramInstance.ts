@@ -33,6 +33,16 @@ export const LABEL_ANCHORS: readonly LabelAnchor[] = [
 
 const DEFAULT_LABEL_ANCHOR: LabelAnchor = 'top-left';
 
+/**
+ * Slot + quarter-turn direction of a child's name label. Grouped so it can be
+ * passed as one unit (to `DiagramInstance.of` or `SetChildLabelCommand`) since
+ * the two fields are always chosen together.
+ */
+export interface LabelPlacement {
+  anchor: LabelAnchor;
+  direction: number;
+}
+
 /** Normalize any number to the nearest quarter turn in [0, 360): 0 | 90 | 180 | 270. */
 export function normalizeQuarterTurn(deg: number): number {
   if (!Number.isFinite(deg)) return 0;
@@ -55,6 +65,20 @@ export interface DiagramInstanceJson {
    * diagram (e.g. vertical). Default 0.
    */
   labelDirection?: number;
+}
+
+/** Options for {@link DiagramInstance.of} — the readable way to place a child. */
+export interface DiagramInstanceOptions {
+  libraryId: string;
+  /** Instance id; defaults to a fresh `newId()`. */
+  id?: string;
+  /** Placement in composite coordinates (defaults to the origin). */
+  x?: number;
+  y?: number;
+  /** Rotation about the child's center in degrees (default 0). */
+  angleDeg?: number;
+  /** Name-label slot + direction (defaults to `top-left`, direction 0). */
+  label?: LabelPlacement;
 }
 
 /**
@@ -80,6 +104,25 @@ export class DiagramInstance {
     /** Name-label extra rotation in quarter turns (default 0). */
     public labelDirection: number = 0
   ) {}
+
+  /**
+   * Readable, option-based way to place a child — mirrors `Position.of` /
+   * `BusBar.of` / `Connection.of`. Fills the same defaults as the constructor
+   * (fresh id, origin, no rotation, `top-left` label) and lets the label anchor
+   * and direction be set at placement time, so a composite can be authored in
+   * one pass without a follow-up `SetChildLabelCommand`.
+   */
+  static of(opts: DiagramInstanceOptions): DiagramInstance {
+    return new DiagramInstance(
+      opts.id ?? newId(),
+      opts.libraryId,
+      opts.x ?? 0,
+      opts.y ?? 0,
+      opts.angleDeg ?? 0,
+      opts.label?.anchor ?? DEFAULT_LABEL_ANCHOR,
+      normalizeQuarterTurn(opts.label?.direction ?? 0)
+    );
+  }
 
   /**
    * Resolve the referenced library document once. A missing child, a corrupt

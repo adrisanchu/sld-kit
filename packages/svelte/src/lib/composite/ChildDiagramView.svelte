@@ -18,6 +18,17 @@
    */
   export let child: ChildLayout;
   export let interactive: boolean = true;
+  /**
+   * Explore mode (read-only transforms, operable internals). When set, a click
+   * on a non-focused child emits `childfocus`; a `focused` child's positions
+   * become interactive and emit `elementactivate` instead of selecting the whole
+   * child. Independent of the editor's `interactive` selection/drag path.
+   */
+  export let explore: boolean = false;
+  /** In explore mode, this child is the one flown into — its internals are live. */
+  export let focused: boolean = false;
+  /** Fade this child back (e.g. it's not the one currently focused). */
+  export let dimmed: boolean = false;
   /** CSS class per position type; the consumer's stylesheet supplies the colors. */
   export let tokens: PositionTokens = DEFAULT_POSITION_TOKENS;
   /**
@@ -25,6 +36,13 @@
    * a voltage bucket). The class must set `--sld-pos`.
    */
   export let colorClass: string | null = null;
+  /**
+   * Overrides `colorClass` for connections only (bus stems + external feeders),
+   * so a consumer can colour the boxes/bars on one axis (e.g. voltage) while
+   * leaving the lines neutral for another layer to colour (e.g. a flow overlay
+   * by load). `undefined` (default) = fall back to `colorClass`, unchanged.
+   */
+  export let connectionColorClass: string | null | undefined = undefined;
   /** Commissioning overlay (stroke width + fill opacity), forwarded to each view. */
   export let formatResolver: FormatResolver | null = null;
   /** Numeric presentation config, forwarded to each element view. */
@@ -41,7 +59,16 @@
   /** Fallback text when a child diagram can't be resolved. */
   export let notFoundLabel: string = DEFAULT_CHILD_NOT_FOUND;
 
-  const dispatch = createEventDispatcher<{ childdown: { id: string; event: PointerEvent } }>();
+  const dispatch = createEventDispatcher<{
+    childdown: { id: string; event: PointerEvent };
+    /** Explore mode: the user clicked this (non-focused) child to fly into it. */
+    childfocus: { id: string; event: PointerEvent };
+    /** Explore mode: the user clicked an operable element inside the focused child. */
+    elementactivate: { instanceId: string; elementId: string };
+  }>();
+
+  // Connections fall back to the child's colorClass unless explicitly overridden.
+  $: connColor = connectionColorClass === undefined ? colorClass : connectionColorClass;
 
   $: instance = child.instance;
   $: layout = child.layout;
@@ -75,11 +102,16 @@
   function handleDown(e: PointerEvent) {
     if (!interactive) return;
     e.stopPropagation();
-    dispatch('childdown', { id: instance.id, event: e });
+    if (explore) dispatch('childfocus', { id: instance.id, event: e });
+    else dispatch('childdown', { id: instance.id, event: e });
+  }
+
+  function handleElementActivate(elementId: string) {
+    dispatch('elementactivate', { instanceId: instance.id, elementId });
   }
 </script>
 
-<g transform={child.transform.toSvgTransform()}>
+<g transform={child.transform.toSvgTransform()} opacity={dimmed ? 0.3 : 1} class="sld-child">
   {#if resolved && layout}
     {#each connectionItems as item (item.el.id)}
       <ConnectionView
@@ -87,7 +119,7 @@
         geo={item.geo}
         interactive={false}
         {labelAngleDeg}
-        {colorClass}
+        colorClass={connColor}
         {formatResolver}
         {style}
         showLabel={showConnectionLabels}
@@ -109,13 +141,14 @@
       <PositionView
         pos={item.el}
         geo={item.geo}
-        interactive={false}
+        interactive={explore && focused}
         {labelAngleDeg}
         {tokens}
         {colorClass}
         {formatResolver}
         {style}
         showLabel={showPositionLabels}
+        on:select={() => handleElementActivate(item.el.id)}
       />
     {/each}
   {:else}
@@ -169,15 +202,33 @@
     </text>
   {/if}
 
-  <!-- Transparent capture rect for whole-child pointer interaction. -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <rect
-    x={child.frame.x}
-    y={child.frame.y}
-    width={child.frame.width}
-    height={child.frame.height}
-    fill="transparent"
-    class:cursor-move={interactive}
-    on:pointerdown={handleDown}
-  />
+  <!-- Transparent capture rect for whole-child pointer interaction. In explore
+       mode it selects the child to fly into (childfocus); the editor uses it for
+       select/drag (childdown). Dropped for the focused child so its internal
+       positions receive the clicks directly. -->
+  {#if !(explore && focused)}
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <rect
+      x={child.frame.x}
+      y={child.frame.y}
+      width={child.frame.width}
+      height={child.frame.height}
+      fill="transparent"
+      class:cursor-move={interactive && !explore}
+      class:cursor-pointer={interactive && explore}
+      on:pointerdown={handleDown}
+    />
+  {/if}
 </g>
+
+<style>
+  /* Smooth the dim/undim as focus flies between children. */
+  .sld-child {
+    transition: opacity 0.3s ease;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sld-child {
+      transition: none;
+    }
+  }
+</style>
