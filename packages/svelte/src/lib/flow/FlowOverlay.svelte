@@ -20,12 +20,17 @@
   /** Freeze all motion in place (e.g. the overlay scrolled offscreen). */
   export let paused: boolean = false;
 
-  // Base geometry, in world units. Tunable but deliberately not exposed as props
-  // yet — one look for all consumers until a need arises.
-  const BASE_WIDTH = 1.5; // the underlying "wire"
-  const DOT_SIZE = 5; // dot diameter at full intensity (= stroke width, round cap)
-  const DOT_GAP = 22; // spacing between dots along the path
-  const BASE_DURATION = 1.6; // seconds per dot-gap at speed 1
+  // Appearance, in world units — tune to taste per consumer. Defaults favour a
+  // few large, calm dots gliding along a thin track (rather than a dense bead
+  // chain that beats against the underlying wire).
+  /** Width of the underlying "wire" the dots ride. */
+  export let lineWidth: number = 2;
+  /** Dot diameter at full intensity (round-capped). Larger than `lineWidth` so dots read as dots. */
+  export let dotSize: number = 8;
+  /** Spacing between dots along the path — larger = fewer dots. */
+  export let dotSpacing: number = 46;
+  /** Seconds for a dot to advance one `dotSpacing` at flow speed 1 — larger = slower. */
+  export let baseDuration: number = 2;
 
   const clamp01 = (n: number) => (n < 0 ? 0 : n > 1 ? 1 : n);
 
@@ -42,10 +47,10 @@
       dashed: !!s?.dashed,
       active,
       dir,
-      dotWidth: DOT_SIZE * (0.5 + 0.5 * intensity),
-      dotOpacity: 0.55 + 0.45 * intensity,
-      period: DOT_GAP,
-      duration: BASE_DURATION / speed
+      dotWidth: dotSize * (0.6 + 0.4 * intensity),
+      dotOpacity: 0.75 + 0.25 * intensity,
+      period: dotSpacing,
+      duration: baseDuration / speed
     };
   });
 </script>
@@ -59,8 +64,8 @@
         fill="none"
         stroke={it.colorClass ? 'currentColor' : undefined}
         class={it.colorClass ? undefined : it.active ? 'stroke-primary' : 'stroke-muted-foreground'}
-        stroke-width={BASE_WIDTH}
-        stroke-opacity={it.active ? 1 : 0.35}
+        stroke-width={lineWidth}
+        stroke-opacity={it.active ? 0.7 : 0.35}
         stroke-dasharray={it.dashed ? '6 4' : undefined}
       />
       <!-- Travelling dots: a round-capped near-zero dash, marched by CSS. -->

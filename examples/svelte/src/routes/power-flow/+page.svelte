@@ -167,23 +167,23 @@
       />
 
       <!-- Floating controls (the explorer canvas fills the panel underneath). -->
-      <div class="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-4">
+      <div class="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between p-4">
         <div>
           {#if focusedId}
-            <Button variant="secondary" class="pointer-events-auto" on:click={() => explorer?.blur()}>
-              ← Back to grid
+            <Button variant="secondary" class="pointer-events-auto px-2 py-5" on:click={() => explorer?.blur()}>
+            ← Zoom out
             </Button>
           {/if}
         </div>
-        <div class="pointer-events-auto flex items-center gap-3 rounded-lg border bg-card/90 px-3 py-2 shadow-sm backdrop-blur">
-          <div class="flex items-center gap-4 text-xs text-muted-foreground">
+        <div class="pointer-events-auto flex items-center gap-3 rounded-lg border bg-card/90 px-3 py-0.5 shadow-sm backdrop-blur">
+          <div class="flex items-center gap-3 text-xs text-muted-foreground">
             <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-green-500"></span>≤70%</span>
             <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-yellow-400"></span>70–90%</span>
             <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-orange-500"></span>90–100%</span>
             <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-red-500"></span>&gt;100%</span>
             <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-muted-foreground/40"></span>open</span>
           </div>
-          <Button variant="outline" size="sm" on:click={reset}>Reset</Button>
+          <Button variant="outline" size="sm" class="text-xs" on:click={reset}>Reset</Button>
         </div>
       </div>
     {/if}
