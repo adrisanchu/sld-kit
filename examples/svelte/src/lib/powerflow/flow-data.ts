@@ -93,19 +93,27 @@ export function applyPowerFlow(doc: SldDocument, readings: PowerFlowReading[]): 
   }
 }
 
+/** Load-ratio bands. Line colour is driven off these (see the route's `resolveFlow`). */
+export type LoadTier = 'nominal' | 'loaded' | 'high' | 'overloaded';
+
+/**
+ * Bucket a load ratio (`mw / capacity`) into a tier:
+ * `> 1` overloaded, `0.9–1` high, `0.7–0.9` loaded, `≤ 0.7` nominal.
+ */
+export function loadTier(load: number): LoadTier {
+  if (load > 1) return 'overloaded';
+  if (load > 0.9) return 'high';
+  if (load > 0.7) return 'loaded';
+  return 'nominal';
+}
+
 /**
  * Example 03's element styling policy, passed to the exporter's
  * `resolveElementFormat` and the live `formatResolver` so screen and export
- * agree. Element-local (no live model needed): an open switch reads faded +
- * dashed; a bay near/over its rating reads amber/red. The *travelling dots'*
- * live colour is handled separately by the flow overlay's `resolveFlow`.
+ * agree. Boxes are coloured elsewhere (by voltage); here it only marks an open
+ * switch as faded + dashed. Load is shown on the *lines* (flow overlay), not the
+ * boxes, so the two axes never fight over the same element.
  */
 export function flowFormat(el: SldElement): ElementFormat | undefined {
-  const f = getFlow(el);
-  if (!f) return undefined;
-  if (f.state === 'open') return { fillOpacity: 0.25, dashArray: '4 3' };
-  const load = f.capacity ? (f.mw ?? 0) / f.capacity : 0;
-  if (load > 0.9) return { fill: '#ef4444' };
-  if (load > 0.75) return { fill: '#f59e0b' };
-  return undefined;
+  return getFlow(el)?.state === 'open' ? { fillOpacity: 0.25, dashArray: '4 3' } : undefined;
 }

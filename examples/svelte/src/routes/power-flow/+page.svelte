@@ -22,7 +22,7 @@
   import { Button } from '$lib/components/ui/button';
   import { POSITION_TYPE_TOKENS, SLD_VIEW_STYLE, SLD_CHILD_NOT_FOUND, voltageToken } from '$lib/components/sld/theme';
   import { buildPowerFlowDemo } from '$lib/powerflow/fixture';
-  import { getFlow, withFlowState, flowFormat, applyPowerFlow } from '$lib/powerflow/flow-data';
+  import { getFlow, withFlowState, flowFormat, applyPowerFlow, loadTier } from '$lib/powerflow/flow-data';
   import { POWER_FLOW_READINGS } from '$lib/powerflow/readings';
   import { computeFlowMap, type FlowMap } from '$lib/powerflow/model';
 
@@ -69,25 +69,36 @@
   $: layout = ready ? relayout(flowTick) : null;
   $: flowMap = layout ? computeFlowMap(layout) : (new Map() as FlowMap);
 
+  // Line colour by load tier — the single source of line colour in this view.
+  const TIER_CLASS = {
+    nominal: 'pf-load-nominal',
+    loaded: 'pf-load-loaded',
+    high: 'pf-load-high',
+    overloaded: 'pf-load-overloaded'
+  } as const;
+
   // A fresh closure each time the map changes so the overlay re-derives its dots.
   function makeResolver(map: FlowMap): FlowResolver {
     return (key) => {
       const f = map.get(key);
-      if (!f || !f.active) return { active: false };
+      if (!f || !f.active) return { active: false }; // open / blocked → grey, no dots
       const load = f.capacity ? f.magnitude / f.capacity : 0;
-      const colorClass = load > 0.9 ? 'pf-flow-over' : load > 0.7 ? 'pf-flow-warn' : null;
       return {
         active: true,
         direction: f.direction,
         speed: 0.7 + Math.min(load, 1.3),
-        intensity: Math.max(0.3, Math.min(1, load)),
-        colorClass
+        intensity: Math.max(0.35, Math.min(1, load)),
+        colorClass: TIER_CLASS[loadTier(load)]
       };
     };
   }
   $: resolveFlow = makeResolver(flowMap);
 
+  // Voltage colours the boxes + busbars; connections stay neutral so the flow
+  // overlay is the sole line-colour authority (by load) — the two axes never
+  // fight over the same geometry.
   const childColorClass = (child: ChildLayout): string | null => voltageToken(child.instance.resolved?.meta.voltageKv);
+  const neutralConnections = (): string | null => null;
 
   /** Toggle an operable switch through a command, then recompute the flow. */
   function onActivate(instanceId: string, elementId: string) {
@@ -148,6 +159,7 @@
         {paused}
         formatResolver={flowFormat}
         {childColorClass}
+        childConnectionColorClass={neutralConnections}
         tokens={POSITION_TYPE_TOKENS}
         style={SLD_VIEW_STYLE}
         notFoundLabel={SLD_CHILD_NOT_FOUND}
@@ -165,9 +177,10 @@
         </div>
         <div class="pointer-events-auto flex items-center gap-3 rounded-lg border bg-card/90 px-3 py-2 shadow-sm backdrop-blur">
           <div class="flex items-center gap-4 text-xs text-muted-foreground">
-            <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-primary"></span>flowing</span>
-            <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-amber-500"></span>loaded</span>
-            <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-red-500"></span>overloaded</span>
+            <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-green-500"></span>≤70%</span>
+            <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-yellow-400"></span>70–90%</span>
+            <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-orange-500"></span>90–100%</span>
+            <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-red-500"></span>&gt;100%</span>
             <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-muted-foreground/40"></span>open</span>
           </div>
           <Button variant="outline" size="sm" on:click={reset}>Reset</Button>
@@ -178,13 +191,20 @@
 </div>
 
 <style>
-  /* Live overload colours for the travelling dots. The overlay sets the line's
-     colour from `--sld-pos`, so these must be global (they style a child of the
-     library component, out of this file's scope). */
-  :global(.pf-flow-warn) {
-    --sld-pos: 38 92% 50%;
+  /* Load-tier line colours for the flow overlay. It sets the line's colour from
+     `--sld-pos`, so these must be global (they style a child of the library
+     component, out of this file's scope). Thresholds: nominal ≤70%, loaded
+     70–90%, high 90–100%, overloaded >100%. */
+  :global(.pf-load-nominal) {
+    --sld-pos: 142 71% 45%; /* green */
   }
-  :global(.pf-flow-over) {
-    --sld-pos: 0 84% 60%;
+  :global(.pf-load-loaded) {
+    --sld-pos: 45 93% 47%; /* yellow */
+  }
+  :global(.pf-load-high) {
+    --sld-pos: 25 95% 53%; /* orange */
+  }
+  :global(.pf-load-overloaded) {
+    --sld-pos: 0 84% 60%; /* red */
   }
 </style>
