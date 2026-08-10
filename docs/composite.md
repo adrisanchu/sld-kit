@@ -12,7 +12,21 @@ does not extend the single-diagram path, so it carries zero risk to it.
 - **`DiagramInstance`** — one placed child: a `libraryId` (a reference to a
   library diagram), a per-composite instance `id` (the same diagram may be
   placed twice), and a transform `(x, y, angleDeg)`. It caches its `resolved`
-  document once looked up.
+  document once looked up. Also carries the always-on name label's placement
+  (`labelAnchor` + `labelDirection`). Use `DiagramInstance.of({...})` — the
+  option-based factory mirroring `Position.of` / `Connection.of` — to place a
+  child _and_ position its label in one pass; the label anchor/direction go in a
+  `label: { anchor, direction }` group, so no follow-up `SetChildLabelCommand` is
+  needed:
+
+  ```ts
+  composite.addChild(
+    DiagramInstance.of({
+      id: 'inst-a', libraryId: 'south-400', x: 0, y: 0, angleDeg: 90,
+      label: { anchor: 'center-left', direction: 90 }
+    })
+  );
+  ```
 - **`DocumentResolver`** — how a composite finds a child's JSON by `libraryId`.
   Your app implements it over its store; `MapResolver` is provided for tests and
   demos. A resolver that returns a `kind: 'composite'` document is treated as
