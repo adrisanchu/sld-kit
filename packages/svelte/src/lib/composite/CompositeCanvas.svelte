@@ -55,6 +55,13 @@
    */
   export let childColorClass: (child: ChildLayout) => string | null = () => null;
   /**
+   * Per-child override for *connection* colour only, so lines can be coloured on
+   * a different axis than the boxes/bars (e.g. voltage on the bars, load on the
+   * lines via an overlay). `undefined` (default) keeps connections on
+   * `childColorClass`, unchanged.
+   */
+  export let childConnectionColorClass: ((child: ChildLayout) => string | null) | undefined = undefined;
+  /**
    * Per-line color class override (e.g. a voltage bucket, set only when both
    * ends share a voltage). Same contract as `childColorClass`: the class must
    * set `--sld-pos`; `null` falls back to the neutral primary stroke.
@@ -304,6 +311,7 @@
       dimmed={explore && focusedId !== null && child.instance.id !== focusedId}
       {tokens}
       colorClass={childColorClass(child)}
+      connectionColorClass={childConnectionColorClass ? childConnectionColorClass(child) : undefined}
       {formatResolver}
       {style}
       {showPositionLabels}

@@ -31,6 +31,8 @@
 
   export let tokens: PositionTokens = DEFAULT_POSITION_TOKENS;
   export let childColorClass: (child: ChildLayout) => string | null = () => null;
+  /** Per-child connection-only colour override (e.g. leave lines neutral for the flow overlay). */
+  export let childConnectionColorClass: ((child: ChildLayout) => string | null) | undefined = undefined;
   export let style: SldViewStyle = DEFAULT_VIEW_STYLE;
   export let showPositionLabels: boolean = true;
   export let showBusBarLabels: boolean = true;
@@ -78,6 +80,7 @@
   {focusedId}
   {tokens}
   {childColorClass}
+  {childConnectionColorClass}
   {formatResolver}
   {style}
   {showPositionLabels}

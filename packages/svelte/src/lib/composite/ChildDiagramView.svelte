@@ -36,6 +36,13 @@
    * a voltage bucket). The class must set `--sld-pos`.
    */
   export let colorClass: string | null = null;
+  /**
+   * Overrides `colorClass` for connections only (bus stems + external feeders),
+   * so a consumer can colour the boxes/bars on one axis (e.g. voltage) while
+   * leaving the lines neutral for another layer to colour (e.g. a flow overlay
+   * by load). `undefined` (default) = fall back to `colorClass`, unchanged.
+   */
+  export let connectionColorClass: string | null | undefined = undefined;
   /** Commissioning overlay (stroke width + fill opacity), forwarded to each view. */
   export let formatResolver: FormatResolver | null = null;
   /** Numeric presentation config, forwarded to each element view. */
@@ -59,6 +66,9 @@
     /** Explore mode: the user clicked an operable element inside the focused child. */
     elementactivate: { instanceId: string; elementId: string };
   }>();
+
+  // Connections fall back to the child's colorClass unless explicitly overridden.
+  $: connColor = connectionColorClass === undefined ? colorClass : connectionColorClass;
 
   $: instance = child.instance;
   $: layout = child.layout;
@@ -109,7 +119,7 @@
         geo={item.geo}
         interactive={false}
         {labelAngleDeg}
-        {colorClass}
+        colorClass={connColor}
         {formatResolver}
         {style}
         showLabel={showConnectionLabels}
