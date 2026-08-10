@@ -1,5 +1,5 @@
 import type { ComponentType } from 'svelte';
-import House from 'lucide-svelte/icons/house';
+import Zap from 'lucide-svelte/icons/zap';
 import Code from 'lucide-svelte/icons/code-xml';
 import PencilRuler from 'lucide-svelte/icons/pencil-ruler';
 
@@ -13,9 +13,9 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { href: '/', label: 'Home', icon: House, match: (rel) => rel === '/' },
   { href: '/showcase', label: 'API Showcase', icon: Code, match: (rel) => rel.startsWith('/showcase') },
-  { href: '/sld', label: 'Live Editor', icon: PencilRuler, match: (rel) => rel.startsWith('/sld') }
+  { href: '/sld', label: 'Live Editor', icon: PencilRuler, match: (rel) => rel.startsWith('/sld') },
+  { href: '/power-flow', label: 'Power Flow', icon: Zap, match: (rel) => rel.startsWith('/power-flow') }
 ];
 
 export const GITHUB_URL = 'https://github.com/adrisanchu/sld-kit';

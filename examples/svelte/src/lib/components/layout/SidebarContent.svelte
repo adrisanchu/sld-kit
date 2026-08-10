@@ -7,7 +7,7 @@
   import Github from 'lucide-svelte/icons/github';
   import Sun from 'lucide-svelte/icons/sun';
   import Moon from 'lucide-svelte/icons/moon';
-  import Zap from 'lucide-svelte/icons/zap';
+  import House from 'lucide-svelte/icons/house';
   import { toggleMode } from 'mode-watcher';
   import { cn } from '$lib/utils';
   import { NAV_ITEMS, GITHUB_URL } from './navItems';
@@ -31,7 +31,7 @@
     on:click={onNavigate}
     class={cn('flex items-center gap-2 px-3 py-4 font-semibold', collapsed && 'justify-center px-0')}
   >
-    <Zap class="h-5 w-5 shrink-0 text-primary" />
+    <House class="h-5 w-5 shrink-0 text-primary" />
     {#if !collapsed}<span>SLD-KIT</span>{/if}
   </a>
 

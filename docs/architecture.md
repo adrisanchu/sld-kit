@@ -108,6 +108,49 @@ boundary types are generic (`PositionJson<TData>`, …) for typing at the edge;
 inside the core it is `unknown`, narrowed by `getElementData<T>()`. See the
 package README for the contract and the sidecar guidance.
 
+For the direction on which properties stay first-class vs. move into `data`, on
+property-agnostic styling, and on CIM (IEC 61968) interchange, see
+[ADR 0001](./adr/0001-property-model-and-cim.md).
+
 ## Composite ("diagram of diagrams")
 
 See [`composite.md`](./composite.md).
+
+## Interactive views & flow animation (Svelte layer)
+
+A second way to consume a composite — beyond authoring — is to **operate and
+watch** it: fly into a child, toggle its elements, and animate flow along the
+wires. These are live-view concerns, so they live entirely in `@sld-kit/svelte`;
+the core model and the office-safe exporter never animate. An export is always a
+static snapshot (it can still _colour_ by state via `resolveElementFormat`, which
+is office-safe — but no `<style>`/`<animate>` ever enters the SVG).
+
+Everything here is **domain-agnostic**, the same discipline as
+`resolveElementFormat` ([ADR 0001](./adr/0001-property-model-and-cim.md)): the
+components never learn what the interaction or the flow _means_. "Power flow" is
+just one consumer (see `examples/svelte` route `/power-flow`); financial,
+geographic or maintenance overlays are others.
+
+- **Explore/focus mode** — `CompositeExplorer` (over `CompositeCanvas`) keeps
+  child _transforms_ read-only but makes a focused child's _internals_
+  interactive. Clicking a child emits `childfocus`; `flyTo(child.worldBounds)`
+  (an eased `viewBox` tween in `panzoom.ts`, cancelled by any user gesture,
+  instant under reduced-motion) frames it on the same canvas — no route change,
+  no dialog; unfocused children dim. Clicking an operable element emits a generic
+  `elementactivate {instanceId, elementId}`; a background click / back control
+  flies out via `flyToFit`. The consumer decides what an activation does (e.g.
+  toggle a switch through an `UpdateElementCommand`) and re-derives the layout.
+
+- **Flow overlay** — `FlowOverlay` animates travelling dots along any set of
+  polylines. `worldLines(layout)` flattens a `CompositeLayout` into
+  world-space `{ key, points }[]` (links, manual lines, and each child's internal
+  connections mapped through its `Transform2D`); a consumer `resolveFlow(key) =>
+  FlowStyle` maps each line to `{ active, direction, speed, intensity, dashed,
+  colorClass }` — the flow analogue of a `FormatResolver`. Motion is pure CSS
+  (`stroke-dashoffset` on a round-capped near-zero dash), so hundreds of lines
+  stay cheap; inactive lines render greyed and dotless, and a `paused` prop plus
+  a `prefers-reduced-motion` rule freeze it for offscreen/accessibility cases.
+
+If per-dot rendering ever outgrows the SVG+CSS path, a canvas-2D overlay can slot
+in behind the same `FlowOverlay` API without a new dependency — deferred until
+profiling shows the need.

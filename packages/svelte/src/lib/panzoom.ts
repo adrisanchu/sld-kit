@@ -38,9 +38,65 @@ export function createPanZoom(getSvgEl: () => SVGSVGElement | undefined, getCont
   spaceDown.subscribe((v) => (space = v));
   let pan: { sx: number; sy: number; vx: number; vy: number; moved: boolean } | null = null;
   let pointerInside = false;
+  let flyRaf: number | null = null;
 
   function set(next: ViewBox) {
     viewBox.set(next);
+  }
+
+  /** Cancel any in-flight `flyTo`/`flyToFit` tween (e.g. the user grabbed control). */
+  function cancelFly() {
+    if (flyRaf != null) {
+      cancelAnimationFrame(flyRaf);
+      flyRaf = null;
+    }
+  }
+
+  function prefersReducedMotion(): boolean {
+    return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  /**
+   * The viewBox (and whole-content fit scale) that frames `content` with 5%
+   * padding — the shared math behind `zoomToFit` and the `flyTo*` tweens.
+   */
+  function computeFit(content: ContentBounds): { vb: ViewBox; scale: number } | null {
+    const svgEl = getSvgEl();
+    if (!svgEl) return null;
+    const rect = svgEl.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    const bx = content.x ?? 0;
+    const by = content.y ?? 0;
+    const pad = Math.max(content.width, content.height) * 0.05 || 50;
+    const cw = content.width + pad * 2;
+    const ch = content.height + pad * 2;
+    const scale = Math.min(rect.width / cw, rect.height / ch) || 1;
+    const w = rect.width / scale;
+    const h = rect.height / scale;
+    return { vb: { x: bx - pad - (w - cw) / 2, y: by - pad - (h - ch) / 2, w, h }, scale };
+  }
+
+  /** Ease-in-out cubic tween of the viewBox toward `target` over `durationMs`. */
+  function animateTo(target: ViewBox, durationMs: number) {
+    cancelFly();
+    if (durationMs <= 0 || prefersReducedMotion()) {
+      set(target);
+      return;
+    }
+    const from = { ...vb };
+    const start = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / durationMs);
+      const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      set({
+        x: from.x + (target.x - from.x) * e,
+        y: from.y + (target.y - from.y) * e,
+        w: from.w + (target.w - from.w) * e,
+        h: from.h + (target.h - from.h) * e
+      });
+      flyRaf = t < 1 ? requestAnimationFrame(step) : null;
+    };
+    flyRaf = requestAnimationFrame(step);
   }
 
   function clientToSvg(clientX: number, clientY: number): Point {
@@ -63,23 +119,33 @@ export function createPanZoom(getSvgEl: () => SVGSVGElement | undefined, getCont
     };
   }
 
-  /** Fit the whole content in view with 5% padding. */
+  /** Fit the whole content in view with 5% padding (instant). */
   function zoomToFit() {
-    const svgEl = getSvgEl();
-    if (!svgEl) return;
-    const rect = svgEl.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
-    const content = getContentBounds();
-    const bx = content.x ?? 0;
-    const by = content.y ?? 0;
-    const pad = Math.max(content.width, content.height) * 0.05 || 50;
-    const cw = content.width + pad * 2;
-    const ch = content.height + pad * 2;
-    const scale = Math.min(rect.width / cw, rect.height / ch) || 1;
-    const w = rect.width / scale;
-    const h = rect.height / scale;
-    set({ x: bx - pad - (w - cw) / 2, y: by - pad - (h - ch) / 2, w, h });
-    fitScale = scale;
+    const fit = computeFit(getContentBounds());
+    if (!fit) return;
+    cancelFly();
+    set(fit.vb);
+    fitScale = fit.scale;
+  }
+
+  /**
+   * Smoothly frame an arbitrary content rect (e.g. a child's `worldBounds`) —
+   * the "fly into a diagram" camera move. Interrupted by any user pan/zoom.
+   * `fitScale` (the zoom clamp reference) is left on the whole-content fit so
+   * the user can still zoom in/out normally once framed.
+   */
+  function flyTo(target: ContentBounds, opts: { durationMs?: number } = {}) {
+    const fit = computeFit(target);
+    if (!fit) return;
+    animateTo(fit.vb, opts.durationMs ?? 450);
+  }
+
+  /** Smoothly return to the whole-content fit — the "fly back out" move. */
+  function flyToFit(opts: { durationMs?: number } = {}) {
+    const fit = computeFit(getContentBounds());
+    if (!fit) return;
+    fitScale = fit.scale;
+    animateTo(fit.vb, opts.durationMs ?? 450);
   }
 
   /** Zoom about an anchor point, clamped to 0.1×–8× of the fit scale. */
@@ -101,6 +167,7 @@ export function createPanZoom(getSvgEl: () => SVGSVGElement | undefined, getCont
   function handleWheel(e: WheelEvent) {
     const svgEl = getSvgEl();
     if (!svgEl) return;
+    cancelFly();
     const rect = svgEl.getBoundingClientRect();
     if (e.ctrlKey || e.metaKey) {
       zoomAbout(clientToSvg(e.clientX, e.clientY), Math.exp(e.deltaY * 0.01));
@@ -114,6 +181,7 @@ export function createPanZoom(getSvgEl: () => SVGSVGElement | undefined, getCont
     const svgEl = getSvgEl();
     if (!svgEl) return false;
     if (e.button === 1 || (e.button === 0 && space)) {
+      cancelFly();
       pan = { sx: e.clientX, sy: e.clientY, vx: vb.x, vy: vb.y, moved: false };
       panning.set(true);
       svgEl.setPointerCapture(e.pointerId);
@@ -170,6 +238,8 @@ export function createPanZoom(getSvgEl: () => SVGSVGElement | undefined, getCont
     clientToSvg,
     svgToClient,
     zoomToFit,
+    flyTo,
+    flyToFit,
     handleWheel,
     tryStartPan,
     movePan,

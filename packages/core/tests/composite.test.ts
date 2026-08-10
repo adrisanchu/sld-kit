@@ -10,6 +10,7 @@ import {
   CommandStack,
   TransformChildCommand,
   SetChildLabelCommand,
+  DiagramInstance,
   LABEL_ANCHORS,
   resolveNameLabelLayout,
   MapResolver,
@@ -377,6 +378,44 @@ describe('SetChildLabelCommand', () => {
   });
 });
 
+describe('DiagramInstance.of', () => {
+  it('fills constructor defaults (fresh id, origin, no rotation, top-left label)', () => {
+    const inst = DiagramInstance.of({ libraryId: 'lib-x' });
+    expect(inst.libraryId).toBe('lib-x');
+    expect(inst.id).toBeTruthy();
+    expect([inst.x, inst.y, inst.angleDeg]).toEqual([0, 0, 0]);
+    expect(inst.labelAnchor).toBe('top-left');
+    expect(inst.labelDirection).toBe(0);
+  });
+
+  it('places a child with an explicit label anchor + direction in one pass', () => {
+    const inst = DiagramInstance.of({
+      id: 'inst-a',
+      libraryId: 'lib-x',
+      x: 10,
+      y: 20,
+      angleDeg: 90,
+      label: { anchor: 'center-left', direction: 90 }
+    });
+    expect(inst.id).toBe('inst-a');
+    expect([inst.x, inst.y, inst.angleDeg]).toEqual([10, 20, 90]);
+    expect(inst.labelAnchor).toBe('center-left');
+    expect(inst.labelDirection).toBe(90);
+  });
+
+  it('normalizes an off-quarter label direction', () => {
+    const inst = DiagramInstance.of({ libraryId: 'lib-x', label: { anchor: 'top-right', direction: 100 } });
+    expect(inst.labelDirection).toBe(90);
+  });
+
+  it('roundtrips the label through toJSON/fromJSON', () => {
+    const inst = DiagramInstance.of({ libraryId: 'lib-x', label: { anchor: 'bottom-center', direction: 270 } });
+    const back = DiagramInstance.fromJSON(cycle(inst.toJSON()));
+    expect(back.labelAnchor).toBe('bottom-center');
+    expect(back.labelDirection).toBe(270);
+  });
+});
+
 describe('CompositeSvgExporter', () => {
   it('exports a PowerPoint-safe SVG for a resolved composite', () => {
     const doc = buildSouthComposite();
@@ -523,5 +562,63 @@ describe('South ⇄ West 400 kV (high-level authoring)', () => {
     const linkIds = layout.links.map((l) => l.connectionId);
     expect(linkIds).not.toContain(SOUTH_WEST_1);
     expect(linkIds).not.toContain(SOUTH_WEST_2);
+  });
+
+  it('the seed tie-lines relativize on open and then follow the diagrams', () => {
+    // The demo authors these lines with absolute `point` bends; the editor's
+    // on-load upgrade converts them to `rel`. Replicate that here against the
+    // real seed data and confirm the bends then translate with the diagrams
+    // instead of staying frozen.
+    const engine = new CompositeLayoutEngine();
+    const doc = buildSouthWestComposite();
+    doc.resolveChildren(
+      new MapResolver(
+        new Map<string, SldDocumentJson>([
+          [SOUTH_400_ID, Serializer.toJSON(buildSouth400())],
+          [WEST_400_ID, Serializer.toJSON(buildWest400())]
+        ])
+      )
+    );
+
+    for (const ln of engine.layout(doc).lines) {
+      const vs = ln.line.vertices;
+      if (ln.points.length !== vs.length) continue;
+      let first = -1;
+      let last = -1;
+      vs.forEach((v, i) => {
+        if (v.kind === 'anchor') {
+          if (first < 0) first = i;
+          last = i;
+        }
+      });
+      if (first < 0 || first === last) continue;
+      const frame = chordFrame(ln.points[first], ln.points[last]);
+      if (!frame) continue;
+      doc.setLineVertices(
+        ln.line.id,
+        vs.map((v, i) => (v.kind === 'point' ? { kind: 'rel' as const, ...frame.toRel(ln.points[i]) } : v))
+      );
+    }
+
+    // Every free bend on both seed lines is now relative — nothing left absolute.
+    for (const line of doc.allLines()) {
+      expect(line.vertices.some((v) => v.kind === 'rel')).toBe(true);
+      expect(line.vertices.filter((v) => v.kind === 'point')).toHaveLength(0);
+    }
+
+    // Shift both diagrams by the same delta: the whole line must translate rigidly.
+    const before = engine.layout(doc);
+    const [a, b] = doc.allChildren();
+    const dx = 200;
+    const dy = -120;
+    doc.setChildTransform(a.id, a.x + dx, a.y + dy, a.angleDeg);
+    doc.setChildTransform(b.id, b.x + dx, b.y + dy, b.angleDeg);
+    const after = engine.layout(doc);
+    for (let li = 0; li < before.lines.length; li++) {
+      for (let i = 0; i < before.lines[li].points.length; i++) {
+        expect(after.lines[li].points[i].x).toBeCloseTo(before.lines[li].points[i].x + dx, 6);
+        expect(after.lines[li].points[i].y).toBeCloseTo(before.lines[li].points[i].y + dy, 6);
+      }
+    }
   });
 });

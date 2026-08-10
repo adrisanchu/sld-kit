@@ -2,13 +2,9 @@ import type { Command } from '../commands/Command';
 import type { SldDocument } from '../SldDocument';
 import { CompositeDocument } from './CompositeDocument';
 import { CompositeLine, type CompositeLineJson, type LineVertexJson } from './CompositeLine';
-import { DiagramInstance, type DiagramInstanceJson, type LabelAnchor } from './DiagramInstance';
+import { DiagramInstance, type DiagramInstanceJson, type LabelPlacement } from './DiagramInstance';
 
-/** Slot + quarter-turn direction of a child's name label. */
-export interface LabelPlacement {
-  anchor: LabelAnchor;
-  direction: number;
-}
+export type { LabelPlacement };
 
 /** Add a placed child to the composite. */
 export class AddChildCommand implements Command<CompositeDocument> {
