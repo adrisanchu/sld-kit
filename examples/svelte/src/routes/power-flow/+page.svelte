@@ -22,7 +22,8 @@
   import { Button } from '$lib/components/ui/button';
   import { POSITION_TYPE_TOKENS, SLD_VIEW_STYLE, SLD_CHILD_NOT_FOUND, voltageToken } from '$lib/components/sld/theme';
   import { buildPowerFlowDemo } from '$lib/powerflow/fixture';
-  import { getFlow, withFlowState, flowFormat } from '$lib/powerflow/flow-data';
+  import { getFlow, withFlowState, flowFormat, applyPowerFlow } from '$lib/powerflow/flow-data';
+  import { POWER_FLOW_READINGS } from '$lib/powerflow/readings';
   import { computeFlowMap, type FlowMap } from '$lib/powerflow/model';
 
   let composite: CompositeDocument;
@@ -44,7 +45,11 @@
   onMount(() => {
     const demo = buildPowerFlowDemo();
     composite = demo.composite;
-    for (const inst of composite.allChildren()) inst.resolve(demo.resolver);
+    for (const inst of composite.allChildren()) {
+      inst.resolve(demo.resolver);
+      // Fold the external power-flow feed into each diagram's `data.flow`.
+      if (inst.resolved) applyPowerFlow(inst.resolved, POWER_FLOW_READINGS);
+    }
     ready = true;
 
     const io = new IntersectionObserver(([e]) => (onScreen = e.isIntersecting), { threshold: 0 });
