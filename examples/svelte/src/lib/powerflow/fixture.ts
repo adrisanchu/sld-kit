@@ -3,12 +3,15 @@
  * power-flow visualization. Deliberately separate from the asset-based
  * `demoFixture.ts`: it is never seeded into the editor library or localStorage.
  *
- * A chain of small substations, each a single busbar with a few line bays. Bays
- * are wired to the bus and out to a feeder; some feeders share an id across two
- * neighbouring stations, so the composite auto-links them into inter-diagram
- * tie-lines. Every bay carries seeded `data.flow` (a random nominal MW, a
- * capacity and a direction) — random today, meant to be tweaked into real
- * numbers. The live magnitudes/directions come from the toy model at runtime.
+ * This builds only the **topology** — a chain of small substations, each a single
+ * busbar with a few line bays wired to the bus and out to a feeder; some feeders
+ * share an id across two neighbouring stations, so the composite auto-links them
+ * into inter-diagram tie-lines. It carries **no flow values**: those arrive
+ * separately as an explicit list of readings (see `readings.ts`) and are folded
+ * into `data.flow` by `applyPowerFlow`, mimicking a third-party power-flow feed.
+ *
+ * Each bay gets a stable, globally-unique `id` (e.g. `A-SOLAR`) so a reading can
+ * address it directly.
  */
 import {
   SldDocument,
@@ -25,23 +28,10 @@ import {
   type PositionType,
   type ExternalAssetKind
 } from '@sld-kit/core';
-import type { FlowData } from './flow-data';
-
-/** Small deterministic PRNG so the "random" seeds are stable across reloads. */
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const withFlow = (d: FlowData) => ({ flow: d });
 
 interface BayDef {
+  /** Globally-unique asset id — the key a power-flow reading addresses. */
+  id: string;
   label: string;
   feederLabel: string;
   /** Position type — drives the box token; defaults to `'line'`. */
@@ -58,9 +48,9 @@ interface BayDef {
 /**
  * One substation: a busbar (row 1) with `bays.length` line positions above it
  * (row 0), each wired pos→bus and pos→feeder-up. Mirrors the known-good South
- * 220 kV geometry. Each bay gets a seeded, closed, operable switch.
+ * 220 kV geometry. Topology only — flow values come from the readings.
  */
-function buildStation(id: string, name: string, kv: number, bays: BayDef[], rand: () => number): SldDocument {
+function buildStation(id: string, name: string, kv: number, bays: BayDef[]): SldDocument {
   const doc = new SldDocument(
     { id, name, substation: name, voltageKv: kv },
     { rows: 2, cols: Math.max(1, bays.length) }
@@ -68,30 +58,16 @@ function buildStation(id: string, name: string, kv: number, bays: BayDef[], rand
   doc.addElement(BusBar.of({ id: 'bb', label: 'BB', row: 1 }));
 
   bays.forEach((bay, i) => {
-    const posId = `pos-${i}`;
-    const capacity = 200 + Math.floor(rand() * 600);
-    const mw = Math.floor(rand() * capacity);
-    const direction: 1 | -1 = rand() > 0.5 ? 1 : -1;
-    doc.addElement(
-      Position.of({
-        id: posId,
-        label: bay.label,
-        type: bay.type ?? 'line',
-        row: 0,
-        col: i,
-        data: withFlow({ operable: true, state: 'closed', mw, capacity, direction })
-      })
-    );
-    doc.addElement(Connection.of({ id: `cn-${i}-bus`, from: element(posId), to: element('bb') }));
-    // Non-tie feeders MUST get a station-unique external id: a bare `cn-${i}-ext`
-    // repeats across stations and the composite would auto-link the collisions
-    // into spurious tie-lines. Only `sharedId` is meant to be shared (and only
-    // between the two stations that own each end of a real tie). The `asset` kind
-    // gives generators/loads their glyph (solar, wind, battery, consumer).
+    doc.addElement(Position.of({ id: bay.id, label: bay.label, type: bay.type ?? 'line', row: 0, col: i }));
+    doc.addElement(Connection.of({ id: `${bay.id}-bus`, from: element(bay.id), to: element('bb') }));
+    // Only `sharedId` is meant to be shared (between the two stations owning each
+    // end of a real tie); everything else is keyed off the unique bay id so the
+    // composite never auto-links id collisions into spurious tie-lines. The
+    // `asset` kind gives generators/loads their glyph (solar, wind, battery, load).
     doc.addElement(
       Connection.of({
-        id: bay.sharedId ?? `${id}-ext-${i}`,
-        from: element(posId, 'above'),
+        id: bay.sharedId ?? `${bay.id}-ext`,
+        from: element(bay.id, 'above'),
         to: external({ asset: bay.asset ?? 'line', label: bay.feederLabel, direction: 'up' })
       })
     );
@@ -105,33 +81,31 @@ export const PF_COMPOSITE_ID = 'pf-composite';
 
 /**
  * Build the demo composite plus a resolver over its child library JSON. Children
- * are resolved by the caller (`instance.resolve(resolver)`) at mount, exactly
- * like the editor does.
+ * are resolved by the caller (`instance.resolve(resolver)`) at mount, and the
+ * caller then folds the readings in via `applyPowerFlow`.
  */
 export function buildPowerFlowDemo(): { composite: CompositeDocument; resolver: MapResolver } {
-  const rand = mulberry32(0xc0ffee);
-
   const stations: SldDocument[] = [
     buildStation('pf-a', 'Alpha 400 kV', 400, [
-      { label: 'PV1', feederLabel: 'SOLAR PARK', type: 'renewable', asset: 'renewable' },
-      { label: 'L2', feederLabel: 'TIE AB', sharedId: 'tie-ab' },
-      { label: 'LD1', feederLabel: 'LOAD A', type: 'demand', asset: 'demand' }
-    ], rand),
+      { id: 'A-SOLAR', label: 'PV1', feederLabel: 'SOLAR PARK', type: 'renewable', asset: 'renewable' },
+      { id: 'A-TIE-AB', label: 'L2', feederLabel: 'TIE AB', sharedId: 'tie-ab' },
+      { id: 'A-LOAD', label: 'LD1', feederLabel: 'LOAD A', type: 'demand', asset: 'demand' }
+    ]),
     buildStation('pf-b', 'Bravo 400 kV', 400, [
-      { label: 'L1', feederLabel: 'TIE AB', sharedId: 'tie-ab' },
-      { label: 'L2', feederLabel: 'TIE BC', sharedId: 'tie-bc' },
-      { label: 'LD2', feederLabel: 'LOAD B', type: 'demand', asset: 'demand' }
-    ], rand),
+      { id: 'B-TIE-AB', label: 'L1', feederLabel: 'TIE AB', sharedId: 'tie-ab' },
+      { id: 'B-TIE-BC', label: 'L2', feederLabel: 'TIE BC', sharedId: 'tie-bc' },
+      { id: 'B-LOAD', label: 'LD2', feederLabel: 'LOAD B', type: 'demand', asset: 'demand' }
+    ]),
     buildStation('pf-c', 'Charlie 220 kV', 220, [
-      { label: 'L1', feederLabel: 'TIE BC', sharedId: 'tie-bc' },
-      { label: 'L2', feederLabel: 'TIE CD', sharedId: 'tie-cd' },
-      { label: 'WT1', feederLabel: 'WIND FARM', type: 'renewable', asset: 'renewable' }
-    ], rand),
+      { id: 'C-TIE-BC', label: 'L1', feederLabel: 'TIE BC', sharedId: 'tie-bc' },
+      { id: 'C-TIE-CD', label: 'L2', feederLabel: 'TIE CD', sharedId: 'tie-cd' },
+      { id: 'C-WIND', label: 'WT1', feederLabel: 'WIND FARM', type: 'renewable', asset: 'renewable' }
+    ]),
     buildStation('pf-d', 'Delta 220 kV', 220, [
-      { label: 'L1', feederLabel: 'TIE CD', sharedId: 'tie-cd' },
-      { label: 'BT1', feederLabel: 'STORAGE D', type: 'storage', asset: 'storage' },
-      { label: 'LD3', feederLabel: 'LOAD D', type: 'demand', asset: 'demand' }
-    ], rand)
+      { id: 'D-TIE-CD', label: 'L1', feederLabel: 'TIE CD', sharedId: 'tie-cd' },
+      { id: 'D-STORAGE', label: 'BT1', feederLabel: 'STORAGE D', type: 'storage', asset: 'storage' },
+      { id: 'D-LOAD', label: 'LD3', feederLabel: 'LOAD D', type: 'demand', asset: 'demand' }
+    ])
   ];
 
   const libraryJson = new Map<string, SldDocumentJson>();
