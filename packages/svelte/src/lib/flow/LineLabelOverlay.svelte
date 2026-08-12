@@ -17,7 +17,10 @@
   /** Text size in world units. */
   export let fontSize: number = 13;
 
-  const DEFAULT_OFFSET = 12; // perpendicular gap, clear of the flow dots
+  // Centred on the line by default: the opaque pill interrupts the line cleanly
+  // and it reads the same at any orientation. A non-zero `offset` pushes the
+  // label perpendicular (upward-biased) for a beside-the-line look.
+  const DEFAULT_OFFSET = 0;
 
   /** Point at fraction `t` of the polyline plus an upward-biased perpendicular unit vector. */
   function place(points: Point[], t: number): { p: Point; nx: number; ny: number } {
@@ -67,7 +70,7 @@
         width={it.w}
         height={it.h}
         rx={it.h / 2}
-        class="fill-background/85 stroke-border"
+        class="fill-background/95 stroke-border"
         stroke-width="0.75"
       />
       <text

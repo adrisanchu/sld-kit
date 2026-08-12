@@ -18,7 +18,7 @@
     type ChildLayout,
     type SldDocument
   } from '@sld-kit/core';
-  import { CompositeExplorer, type FlowResolver } from '@sld-kit/svelte';
+  import { CompositeExplorer, type FlowResolver, type LineLabelResolver } from '@sld-kit/svelte';
   import { Button } from '$lib/components/ui/button';
   import { POSITION_TYPE_TOKENS, SLD_VIEW_STYLE, SLD_CHILD_NOT_FOUND, voltageToken } from '$lib/components/sld/theme';
   import { buildPowerFlowDemo } from '$lib/powerflow/fixture';
@@ -94,6 +94,22 @@
   }
   $: resolveFlow = makeResolver(flowMap);
 
+  // Dynamic MW / rating labels. Ties are labelled at the overview; a bay's feeder
+  // only once its station is focused (keeps the overview uncluttered). Bus stems
+  // are skipped — they carry the same value as the bay's feeder leg.
+  function makeLabelResolver(map: FlowMap, focused: string | null): LineLabelResolver {
+    return (key) => {
+      const f = map.get(key);
+      if (!f || !f.active) return null;
+      if (key.endsWith('-bus')) return null;
+      const isLink = key.startsWith('link:');
+      if (!isLink && key.split(':')[0] !== focused) return null;
+      const load = f.capacity ? f.magnitude / f.capacity : 0;
+      return { text: `${f.magnitude} MW / ${f.capacity} MW`, className: TIER_CLASS[loadTier(load)] };
+    };
+  }
+  $: resolveLineLabel = makeLabelResolver(flowMap, focusedId);
+
   // Voltage colours the boxes + busbars; connections stay neutral so the flow
   // overlay is the sole line-colour authority (by load) — the two axes never
   // fight over the same geometry.
@@ -156,6 +172,7 @@
         bind:focusedId
         {layout}
         {resolveFlow}
+        {resolveLineLabel}
         {paused}
         formatResolver={flowFormat}
         {childColorClass}

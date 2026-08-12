@@ -33,7 +33,7 @@ export interface LineLabel {
   text: string;
   /** Position along the line as a fraction of its length, `0`–`1` (default `0.5`, the midpoint). */
   at?: number;
-  /** Perpendicular offset from the line in world units (default clears the flow dots). */
+  /** Perpendicular offset from the line in world units (default `0` = centred on the line). */
   offset?: number;
   /** A CSS class setting `--sld-pos` for the text colour; omit for the default foreground. */
   className?: string;
