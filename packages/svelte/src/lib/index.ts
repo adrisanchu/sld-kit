@@ -34,8 +34,9 @@ export { default as SelectionFrame } from './composite/SelectionFrame.svelte';
 
 // ── Flow overlay (generic animated lines; domain-agnostic) ────────────────
 export { default as FlowOverlay } from './flow/FlowOverlay.svelte';
+export { default as LineLabelOverlay } from './flow/LineLabelOverlay.svelte';
 export { worldLines, type WorldLine } from './flow/worldLines';
-export { type FlowStyle, type FlowResolver } from './flow/flow';
+export { type FlowStyle, type FlowResolver, type LineLabel, type LineLabelResolver } from './flow/flow';
 
 // ── Utilities ─────────────────────────────────────────────────────────────
 export { createPanZoom, type PanZoom, type ViewBox, type ContentBounds } from './panzoom';
