@@ -35,6 +35,19 @@ export interface LineLabel {
   at?: number;
   /** Perpendicular offset from the line in world units (default `0` = centred on the line). */
   offset?: number;
+  /**
+   * Explicit text rotation in world degrees. Use this to match a rotated
+   * diagram's own labels exactly (e.g. a child's `angleDeg + labelAngleDeg`).
+   * Takes precedence over {@link rotate}.
+   */
+  angle?: number;
+  /**
+   * When {@link angle} is not given: rotate the text perpendicular to the line so
+   * it aligns with a rotated diagram's other labels (default `true`). Set `false`
+   * to keep it horizontal — e.g. for a long diagonal tie where upright numbers
+   * read better.
+   */
+  rotate?: boolean;
   /** A CSS class setting `--sld-pos` for the text colour; omit for the default foreground. */
   className?: string;
 }

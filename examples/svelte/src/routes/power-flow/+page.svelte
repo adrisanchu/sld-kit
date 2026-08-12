@@ -94,21 +94,33 @@
   }
   $: resolveFlow = makeResolver(flowMap);
 
+  // Each child's on-screen label rotation (the same `angleDeg + labelAngleDeg` its
+  // own element labels use), so a feeder's MW label lines up with them exactly.
+  $: labelAngleByInstance = new Map<string, number>(
+    (layout?.children ?? []).map((c) => [c.instance.id, (((c.instance.angleDeg + c.labelAngleDeg) % 360) + 360) % 360])
+  );
+
   // Dynamic MW / rating labels. Ties are labelled at the overview; a bay's feeder
   // only once its station is focused (keeps the overview uncluttered). Bus stems
   // are skipped — they carry the same value as the bay's feeder leg.
-  function makeLabelResolver(map: FlowMap, focused: string | null): LineLabelResolver {
+  function makeLabelResolver(map: FlowMap, focused: string | null, angles: Map<string, number>): LineLabelResolver {
     return (key) => {
       const f = map.get(key);
       if (!f || !f.active) return null;
-      if (key.endsWith('-bus')) return null;
+      if (key.endsWith('-bus')) return null; // omit bus stems
       const isLink = key.startsWith('link:');
-      if (!isLink && key.split(':')[0] !== focused) return null;
+      const inst = key.split(':')[0];
+      if (!isLink && inst !== focused) return null; // omit non-link lines unless the station is focused
       const load = f.capacity ? f.magnitude / f.capacity : 0;
-      return { text: `${f.magnitude} MW / ${f.capacity} MW`, className: TIER_CLASS[loadTier(load)] };
+      return {
+        text: `${f.magnitude} MW / ${f.capacity} MW`,
+        className: TIER_CLASS[loadTier(load)],
+        // Feeders inherit their diagram's label rotation; diagonal ties stay upright.
+        ...(isLink ? { rotate: false } : { angle: angles.get(inst) ?? 0 })
+      };
     };
   }
-  $: resolveLineLabel = makeLabelResolver(flowMap, focusedId);
+  $: resolveLineLabel = makeLabelResolver(flowMap, focusedId, labelAngleByInstance);
 
   // Voltage colours the boxes + busbars; connections stay neutral so the flow
   // overlay is the sole line-colour authority (by load) — the two axes never
