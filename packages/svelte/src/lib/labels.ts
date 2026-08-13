@@ -37,6 +37,8 @@ export const DEFAULT_POSITION_TYPE_LABELS: Record<string, string> = {
 
 export interface SldToolbarLabels {
   fit: string;
+  zoomIn: string;
+  zoomOut: string;
   export: string;
   editMode: string;
   exitEditMode: string;
@@ -61,6 +63,8 @@ export interface SldToolbarLabels {
 
 export const DEFAULT_TOOLBAR_LABELS: SldToolbarLabels = {
   fit: 'Zoom to fit (Shift+1)',
+  zoomIn: 'Zoom in',
+  zoomOut: 'Zoom out',
   export: 'Export',
   editMode: 'Edit mode (Ctrl+E)',
   exitEditMode: 'Exit edit mode (Ctrl+E)',
