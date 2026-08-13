@@ -3,8 +3,9 @@
   import type { CompositeLayout, ChildLayout } from '@sld-kit/core';
   import CompositeCanvas from './CompositeCanvas.svelte';
   import FlowOverlay from '../flow/FlowOverlay.svelte';
+  import LineLabelOverlay from '../flow/LineLabelOverlay.svelte';
   import { worldLines } from '../flow/worldLines';
-  import type { FlowResolver } from '../flow/flow';
+  import type { FlowResolver, LineLabelResolver } from '../flow/flow';
   import { DEFAULT_POSITION_TOKENS, DEFAULT_CHILD_NOT_FOUND, type PositionTokens } from '../labels';
   import type { FormatResolver } from '../format';
   import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
@@ -22,6 +23,8 @@
   export let layout: CompositeLayout;
   /** Maps a `worldLines` key to its animated style; `null` hides that line's flow. */
   export let resolveFlow: FlowResolver = () => null;
+  /** Maps a `worldLines` key to a dynamic text label (e.g. MW / rating); `null` = none. */
+  export let resolveLineLabel: LineLabelResolver = () => null;
   /** Element `data` → `ElementFormat` overlay (e.g. overloaded = red), like the editor. */
   export let formatResolver: FormatResolver | null = null;
   /** Freeze all flow motion (e.g. offscreen / reduced-motion handled by consumer). */
@@ -95,4 +98,5 @@
   <!-- On top of the children, sharing the same world viewBox. Pointer-transparent
        so clicks still reach the diagrams underneath. -->
   <FlowOverlay {lines} {resolveFlow} {paused} />
+  <LineLabelOverlay {lines} resolveLabel={resolveLineLabel} />
 </CompositeCanvas>
