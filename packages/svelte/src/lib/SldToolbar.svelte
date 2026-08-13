@@ -176,15 +176,17 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-<!-- Floating hint bar while a placement/connection tool is active -->
+<!-- Floating hint bar while a placement/connection tool is active. Full-width
+     wrapper centres the pill and lets it grow toward the screen edges on small
+     screens, so a long hint wraps to a couple of lines instead of a thin column. -->
 {#if tool !== 'select' && activeToolLabel}
-  <div class="absolute left-1/2 top-4 z-10 -translate-x-1/2" transition:fade={{ duration: 150 }}>
+  <div class="absolute inset-x-2 top-4 z-10 flex justify-center" transition:fade={{ duration: 150 }}>
     <div
-      class="flex h-9 items-center gap-2 rounded-full border border-border bg-background/80 px-4 shadow-lg backdrop-blur-sm"
+      class="flex min-h-9 max-w-full items-center gap-2 rounded-2xl border border-border bg-background/80 px-4 py-1.5 shadow-lg backdrop-blur-sm"
     >
       <span class="text-sm text-muted-foreground">{activeToolLabel}</span>
       <button
-        class="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        class="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         on:click={() => pick('select')}
       >
         <X class="h-3.5 w-3.5" />
