@@ -106,6 +106,8 @@ export const POSITION_TYPE_LABELS: Record<string, string> = {
 /** Strings for the `@sld-kit/svelte` editor toolbar. */
 export const SLD_TOOLBAR_LABELS: SldToolbarLabels = {
   fit: 'Fit to view (Shift+1)',
+  zoomIn: 'Zoom in',
+  zoomOut: 'Zoom out',
   export: 'Export',
   editMode: 'Edit mode (Ctrl+E)',
   exitEditMode: 'Exit edit mode (Ctrl+E)',

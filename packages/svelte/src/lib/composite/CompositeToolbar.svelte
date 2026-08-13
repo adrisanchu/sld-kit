@@ -82,11 +82,19 @@
   const btnBase = 'flex h-8 w-8 items-center justify-center rounded-full transition-colors';
   const btnActive = 'bg-primary text-primary-foreground';
   const btnIdle = 'text-muted-foreground hover:bg-accent hover:text-foreground';
+
+  // This toolbar has fewer buttons than SldToolbar, so the single pill fits down
+  // to a smaller width: it stays one pill to ~420px and only then splits into two
+  // stacked, full-width pills (each spreading its buttons edge to edge) so nothing
+  // clips on small phones.
+  const groupPill =
+    'flex min-h-10 flex-wrap items-center gap-y-1 rounded-full border border-border bg-background/80 px-1.5 shadow-lg backdrop-blur-sm min-[420px]:h-auto min-[420px]:min-h-0 min-[420px]:w-auto min-[420px]:flex-nowrap min-[420px]:justify-start min-[420px]:px-0 min-[420px]:rounded-none min-[420px]:border-0 min-[420px]:bg-transparent min-[420px]:shadow-none min-[420px]:backdrop-blur-none';
+  const divider = 'mx-1 h-5 w-px shrink-0 bg-border';
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
 
-<div class="absolute bottom-6 left-1/2 z-10 -translate-x-1/2">
+<div class="absolute inset-x-2 bottom-4 z-10 min-[420px]:inset-x-auto min-[420px]:left-1/2 min-[420px]:-translate-x-1/2">
   {#if showExport}
     <div class="absolute bottom-full right-0 z-20 mb-2" transition:slide={{ axis: 'y', duration: 200 }}>
       <ExportFlyout
@@ -103,122 +111,131 @@
     </div>
   {/if}
 
+  <!-- Responsive shell: one pill on ≥sm; below sm the view and edit clusters
+       split into two stacked pills (view on the bottom) so nothing clips. -->
   <div
-    class="flex h-10 items-center rounded-full border border-border bg-background/80 px-1 shadow-lg backdrop-blur-sm"
+    class="flex flex-col-reverse items-center gap-2 min-[420px]:h-10 min-[420px]:flex-row min-[420px]:items-center min-[420px]:gap-0 min-[420px]:rounded-full min-[420px]:border min-[420px]:border-border min-[420px]:bg-background/80 min-[420px]:px-1 min-[420px]:shadow-lg min-[420px]:backdrop-blur-sm"
   >
-    <!-- Zoom to fit -->
-    <button title={L.fit} class="{btnBase} {btnIdle}" on:click={() => dispatch('fit')}>
-      <span class="sr-only">{L.fit}</span>
-      <Maximize class="h-4 w-4" />
-    </button>
+    <!-- View / navigation cluster (always visible) -->
+    <div class={groupPill + ' justify-stretch'}>
+      <!-- Zoom to fit -->
+      <button title={L.fit} class="{btnBase} {btnIdle}" on:click={() => dispatch('fit')}>
+        <span class="sr-only">{L.fit}</span>
+        <Maximize class="h-4 w-4" />
+      </button>
 
-    <!-- Export (JSON / SVG) -->
-    <button title={L.export} class="{btnBase} {showExport ? btnActive : btnIdle}" on:click={() => (showExport = !showExport)}>
-      <span class="sr-only">{L.export}</span>
-      <Download class="h-4 w-4" />
-    </button>
+      <!-- Export (JSON / SVG) -->
+      <button title={L.export} class="{btnBase} {showExport ? btnActive : btnIdle}" on:click={() => (showExport = !showExport)}>
+        <span class="sr-only">{L.export}</span>
+        <Download class="h-4 w-4" />
+      </button>
 
-    <!-- Color mode (by type ↔ by voltage) — always available -->
-    <button
-      title={L.colorMode}
-      class="{btnBase} {colorMode === 'by-voltage' ? btnActive : btnIdle}"
-      on:click={() => dispatch('setcolormode', colorMode === 'by-voltage' ? 'by-type' : 'by-voltage')}
-    >
-      <span class="sr-only">{L.colorMode}</span>
-      <Zap class="h-4 w-4" />
-    </button>
+      <!-- Color mode (by type ↔ by voltage) — always available -->
+      <button
+        title={L.colorMode}
+        class="{btnBase} {colorMode === 'by-voltage' ? btnActive : btnIdle}"
+        on:click={() => dispatch('setcolormode', colorMode === 'by-voltage' ? 'by-type' : 'by-voltage')}
+      >
+        <span class="sr-only">{L.colorMode}</span>
+        <Zap class="h-4 w-4" />
+      </button>
 
-    <!-- Label visibility cycle — always available. Kept visually neutral in all
-         three states; the glyph alone conveys the state. -->
-    <button
-      title={L.labelMode(labelMode)}
-      class="{btnBase} {btnIdle}"
-      on:click={() => dispatch('setlabelmode', NEXT_LABEL_MODE[labelMode])}
-    >
-      <span class="sr-only">{L.labelMode(labelMode)}</span>
-      <Tag class="h-4 w-4">
-        <!-- `all` shows the plain tag; `topology` adds a corner dot for "some
-             labels" (position labels hidden); `none` adds a lucide-style slash. -->
-        {#if labelMode === 'topology'}
-          <circle cx="18.5" cy="18.5" r="4.5" fill="currentColor" stroke="none" />
-        {:else if labelMode === 'none'}
-          <path d="m2 22 20 -20" stroke-width="2.5" />
-        {/if}
-      </Tag>
-    </button>
+      <!-- Label visibility cycle — always available. Kept visually neutral in all
+           three states; the glyph alone conveys the state. -->
+      <button
+        title={L.labelMode(labelMode)}
+        class="{btnBase} {btnIdle}"
+        on:click={() => dispatch('setlabelmode', NEXT_LABEL_MODE[labelMode])}
+      >
+        <span class="sr-only">{L.labelMode(labelMode)}</span>
+        <Tag class="h-4 w-4">
+          <!-- `all` shows the plain tag; `topology` adds a corner dot for "some
+               labels" (position labels hidden); `none` adds a lucide-style slash. -->
+          {#if labelMode === 'topology'}
+            <circle cx="18.5" cy="18.5" r="4.5" fill="currentColor" stroke="none" />
+          {:else if labelMode === 'none'}
+            <path d="m2 22 20 -20" stroke-width="2.5" />
+          {/if}
+        </Tag>
+      </button>
+    </div>
 
+    <!-- Edit cluster: mutation tools. Inside the shared pill on ≥sm; its own pill
+         (stacked above the view row) below sm. -->
     {#if canEdit}
-      <div class="mx-1 h-5 w-px shrink-0 bg-border" />
+      <div class={groupPill + ' justify-between'}>
+        <div class="{divider} hidden min-[420px]:block" />
 
-      <!-- Select — the default tool; active unless the draw tool is engaged -->
-      <button
-        title={L.select}
-        class="{btnBase} {drawActive ? btnIdle : btnActive}"
-        on:click={() => drawActive && dispatch('drawline')}
-      >
-        <span class="sr-only">{L.select}</span>
-        <MousePointer2 class="h-4 w-4" />
-      </button>
+        <!-- Select — the default tool; active unless the draw tool is engaged -->
+        <button
+          title={L.select}
+          class="{btnBase} {drawActive ? btnIdle : btnActive}"
+          on:click={() => drawActive && dispatch('drawline')}
+        >
+          <span class="sr-only">{L.select}</span>
+          <MousePointer2 class="h-4 w-4" />
+        </button>
 
-      <!-- Draw a manual line between substations -->
-      <button
-        title={L.drawLine}
-        class="{btnBase} {drawActive ? btnActive : btnIdle}"
-        on:click={() => dispatch('drawline')}
-      >
-        <span class="sr-only">{L.drawLine}</span>
-        <Spline class="h-4 w-4" />
-      </button>
+        <!-- Draw a manual line between substations -->
+        <button
+          title={L.drawLine}
+          class="{btnBase} {drawActive ? btnActive : btnIdle}"
+          on:click={() => dispatch('drawline')}
+        >
+          <span class="sr-only">{L.drawLine}</span>
+          <Spline class="h-4 w-4" />
+        </button>
 
-      <!-- Import a diagram -->
-      <button title={L.import} class="{btnBase} {btnIdle}" on:click={() => dispatch('import')}>
-        <span class="sr-only">{L.import}</span>
-        <ImagePlus class="h-4 w-4" />
-      </button>
+        <!-- Import a diagram -->
+        <button title={L.import} class="{btnBase} {btnIdle}" on:click={() => dispatch('import')}>
+          <span class="sr-only">{L.import}</span>
+          <ImagePlus class="h-4 w-4" />
+        </button>
 
-      <div class="mx-1 h-5 w-px shrink-0 bg-border" />
+        <div class={divider} />
 
-      <!-- Diagram name position — enabled only when a child diagram is selected -->
-      <button
-        title={L.editLabel}
-        class="{btnBase} {btnIdle} disabled:opacity-40"
-        disabled={!childSelected}
-        on:click={() => dispatch('editlabel')}
-      >
-        <span class="sr-only">{L.editLabel}</span>
-        <Type class="h-4 w-4" />
-      </button>
+        <!-- Diagram name position — enabled only when a child diagram is selected -->
+        <button
+          title={L.editLabel}
+          class="{btnBase} {btnIdle} disabled:opacity-40"
+          disabled={!childSelected}
+          on:click={() => dispatch('editlabel')}
+        >
+          <span class="sr-only">{L.editLabel}</span>
+          <Type class="h-4 w-4" />
+        </button>
 
-      <!-- Delete selected -->
-      <button
-        title={L.delete}
-        class="{btnBase} {btnIdle} disabled:opacity-40"
-        disabled={!hasSelection}
-        on:click={() => dispatch('delete')}
-      >
-        <span class="sr-only">{L.delete}</span>
-        <Trash2 class="h-4 w-4" />
-      </button>
+        <!-- Delete selected -->
+        <button
+          title={L.delete}
+          class="{btnBase} {btnIdle} disabled:opacity-40"
+          disabled={!hasSelection}
+          on:click={() => dispatch('delete')}
+        >
+          <span class="sr-only">{L.delete}</span>
+          <Trash2 class="h-4 w-4" />
+        </button>
 
-      <!-- Undo / Redo -->
-      <button
-        title={L.undo}
-        class="{btnBase} {btnIdle} disabled:opacity-40"
-        disabled={!canUndo}
-        on:click={() => dispatch('undo')}
-      >
-        <span class="sr-only">{L.undo}</span>
-        <Undo2 class="h-4 w-4" />
-      </button>
-      <button
-        title={L.redo}
-        class="{btnBase} {btnIdle} disabled:opacity-40"
-        disabled={!canRedo}
-        on:click={() => dispatch('redo')}
-      >
-        <span class="sr-only">{L.redo}</span>
-        <Redo2 class="h-4 w-4" />
-      </button>
+        <!-- Undo / Redo -->
+        <button
+          title={L.undo}
+          class="{btnBase} {btnIdle} disabled:opacity-40"
+          disabled={!canUndo}
+          on:click={() => dispatch('undo')}
+        >
+          <span class="sr-only">{L.undo}</span>
+          <Undo2 class="h-4 w-4" />
+        </button>
+        <button
+          title={L.redo}
+          class="{btnBase} {btnIdle} disabled:opacity-40"
+          disabled={!canRedo}
+          on:click={() => dispatch('redo')}
+        >
+          <span class="sr-only">{L.redo}</span>
+          <Redo2 class="h-4 w-4" />
+        </button>
+      </div>
     {/if}
   </div>
 </div>

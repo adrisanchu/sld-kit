@@ -386,6 +386,9 @@
 
   // ── Drag-move (select tool) ────────────────────────────────────────────────
   function handleElementDragStart(e: CustomEvent<{ id: string; event: PointerEvent }>) {
+    // Moving is a mutation: only in edit mode and only for roles that can edit.
+    // Viewers/view-mode can still select and inspect, just not drag-reflow.
+    if (!editMode || !canEdit) return;
     if (tool !== 'select') return;
     const el = doc.getElement(e.detail.id);
     if (!(el instanceof Position)) return; // only positions drag-reflow in v0
@@ -559,6 +562,7 @@
     {draggingId}
     cursor={canvasCursor}
     interactive={true}
+    panOnDrag={tool === 'select'}
     tokens={POSITION_TYPE_TOKENS}
     {colorClass}
     formatResolver={commissioningResolver}
@@ -635,6 +639,8 @@
     on:undo={() => stack.undo(doc)}
     on:redo={() => stack.redo(doc)}
     on:fit={() => canvas?.zoomToFit()}
+    on:zoomin={() => canvas?.zoomIn()}
+    on:zoomout={() => canvas?.zoomOut()}
     on:exportJson={exportJson}
     on:exportSvg={exportSvg}
   />
