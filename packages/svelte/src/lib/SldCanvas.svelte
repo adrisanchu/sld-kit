@@ -24,6 +24,13 @@
   export let draggingId: string | null = null;
   /** Extra cursor override while a tool is active (e.g. 'crosshair'). */
   export let cursor: string = '';
+  /**
+   * Whether a plain drag pans the canvas: mouse left-drag on empty background,
+   * or a single finger on touch. Set to `false` while a placement tool is
+   * active so taps/clicks reach the tool instead of panning. Middle-button,
+   * space+left, wheel, and two-finger pinch pan/zoom regardless.
+   */
+  export let panOnDrag: boolean = true;
   /** CSS class per position type; the consumer's stylesheet supplies the colors. */
   export let tokens: PositionTokens = DEFAULT_POSITION_TOKENS;
   /**
@@ -98,13 +105,21 @@
     pz.zoomToFit();
   }
 
+  /** Zoom in/out one step about the current view centre (toolbar buttons). */
+  export function zoomIn() {
+    pz.zoomIn();
+  }
+  export function zoomOut() {
+    pz.zoomOut();
+  }
+
   /** Expose the viewBox store so callers can subscribe and react to pan/zoom. */
   export function getViewBox() {
     return viewBox;
   }
 
   function handlePointerDown(e: PointerEvent) {
-    if (pz.tryStartPan(e)) return;
+    if (pz.tryStartPan(e, { panOnDrag, background: e.target === svgEl })) return;
     if (e.button === 0) {
       dispatch('canvasdown', { point: pz.clientToSvg(e.clientX, e.clientY), event: e });
     }
@@ -137,10 +152,10 @@
 
   $: cursorClass = $panning
     ? 'cursor-grabbing'
-    : $spaceDown
-      ? 'cursor-grab'
-      : cursor === 'crosshair'
-        ? 'cursor-crosshair'
+    : cursor === 'crosshair'
+      ? 'cursor-crosshair'
+      : $spaceDown || panOnDrag
+        ? 'cursor-grab'
         : '';
 
   onMount(() => {
@@ -159,6 +174,7 @@
   on:pointerdown={handlePointerDown}
   on:pointermove={handlePointerMove}
   on:pointerup={handlePointerUp}
+  on:pointercancel={handlePointerUp}
   on:pointerenter={() => pz.setPointerInside(true)}
   on:pointerleave={() => pz.setPointerInside(false)}
   on:click={handleClick}

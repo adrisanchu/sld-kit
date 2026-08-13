@@ -182,6 +182,14 @@
     pz.zoomToFit();
   }
 
+  /** Zoom in/out one step about the current view centre (explorer buttons). */
+  export function zoomIn() {
+    pz.zoomIn();
+  }
+  export function zoomOut() {
+    pz.zoomOut();
+  }
+
   /** Smoothly frame an arbitrary world rect (e.g. a child's `worldBounds`). */
   export function flyTo(bounds: ContentBounds, opts?: { durationMs?: number }) {
     pz.flyTo(bounds, opts);
@@ -193,7 +201,8 @@
   }
 
   function handlePointerDown(e: PointerEvent) {
-    if (pz.tryStartPan(e)) return;
+    // In draw mode a tap/click places a point, so only pinch/space/middle pan.
+    if (pz.tryStartPan(e, { panOnDrag: !drawMode, background: e.target === svgEl })) return;
   }
 
   function handlePointerMove(e: PointerEvent) {
@@ -228,10 +237,10 @@
 
   $: cursorClass = $panning
     ? 'cursor-grabbing'
-    : $spaceDown
-      ? 'cursor-grab'
-      : drawMode && interactive
-        ? 'cursor-crosshair'
+    : drawMode && interactive
+      ? 'cursor-crosshair'
+      : $spaceDown || !drawMode
+        ? 'cursor-grab'
         : '';
 
   onMount(() => {
@@ -250,6 +259,7 @@
   on:pointerdown={handlePointerDown}
   on:pointermove={handlePointerMove}
   on:pointerup={handlePointerUp}
+  on:pointercancel={handlePointerUp}
   on:pointerenter={() => pz.setPointerInside(true)}
   on:pointerleave={() => pz.setPointerInside(false)}
   on:click={handleClick}
