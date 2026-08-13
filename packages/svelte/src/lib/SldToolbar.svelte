@@ -2,6 +2,8 @@
   import { createEventDispatcher } from 'svelte';
   import { slide, fade } from 'svelte/transition';
   import Maximize from 'lucide-svelte/icons/maximize';
+  import ZoomIn from 'lucide-svelte/icons/zoom-in';
+  import ZoomOut from 'lucide-svelte/icons/zoom-out';
   import Pencil from 'lucide-svelte/icons/pencil';
   import MousePointer2 from 'lucide-svelte/icons/mouse-pointer-2';
   import Grid3x3 from 'lucide-svelte/icons/grid-3x3';
@@ -68,6 +70,8 @@
     undo: void;
     redo: void;
     fit: void;
+    zoomin: void;
+    zoomout: void;
     exportJson: void;
     exportSvg: void;
     setcolormode: 'by-type' | 'by-voltage';
@@ -212,7 +216,15 @@
   <div
     class="flex h-10 items-center rounded-full border border-border bg-background/80 px-1 shadow-lg backdrop-blur-sm"
   >
-    <!-- Zoom to fit — always available -->
+    <!-- Zoom out / fit / in — always available -->
+    <button title={L.zoomOut} class="{btnBase} {btnIdle}" on:click={() => dispatch('zoomout')}>
+      <span class="sr-only">{L.zoomOut}</span>
+      <ZoomOut class="h-4 w-4" />
+    </button>
+    <button title={L.zoomIn} class="{btnBase} {btnIdle}" on:click={() => dispatch('zoomin')}>
+      <span class="sr-only">{L.zoomIn}</span>
+      <ZoomIn class="h-4 w-4" />
+    </button>
     <button title={L.fit} class="{btnBase} {btnIdle}" on:click={() => dispatch('fit')}>
       <span class="sr-only">{L.fit}</span>
       <Maximize class="h-4 w-4" />
