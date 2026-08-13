@@ -20,6 +20,9 @@
   } from '@sld-kit/core';
   import { CompositeExplorer, type FlowResolver, type LineLabelResolver } from '@sld-kit/svelte';
   import { Button } from '$lib/components/ui/button';
+  import ZoomIn from 'lucide-svelte/icons/zoom-in';
+  import ZoomOut from 'lucide-svelte/icons/zoom-out';
+  import Maximize from 'lucide-svelte/icons/maximize';
   import { POSITION_TYPE_TOKENS, SLD_VIEW_STYLE, SLD_CHILD_NOT_FOUND, voltageToken } from '$lib/components/sld/theme';
   import { buildPowerFlowDemo } from '$lib/powerflow/fixture';
   import { getFlow, withFlowState, flowFormat, applyPowerFlow, loadTier } from '$lib/powerflow/flow-data';
@@ -165,7 +168,7 @@
   <title>Power flow · SLD-KIT</title>
 </svelte:head>
 
-<div class="flex h-screen flex-col">
+<div class="flex h-full flex-col">
   <header class="border-b px-6 py-4">
     <p class="font-mono text-xs uppercase tracking-[0.25em] text-muted-foreground">Example 03</p>
     <h1 class="mt-1 text-xl font-semibold tracking-tight">Power flow</h1>
@@ -214,6 +217,22 @@
           </div>
           <Button variant="outline" size="sm" class="text-xs" on:click={reset}>Reset</Button>
         </div>
+      </div>
+
+      <!-- Zoom controls: work with mouse, trackpad and touch (pinch also zooms). -->
+      <div
+        class="pointer-events-auto absolute bottom-4 right-4 flex items-center gap-1 rounded-lg border bg-card/90 p-1 shadow-sm backdrop-blur"
+      >
+        <Button variant="ghost" size="icon" class="h-8 w-8" title="Zoom out" on:click={() => explorer?.zoomOut()}>
+          <ZoomOut class="h-4 w-4" />
+        </Button>
+        <Button variant="ghost" size="icon" class="h-8 w-8" title="Zoom in" on:click={() => explorer?.zoomIn()}>
+          <ZoomIn class="h-4 w-4" />
+        </Button>
+        <Button variant="ghost" size="icon" class="h-8 w-8" title="Zoom to fit" on:click={() => explorer?.zoomToFit()}>
+          <Maximize class="h-4 w-4" />
+        </Button>
+        
       </div>
     {/if}
   </div>

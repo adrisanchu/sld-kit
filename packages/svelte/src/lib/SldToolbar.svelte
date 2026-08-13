@@ -2,6 +2,8 @@
   import { createEventDispatcher } from 'svelte';
   import { slide, fade } from 'svelte/transition';
   import Maximize from 'lucide-svelte/icons/maximize';
+  import ZoomIn from 'lucide-svelte/icons/zoom-in';
+  import ZoomOut from 'lucide-svelte/icons/zoom-out';
   import Pencil from 'lucide-svelte/icons/pencil';
   import MousePointer2 from 'lucide-svelte/icons/mouse-pointer-2';
   import Grid3x3 from 'lucide-svelte/icons/grid-3x3';
@@ -68,6 +70,8 @@
     undo: void;
     redo: void;
     fit: void;
+    zoomin: void;
+    zoomout: void;
     exportJson: void;
     exportSvg: void;
     setcolormode: 'by-type' | 'by-voltage';
@@ -151,6 +155,15 @@
   const btnActive = 'bg-primary text-primary-foreground';
   const btnIdle = 'text-muted-foreground hover:bg-accent hover:text-foreground';
 
+  // A cluster of buttons. On ≥sm it's transparent and sits inside the one shared
+  // pill; below sm each cluster becomes its own pill (the outer shell drops its
+  // background) so the toolbar splits into stacked rows. On small screens the
+  // pill fills the width (capped + centered) and spreads its buttons edge to
+  // edge instead of shrinking to content and wrapping early.
+  const groupPill =
+    'flex min-h-10 w-full max-w-md mx-auto flex-wrap items-center justify-between gap-y-1 rounded-full border border-border bg-background/80 px-1.5 shadow-lg backdrop-blur-sm sm:mx-0 sm:h-auto sm:min-h-0 sm:w-auto sm:max-w-none sm:flex-nowrap sm:justify-start sm:px-0 sm:rounded-none sm:border-0 sm:bg-transparent sm:shadow-none sm:backdrop-blur-none';
+  const divider = 'mx-1 h-5 w-px shrink-0 bg-border';
+
   $: activeToolLabel =
     tool === 'busbar'
       ? L.hintBusBar
@@ -163,15 +176,17 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-<!-- Floating hint bar while a placement/connection tool is active -->
+<!-- Floating hint bar while a placement/connection tool is active. Full-width
+     wrapper centres the pill and lets it grow toward the screen edges on small
+     screens, so a long hint wraps to a couple of lines instead of a thin column. -->
 {#if tool !== 'select' && activeToolLabel}
-  <div class="absolute left-1/2 top-4 z-10 -translate-x-1/2" transition:fade={{ duration: 150 }}>
+  <div class="absolute inset-x-2 top-4 z-10 flex justify-center" transition:fade={{ duration: 150 }}>
     <div
-      class="flex h-9 items-center gap-2 rounded-full border border-border bg-background/80 px-4 shadow-lg backdrop-blur-sm"
+      class="flex min-h-9 max-w-full items-center gap-2 rounded-2xl border border-border bg-background/80 px-4 py-1.5 shadow-lg backdrop-blur-sm"
     >
       <span class="text-sm text-muted-foreground">{activeToolLabel}</span>
       <button
-        class="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        class="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         on:click={() => pick('select')}
       >
         <X class="h-3.5 w-3.5" />
@@ -181,7 +196,7 @@
   </div>
 {/if}
 
-<div class="absolute bottom-6 left-1/2 z-10 -translate-x-1/2">
+<div class="absolute inset-x-2 bottom-4 z-10 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2">
   <!-- Matrix creator flyout -->
   {#if showMatrix}
     <div
@@ -209,68 +224,84 @@
     </div>
   {/if}
 
+  <!-- Responsive shell: one pill on ≥sm; below sm the view and edit clusters
+       split into two stacked pills (view on the bottom) so nothing clips. -->
   <div
-    class="flex h-10 items-center rounded-full border border-border bg-background/80 px-1 shadow-lg backdrop-blur-sm"
+    class="flex flex-col-reverse items-stretch gap-2 sm:h-10 sm:flex-row sm:items-center sm:gap-0 sm:rounded-full sm:border sm:border-border sm:bg-background/80 sm:px-1 sm:shadow-lg sm:backdrop-blur-sm"
   >
-    <!-- Zoom to fit — always available -->
-    <button title={L.fit} class="{btnBase} {btnIdle}" on:click={() => dispatch('fit')}>
-      <span class="sr-only">{L.fit}</span>
-      <Maximize class="h-4 w-4" />
-    </button>
-
-    <!-- Export (JSON / SVG) — always available -->
-    <button title={L.export} class="{btnBase} {showExport ? btnActive : btnIdle}" on:click={toggleExport}>
-      <span class="sr-only">{L.export}</span>
-      <Download class="h-4 w-4" />
-    </button>
-
-    <!-- Color mode (by type ↔ by voltage) — always available -->
-    <button
-      title={L.colorMode}
-      class="{btnBase} {colorMode === 'by-voltage' ? btnActive : btnIdle}"
-      on:click={() => dispatch('setcolormode', colorMode === 'by-voltage' ? 'by-type' : 'by-voltage')}
-    >
-      <span class="sr-only">{L.colorMode}</span>
-      <Zap class="h-4 w-4" />
-    </button>
-
-    <!-- Label visibility cycle — always available. Kept visually neutral in all
-         three states; the glyph alone conveys the state. -->
-    <button
-      title={L.labelMode(labelMode)}
-      class="{btnBase} {btnIdle}"
-      on:click={() => dispatch('setlabelmode', NEXT_LABEL_MODE[labelMode])}
-    >
-      <span class="sr-only">{L.labelMode(labelMode)}</span>
-      <Tag class="h-4 w-4">
-        <!-- `all` shows the plain tag; `topology` adds a corner dot for "some
-             labels" (position labels hidden); `none` adds a lucide-style slash. -->
-        {#if labelMode === 'topology'}
-          <circle cx="18.5" cy="18.5" r="4.5" fill="currentColor" stroke="none" />
-        {:else if labelMode === 'none'}
-          <path d="m2 22 20 -20" stroke-width="2.5" />
-        {/if}
-      </Tag>
-    </button>
-
-    {#if canEdit}
-      <div class="mx-1 h-5 w-px shrink-0 bg-border" />
-
-      <!-- Edit mode toggle -->
-      <button
-        title={editMode ? L.exitEditMode : L.editMode}
-        class="{btnBase} {editMode ? btnActive : btnIdle}"
-        on:click={toggleEdit}
-      >
-        <span class="sr-only">{L.editMode}</span>
-        <Pencil class="h-4 w-4" />
+    <!-- View / navigation cluster (always visible) + the edit toggle -->
+    <div class={groupPill}>
+      <!-- Zoom out / in / fit — always available -->
+      <button title={L.zoomOut} class="{btnBase} {btnIdle}" on:click={() => dispatch('zoomout')}>
+        <span class="sr-only">{L.zoomOut}</span>
+        <ZoomOut class="h-4 w-4" />
+      </button>
+      <button title={L.zoomIn} class="{btnBase} {btnIdle}" on:click={() => dispatch('zoomin')}>
+        <span class="sr-only">{L.zoomIn}</span>
+        <ZoomIn class="h-4 w-4" />
+      </button>
+      <button title={L.fit} class="{btnBase} {btnIdle}" on:click={() => dispatch('fit')}>
+        <span class="sr-only">{L.fit}</span>
+        <Maximize class="h-4 w-4" />
       </button>
 
-      {#if editMode}
-        <div class="flex items-center" transition:slide={{ axis: 'x', duration: 250 }}>
-          <div class="mx-1 h-5 w-px shrink-0 bg-border" />
+      <!-- Export (JSON / SVG) — always available -->
+      <button title={L.export} class="{btnBase} {showExport ? btnActive : btnIdle}" on:click={toggleExport}>
+        <span class="sr-only">{L.export}</span>
+        <Download class="h-4 w-4" />
+      </button>
 
-          <!-- Select -->
+      <!-- Color mode (by type ↔ by voltage) — always available -->
+      <button
+        title={L.colorMode}
+        class="{btnBase} {colorMode === 'by-voltage' ? btnActive : btnIdle}"
+        on:click={() => dispatch('setcolormode', colorMode === 'by-voltage' ? 'by-type' : 'by-voltage')}
+      >
+        <span class="sr-only">{L.colorMode}</span>
+        <Zap class="h-4 w-4" />
+      </button>
+
+      <!-- Label visibility cycle — always available. Kept visually neutral in all
+           three states; the glyph alone conveys the state. -->
+      <button
+        title={L.labelMode(labelMode)}
+        class="{btnBase} {btnIdle}"
+        on:click={() => dispatch('setlabelmode', NEXT_LABEL_MODE[labelMode])}
+      >
+        <span class="sr-only">{L.labelMode(labelMode)}</span>
+        <Tag class="h-4 w-4">
+          <!-- `all` shows the plain tag; `topology` adds a corner dot for "some
+               labels" (position labels hidden); `none` adds a lucide-style slash. -->
+          {#if labelMode === 'topology'}
+            <circle cx="18.5" cy="18.5" r="4.5" fill="currentColor" stroke="none" />
+          {:else if labelMode === 'none'}
+            <path d="m2 22 20 -20" stroke-width="2.5" />
+          {/if}
+        </Tag>
+      </button>
+
+      {#if canEdit}
+        <div class={divider} />
+
+        <!-- Edit mode toggle -->
+        <button
+          title={editMode ? L.exitEditMode : L.editMode}
+          class="{btnBase} {editMode ? btnActive : btnIdle}"
+          on:click={toggleEdit}
+        >
+          <span class="sr-only">{L.editMode}</span>
+          <Pencil class="h-4 w-4" />
+        </button>
+      {/if}
+    </div>
+
+    <!-- Edit cluster: mutation tools. Inside the shared pill on ≥sm; its own pill
+         (stacked above the view row) below sm. -->
+    {#if canEdit && editMode}
+      <div class={groupPill} transition:fade={{ duration: 150 }}>
+        <div class="{divider} hidden sm:block" />
+
+        <!-- Select -->
           <button
             title={L.select}
             class="{btnBase} {tool === 'select' ? btnActive : btnIdle}"
@@ -329,7 +360,7 @@
             <Spline class="h-4 w-4" />
           </button>
 
-          <div class="mx-1 h-5 w-px shrink-0 bg-border" />
+          <div class={divider} />
 
           <!-- Delete -->
           <button
@@ -361,8 +392,7 @@
             <span class="sr-only">{L.redo}</span>
             <Redo2 class="h-4 w-4" />
           </button>
-        </div>
-      {/if}
+      </div>
     {/if}
   </div>
 </div>

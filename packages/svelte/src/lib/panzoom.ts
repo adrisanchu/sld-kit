@@ -37,6 +37,10 @@ export function createPanZoom(getSvgEl: () => SVGSVGElement | undefined, getCont
   let space = false;
   spaceDown.subscribe((v) => (space = v));
   let pan: { sx: number; sy: number; vx: number; vy: number; moved: boolean } | null = null;
+  /** Live pointers (id → client coords), so touch pinch/pan can track >1 finger. */
+  const pointers = new Map<number, { x: number; y: number }>();
+  /** Two-finger pinch baseline; recomputed from a frozen viewBox to avoid drift. */
+  let pinch: { startDist: number; startMid: Point; startVb: ViewBox } | null = null;
   let pointerInside = false;
   let flyRaf: number | null = null;
 
@@ -164,6 +168,16 @@ export function createPanZoom(getSvgEl: () => SVGSVGElement | undefined, getCont
     });
   }
 
+  /** Zoom step for the +/- buttons: about the current view centre. */
+  function zoomIn() {
+    cancelFly();
+    zoomAbout({ x: vb.x + vb.w / 2, y: vb.y + vb.h / 2 }, 1 / 1.2);
+  }
+  function zoomOut() {
+    cancelFly();
+    zoomAbout({ x: vb.x + vb.w / 2, y: vb.y + vb.h / 2 }, 1.2);
+  }
+
   function handleWheel(e: WheelEvent) {
     const svgEl = getSvgEl();
     if (!svgEl) return;
@@ -176,42 +190,123 @@ export function createPanZoom(getSvgEl: () => SVGSVGElement | undefined, getCont
     }
   }
 
-  /** Begin a pan on middle-button, or left-button while space is held. */
-  function tryStartPan(e: PointerEvent): boolean {
+  /** (Re)seat the pinch baseline from the two most recent live pointers. */
+  function startPinch() {
+    const pts = [...pointers.values()];
+    const a = pts[pts.length - 2];
+    const b = pts[pts.length - 1];
+    pinch = {
+      startDist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      startMid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      startVb: { ...vb }
+    };
+    pan = null;
+    panning.set(true);
+  }
+
+  /**
+   * Begin a pan/pinch. Panning always starts on middle-button or space+left;
+   * `opts.panOnDrag` additionally lets a plain left-drag (mouse, on empty
+   * background) or a single finger pan. A second touch always starts a pinch,
+   * so two-finger zoom works regardless of `panOnDrag`. Returns true when the
+   * gesture consumes the event (caller should skip its own down logic).
+   */
+  function tryStartPan(e: PointerEvent, opts: { panOnDrag?: boolean; background?: boolean } = {}): boolean {
     const svgEl = getSvgEl();
     if (!svgEl) return false;
-    if (e.button === 1 || (e.button === 0 && space)) {
+    const isTouch = e.pointerType === 'touch';
+
+    // A second finger upgrades an in-progress touch gesture to a pinch.
+    if (isTouch && pointers.size >= 1) {
       cancelFly();
-      pan = { sx: e.clientX, sy: e.clientY, vx: vb.x, vy: vb.y, moved: false };
-      panning.set(true);
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       svgEl.setPointerCapture(e.pointerId);
+      startPinch();
       e.preventDefault();
+      return true;
+    }
+
+    const wantPan =
+      e.button === 1 ||
+      (e.button === 0 && space) ||
+      (isTouch && opts.panOnDrag !== false) ||
+      (e.button === 0 && !isTouch && !!opts.background && opts.panOnDrag !== false);
+    if (!wantPan) return false;
+
+    cancelFly();
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    pan = { sx: e.clientX, sy: e.clientY, vx: vb.x, vy: vb.y, moved: false };
+    panning.set(true);
+    svgEl.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    return true;
+  }
+
+  /** Returns true if a pan/pinch is in progress (caller should skip its own logic). */
+  function movePan(e: PointerEvent): boolean {
+    if (!pointers.has(e.pointerId)) return false;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const svgEl = getSvgEl();
+    if (!svgEl) return true;
+    const rect = svgEl.getBoundingClientRect();
+
+    if (pinch && pointers.size >= 2) {
+      const pts = [...pointers.values()];
+      const a = pts[pts.length - 2];
+      const b = pts[pts.length - 1];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      // World point under the initial midpoint stays put; scale + drag from there.
+      const worldX = pinch.startVb.x + ((pinch.startMid.x - rect.left) / rect.width) * pinch.startVb.w;
+      const worldY = pinch.startVb.y + ((pinch.startMid.y - rect.top) / rect.height) * pinch.startVb.h;
+      const startScale = rect.width / pinch.startVb.w;
+      const target = Math.min(fitScale * 8, Math.max(fitScale * 0.1, (startScale * dist) / pinch.startDist));
+      const w = rect.width / target;
+      const h = w * (pinch.startVb.h / pinch.startVb.w);
+      set({
+        x: worldX - ((mid.x - rect.left) / rect.width) * w,
+        y: worldY - ((mid.y - rect.top) / rect.height) * h,
+        w,
+        h
+      });
+      return true;
+    }
+
+    if (pan) {
+      const dx = ((e.clientX - pan.sx) / rect.width) * vb.w;
+      const dy = ((e.clientY - pan.sy) / rect.height) * vb.h;
+      if (Math.abs(e.clientX - pan.sx) + Math.abs(e.clientY - pan.sy) > 3) pan.moved = true;
+      set({ ...vb, x: pan.vx - dx, y: pan.vy - dy });
       return true;
     }
     return false;
   }
 
-  /** Returns true if a pan is in progress (caller should skip its own logic). */
-  function movePan(e: PointerEvent): boolean {
-    if (!pan) return false;
-    const svgEl = getSvgEl();
-    if (!svgEl) return true;
-    const rect = svgEl.getBoundingClientRect();
-    const dx = ((e.clientX - pan.sx) / rect.width) * vb.w;
-    const dy = ((e.clientY - pan.sy) / rect.height) * vb.h;
-    if (Math.abs(e.clientX - pan.sx) + Math.abs(e.clientY - pan.sy) > 3) pan.moved = true;
-    set({ ...vb, x: pan.vx - dx, y: pan.vy - dy });
-    return true;
-  }
-
-  /** Ends any pan. Returns whether a pan was active and whether it actually moved. */
+  /** Ends a pan/pinch for one pointer. Returns whether one was active and if it moved. */
   function endPan(e: PointerEvent): { wasPanning: boolean; moved: boolean } {
-    if (!pan) return { wasPanning: false, moved: false };
+    if (!pointers.has(e.pointerId)) return { wasPanning: false, moved: false };
     const svgEl = getSvgEl();
     if (svgEl?.hasPointerCapture(e.pointerId)) svgEl.releasePointerCapture(e.pointerId);
-    const moved = pan.moved;
+    pointers.delete(e.pointerId);
+    const moved = pan?.moved ?? false;
+
+    if (pinch) {
+      pinch = null;
+      if (pointers.size >= 2) {
+        startPinch(); // still pinching — reseat baseline to remaining fingers
+      } else if (pointers.size === 1) {
+        // One finger left: continue as a pan, anchored to it (no jump).
+        const [p] = [...pointers.values()];
+        pan = { sx: p.x, sy: p.y, vx: vb.x, vy: vb.y, moved: false };
+        panning.set(true);
+      } else {
+        panning.set(false);
+      }
+      return { wasPanning: true, moved: false };
+    }
+
     pan = null;
-    panning.set(false);
+    if (pointers.size === 0) panning.set(false);
     return { wasPanning: true, moved };
   }
 
@@ -238,6 +333,8 @@ export function createPanZoom(getSvgEl: () => SVGSVGElement | undefined, getCont
     clientToSvg,
     svgToClient,
     zoomToFit,
+    zoomIn,
+    zoomOut,
     flyTo,
     flyToFit,
     handleWheel,

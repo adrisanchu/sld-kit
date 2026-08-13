@@ -74,6 +74,14 @@
   export function zoomToFit() {
     canvas?.zoomToFit();
   }
+
+  /** Step zoom in/out about the current view centre (explorer zoom buttons). */
+  export function zoomIn() {
+    canvas?.zoomIn();
+  }
+  export function zoomOut() {
+    canvas?.zoomOut();
+  }
 </script>
 
 <CompositeCanvas
