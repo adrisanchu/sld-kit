@@ -163,9 +163,40 @@
     dispatch('save', { json });
     open = false;
   }
+
+  // Melt's dialog focus-trap focuses the first tabbable element (the Identifier
+  // input) on open, which pops the on-screen keyboard on touch and hides the
+  // form. Move focus to the dialog container (tabindex=-1) instead: pre-empt the
+  // trap (it leaves focus alone when it's already inside the container) and
+  // re-assert once after activation in case it won the race. Focus stays
+  // trapped — just parked on the shell, not in a field.
+  function tameFocus(node: HTMLElement) {
+    const content = node.closest<HTMLElement>('[role="dialog"]');
+    if (!content) return {};
+    const focusShell = () => content.focus({ preventScroll: true });
+    const fix = () => {
+      const a = document.activeElement as HTMLElement | null;
+      if (a && content.contains(a) && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT')) {
+        a.blur();
+        focusShell();
+      }
+    };
+    focusShell();
+    const raf = requestAnimationFrame(() => requestAnimationFrame(fix));
+    const timer = setTimeout(fix, 80);
+    return {
+      destroy() {
+        cancelAnimationFrame(raf);
+        clearTimeout(timer);
+      }
+    };
+  }
 </script>
 
-<Dialog.Root bind:open>
+<!-- Focus the dialog container (tabindex=-1) rather than the first input on
+     open: it keeps the whole form visible and, on touch devices, avoids popping
+     the on-screen keyboard before the user has chosen a field. -->
+<Dialog.Root bind:open openFocus={(node) => node ?? null}>
   <Dialog.Overlay class="z-[60]" />
   <!-- Capped to the viewport (dvh handles mobile browser chrome); the header and
        footer stay put while the fields scroll — one column, works down to phones. -->
@@ -176,7 +207,7 @@
 
     <!-- Scrollable field region. `min-h-0` lets the flex child shrink so it
          actually scrolls; `-mx-6 px-6` keeps the scrollbar at the dialog edge. -->
-    <div class="-mx-6 min-h-0 flex-1 space-y-4 overflow-y-auto px-6">
+    <div class="-mx-6 min-h-0 flex-1 space-y-4 overflow-y-auto px-6" use:tameFocus>
       <div class="space-y-1.5 pt-2">
         <Label for="sld-id">Identifier</Label>
         <Input id="sld-id" bind:value={elId} placeholder="e.g. cn-atp1-400-220" />
