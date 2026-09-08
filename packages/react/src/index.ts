@@ -20,8 +20,13 @@ export { GhostPreview, type GhostPreviewProps } from './elements/GhostPreview';
 export { GridOverlay, type GridOverlayProps } from './elements/GridOverlay';
 export { LaneOverlay, type LaneOverlayProps, type Lane } from './elements/LaneOverlay';
 
-// ── Editor chrome (event-dispatching, no dialogs) ─────────────────────────
-// Pending — see packages/README.md for the port status.
+// ── Editor chrome (callback-dispatching, no dialogs) ──────────────────────
+export { SldToolbar, type SldToolbarProps, type SldTool, type ColorMode, type LabelMode } from './SldToolbar';
+export { PositionTypeFlyout, type PositionTypeFlyoutProps } from './PositionTypeFlyout';
+export { MatrixCreatorFlyout, type MatrixCreatorFlyoutProps } from './MatrixCreatorFlyout';
+export { ExportFlyout, type ExportFlyoutProps } from './ExportFlyout';
+export { ExternalAssetPopover, type ExternalAssetPopoverProps } from './ExternalAssetPopover';
+export { LaneActionChip, type LaneActionChipProps } from './LaneActionChip';
 
 // ── Composite ("diagram of diagrams") canvas primitives ───────────────────
 // Pending — see packages/README.md for the port status.
