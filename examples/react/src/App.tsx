@@ -37,6 +37,7 @@ import {
 } from '@sld-kit/react';
 import { Moon, Sun } from 'lucide-react';
 import { buildExample400 } from './fixture';
+import { Overview } from './Overview';
 
 /** Map the toolbar's label-visibility mode to the canvas's three toggles. */
 const LABELS: Record<LabelMode, { pos: boolean; conn: boolean; bar: boolean }> = {
@@ -83,6 +84,7 @@ export default function App() {
   const [ghost, setGhost] = useState<{ cell: Cell; valid: boolean } | null>(null);
   const [boundary, setBoundary] = useState<number | null>(null);
   const [dark, setDark] = useState(false);
+  const [view, setView] = useState<'single' | 'overview'>('single');
 
   const run = useCallback((cmd: Command) => stack.execute(cmd, doc), [stack, doc]);
 
@@ -196,11 +198,30 @@ export default function App() {
     <div className="flex h-dvh flex-col bg-background text-foreground">
       <header className="flex items-center gap-2 border-b border-border px-4 py-2">
         <div className="mr-auto">
-          <h1 className="text-sm font-semibold">{doc.meta.name}</h1>
+          <h1 className="text-sm font-semibold">{view === 'single' ? doc.meta.name : 'Example — overview'}</h1>
           <p className="text-xs text-muted-foreground">
-            @sld-kit/react example — {doc.positions().length} positions, {doc.connections().length} connections
+            {view === 'single'
+              ? `@sld-kit/react example — ${doc.positions().length} positions, ${doc.connections().length} connections`
+              : '@sld-kit/react example — composite of two levels'}
           </p>
         </div>
+
+        {/* Segmented view toggle: the single-diagram editor vs the composite overview. */}
+        <div className="flex rounded-md border border-border p-0.5 text-sm">
+          {(['single', 'overview'] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              className={`rounded px-2 py-0.5 transition-colors ${
+                view === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {v === 'single' ? 'Editor' : 'Overview'}
+            </button>
+          ))}
+        </div>
+
         <button
           type="button"
           title="Toggle dark mode"
@@ -211,70 +232,76 @@ export default function App() {
         </button>
       </header>
 
-      <main className="relative min-h-0 flex-1">
-        <SldCanvas
-          ref={canvasRef}
-          doc={doc}
-          layout={layout}
-          version={version}
-          selectedIds={selectedIds}
-          cursor={tool !== 'select' ? 'crosshair' : ''}
-          panOnDrag={tool === 'select'}
-          colorClass={colorClass}
-          showPositionLabels={lbl.pos}
-          showConnectionLabels={lbl.conn}
-          showBusBarLabels={lbl.bar}
-          onSelect={handleSelect}
-          onClearSelection={() => {
-            setSelectedIds(new Set());
-            setSelectedLane(null);
-          }}
-          onCanvasDown={handleCanvasDown}
-          onCanvasMove={handleCanvasMove}
-          background={
-            <LaneOverlay
-              layout={layout}
-              selectedLane={selectedLane}
-              onSelectLane={(lane) => {
-                setSelectedLane(lane);
-                setSelectedIds(new Set());
-              }}
-              onAddLane={({ kind }) => run(new AddLaneCommand(kind))}
-            />
-          }
-        >
-          {(tool === 'position' || tool === 'busbar') && (
-            <GridOverlay layout={layout} highlight={tool === 'position' ? ghost : null} boundaryAt={boundary} />
-          )}
-          {tool === 'position' && ghost && (
-            <GhostPreview rect={layout.cellRect(ghost.cell)} valid={ghost.valid} type={positionType} />
-          )}
-        </SldCanvas>
+      {view === 'overview' ? (
+        <main className="min-h-0 flex-1">
+          <Overview />
+        </main>
+      ) : (
+        <main className="relative min-h-0 flex-1">
+          <SldCanvas
+            ref={canvasRef}
+            doc={doc}
+            layout={layout}
+            version={version}
+            selectedIds={selectedIds}
+            cursor={tool !== 'select' ? 'crosshair' : ''}
+            panOnDrag={tool === 'select'}
+            colorClass={colorClass}
+            showPositionLabels={lbl.pos}
+            showConnectionLabels={lbl.conn}
+            showBusBarLabels={lbl.bar}
+            onSelect={handleSelect}
+            onClearSelection={() => {
+              setSelectedIds(new Set());
+              setSelectedLane(null);
+            }}
+            onCanvasDown={handleCanvasDown}
+            onCanvasMove={handleCanvasMove}
+            background={
+              <LaneOverlay
+                layout={layout}
+                selectedLane={selectedLane}
+                onSelectLane={(lane) => {
+                  setSelectedLane(lane);
+                  setSelectedIds(new Set());
+                }}
+                onAddLane={({ kind }) => run(new AddLaneCommand(kind))}
+              />
+            }
+          >
+            {(tool === 'position' || tool === 'busbar') && (
+              <GridOverlay layout={layout} highlight={tool === 'position' ? ghost : null} boundaryAt={boundary} />
+            )}
+            {tool === 'position' && ghost && (
+              <GhostPreview rect={layout.cellRect(ghost.cell)} valid={ghost.valid} type={positionType} />
+            )}
+          </SldCanvas>
 
-        <SldToolbar
-          userRole="editor"
-          tool={tool}
-          canUndo={canUndo}
-          canRedo={canRedo}
-          hasSelection={selectedIds.size > 0}
-          positionType={positionType}
-          colorMode={colorMode}
-          labelMode={labelMode}
-          onSetTool={chooseTool}
-          onSetType={setPositionType}
-          onMatrix={resetGrid}
-          onDelete={deleteSelection}
-          onUndo={() => stack.undo(doc)}
-          onRedo={() => stack.redo(doc)}
-          onFit={() => canvasRef.current?.zoomToFit()}
-          onZoomIn={() => canvasRef.current?.zoomIn()}
-          onZoomOut={() => canvasRef.current?.zoomOut()}
-          onExportSvg={exportSvg}
-          onExportJson={exportJson}
-          onSetColorMode={setColorMode}
-          onSetLabelMode={setLabelMode}
-        />
-      </main>
+          <SldToolbar
+            userRole="editor"
+            tool={tool}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            hasSelection={selectedIds.size > 0}
+            positionType={positionType}
+            colorMode={colorMode}
+            labelMode={labelMode}
+            onSetTool={chooseTool}
+            onSetType={setPositionType}
+            onMatrix={resetGrid}
+            onDelete={deleteSelection}
+            onUndo={() => stack.undo(doc)}
+            onRedo={() => stack.redo(doc)}
+            onFit={() => canvasRef.current?.zoomToFit()}
+            onZoomIn={() => canvasRef.current?.zoomIn()}
+            onZoomOut={() => canvasRef.current?.zoomOut()}
+            onExportSvg={exportSvg}
+            onExportJson={exportJson}
+            onSetColorMode={setColorMode}
+            onSetLabelMode={setLabelMode}
+          />
+        </main>
+      )}
     </div>
   );
 }

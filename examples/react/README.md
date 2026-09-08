@@ -18,7 +18,10 @@ pnpm run build              # build the packages first (core → react)
 pnpm run dev:example:react  # http://localhost:5175
 ```
 
-## What it shows
+The header toggles between two views: the single-diagram **Editor** and the
+composite **Overview**.
+
+## Editor view
 
 - **`useSldDocument`** — the version-counter bridge, driving a
   `useMemo(() => engine.layout(doc), [engine, doc, version])` chain.
@@ -41,12 +44,33 @@ pnpm run dev:example:react  # http://localhost:5175
 - **Theming** — the `--sld-pos` token contract in `src/app.css`, with a dark-mode
   toggle proving the colors are entirely app-side.
 
+## Overview view (`Overview.tsx`)
+
+A "diagram of diagrams": a 400 kV level above a 220 kV level, auto-linked by
+their shared TIE feeder id.
+
+- **`CompositeExplorer`** — read-only "operate & watch": click a diagram to fly
+  into it, click the background (or the fit button) to fly back out. Internally
+  drives `CompositeCanvas`, `ChildDiagramView`, `FlowOverlay` and
+  `LineLabelOverlay`.
+- **Flow overlay** — a domain-agnostic `resolveFlow` animates travelling dots on
+  every wire (a toy random-but-stable model), and `resolveLineLabel` puts a
+  "120 MW" pill on the tie. `paused` toggles the motion.
+- **`worldLines`** — flattens the `CompositeLayout` into the world-space
+  polylines the two overlays consume.
+
 ## Scope
 
-The `connection` tool sets the active tool and shows the hint bar, but its
-canvas interaction (multi-step source→target endpoint picking and the
-`ExternalAssetPopover` flow) is deferred — it's editor orchestration, not a
-library gap. `ExternalAssetPopover` and `LaneActionChip` are exported and
-built; the `ssr-smoke.mjs` test renders them directly. Composites arrive with
-their components — see the
-[parity table](../../packages/README.md#component-status).
+Two things are covered by `ssr-smoke.mjs` rather than the interactive app, since
+they belong to heavier editor orchestration:
+
+- The `connection` tool sets the active tool and shows the hint bar, but its
+  multi-step source→target picking and the `ExternalAssetPopover` flow are
+  deferred. `ExternalAssetPopover` and `LaneActionChip` are exported and
+  smoke-tested directly.
+- The composite **editor** path (`CompositeToolbar`, `SelectionFrame`, child
+  drag/rotate, draw-line) is smoke-tested; the app demonstrates the read-only
+  explorer instead.
+
+See the [parity table](../../packages/README.md#component-status) — the React
+adapter is now at full parity with Svelte.

@@ -1,22 +1,34 @@
 import { useEffect } from 'react';
 
 /**
- * React has no scoped `<style>` like Svelte's, so the handful of keyframes the
- * chrome needs are injected once into `<head>` on first mount. Client-only (an
- * effect), so SSR renders the markup without them — the animations are pure
- * enter polish, never load-bearing.
+ * React has no scoped `<style>` like Svelte's, so the handful of keyframes and
+ * transitions the components need are injected once into `<head>` on first
+ * mount. Client-only (an effect), so SSR renders the markup without them.
  *
- * Faithful-behaviour note: Svelte's `transition:` also animates elements *out*
- * on unmount. Reproducing that in React needs presence tracking (a library);
- * per the port's "no animation library" rule these are **enter-only**, and the
- * element simply unmounts. A `prefers-reduced-motion` rule disables them.
+ * Two groups live here:
+ * - **Enter polish** (`fadeIn` / `slideUpIn`) for the toolbar flyouts. Svelte's
+ *   `transition:` also animates elements *out* on unmount; reproducing that in
+ *   React needs presence tracking (a library), so per the "no animation library"
+ *   rule these are enter-only and the element simply unmounts.
+ * - **Live-view motion** ported from the two scoped `<style>` blocks in the
+ *   Svelte adapter: `.sld-child` (composite focus dim/undim) and `.sld-flow-dot`
+ *   (the travelling-dot `stroke-dashoffset` march in `FlowOverlay`). Classes are
+ *   `sld-`-prefixed because they're injected globally, not scoped.
+ *
+ * A `prefers-reduced-motion` rule disables every one of them.
  */
 const ANIM_ID = 'sld-kit-react-anim';
 const ANIM_CSS = `
 @keyframes sld-fade-in { from { opacity: 0 } to { opacity: 1 } }
 @keyframes sld-slide-up-in { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
+@keyframes sld-flow-dash { to { stroke-dashoffset: calc(-1 * var(--sld-flow-period)) } }
+.sld-child { transition: opacity 0.3s ease; }
+.sld-flow-dot { animation-name: sld-flow-dash; animation-timing-function: linear; animation-iteration-count: infinite; }
+.sld-flow-dot.sld-paused { animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) {
   [data-sld-anim] { animation: none !important; }
+  .sld-child { transition: none; }
+  .sld-flow-dot { animation: none; }
 }
 `;
 
