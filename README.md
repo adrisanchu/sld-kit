@@ -10,15 +10,20 @@ several npm packages under the `@sld-kit` scope.
 | ------------------------------------ | -------------------------- | -------------------------------------------------------------- |
 | [`packages/core`](packages/core)     | `@sld-kit/core`            | ✅ document model, layout, commands, serialization, SVG export |
 | [`packages/svelte`](packages/svelte) | `@sld-kit/svelte`          | ✅ headless Svelte 4 views + event-dispatching editor chrome   |
+| [`packages/react`](packages/react)   | `@sld-kit/react`           | 🚧 React 18/19 port — canvas + element views done, chrome next |
 | [`examples/svelte`](examples/svelte) | _(private, not published)_ | ✅ SvelteKit + shadcn-svelte demo editor using both packages   |
+| [`examples/react`](examples/react)   | _(private, not published)_ | ✅ Vite + React + Tailwind v4 demo editor                      |
 
-The core is framework-agnostic and has zero runtime dependencies. Adapters
-(Svelte first, then React/Vue) will wrap it with framework-native views and
-declare `@sld-kit/core` as a peer dependency, so consumers install both:
+The core is framework-agnostic and has zero runtime dependencies. Adapters wrap
+it with framework-native views and declare `@sld-kit/core` as a peer dependency,
+so consumers install both:
 
 ```bash
-npm install @sld-kit/core @sld-kit/svelte
+npm install @sld-kit/core @sld-kit/svelte   # or @sld-kit/react
 ```
+
+[`packages/README.md`](packages/README.md) holds the **component parity table**
+(what each adapter implements) and the porting conventions.
 
 ## Try it
 
@@ -61,13 +66,17 @@ pnpm --filter @sld-kit/core build
 pnpm --filter @sld-kit/core verify:pack   # build + publint + attw
 pnpm --silent --filter @sld-kit/core demo > /tmp/example.svg   # smoke render (--silent keeps pnpm's banner out of the file)
 
-# example editor
-pnpm run dev:example      # SvelteKit dev server
-pnpm run build:example    # adapter-static SPA → examples/svelte/build
+# example editors
+pnpm run dev:example         # SvelteKit dev server
+pnpm run build:example       # adapter-static SPA → examples/svelte/build
+pnpm run dev:example:react   # Vite dev server (React)
+pnpm run build:example:react # static SPA → examples/react/dist
 ```
 
 ## Docs
 
+- [`packages/README.md`](packages/README.md) — the adapter contract and the
+  per-component implementation status across frameworks.
 - [`packages/core/README.md`](packages/core/README.md) — quickstart, theming,
   metadata, composites.
 - [`docs/architecture.md`](docs/architecture.md) — how the engine is put
