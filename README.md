@@ -6,13 +6,13 @@ several npm packages under the `@sld-kit` scope.
 
 ## Packages
 
-| Package                              | npm                        | Status                                                                   |
-| ------------------------------------ | -------------------------- | ------------------------------------------------------------------------ |
-| [`packages/core`](packages/core)     | `@sld-kit/core`            | ✅ document model, layout, commands, serialization, SVG export           |
-| [`packages/svelte`](packages/svelte) | `@sld-kit/svelte`          | ✅ headless Svelte 4 views + event-dispatching editor chrome             |
-| [`packages/react`](packages/react)   | `@sld-kit/react`           | 🚧 React 18/19 port — canvas, views + editor chrome done; composite next |
-| [`examples/svelte`](examples/svelte) | _(private, not published)_ | ✅ SvelteKit + shadcn-svelte demo editor using both packages             |
-| [`examples/react`](examples/react)   | _(private, not published)_ | ✅ Vite + React + Tailwind v4 demo editor                                |
+| Package                              | npm                        | Status                                                                             |
+| ------------------------------------ | -------------------------- | ---------------------------------------------------------------------------------- |
+| [`packages/core`](packages/core)     | `@sld-kit/core`            | ✅ document model, layout, commands, serialization, SVG export                     |
+| [`packages/svelte`](packages/svelte) | `@sld-kit/svelte`          | ✅ headless Svelte 4 views + event-dispatching editor chrome                       |
+| [`packages/react`](packages/react)   | `@sld-kit/react`           | ✅ React 18/19 adapter — full parity with Svelte (canvas, chrome, composite, flow) |
+| [`examples/svelte`](examples/svelte) | _(private, not published)_ | ✅ SvelteKit + shadcn-svelte demo editor using both packages                       |
+| [`examples/react`](examples/react)   | _(private, not published)_ | ✅ Vite + React + Tailwind v4 demo editor                                          |
 
 The core is framework-agnostic and has zero runtime dependencies. Adapters wrap
 it with framework-native views and declare `@sld-kit/core` as a peer dependency,

@@ -95,18 +95,18 @@ Status legend: ✅ complete · 🚧 in progress · ⬜ pending
 
 | Component           | What it does                                                                                                                                                                                                                 | Svelte 4 | React |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------: | :---: |
-| `CompositeCanvas`   | The `<svg>` host of a composite: dashed auto-links, manual lines, every placed child, and the selected line's bend handles.<br>Adds draw-mode chrome (snap rings, draft polyline) and emits the full line-editing event set. |    ✅    |  ⬜   |
-| `CompositeExplorer` | Read-only "operate and watch" wrapper over `CompositeCanvas`: click a child to fly into it, click the background to fly out.<br>Injects the flow and line-label overlays; emits `elementactivate` and `focuschange`.         |    ✅    |  ⬜   |
-| `CompositeToolbar`  | The composite equivalent of `SldToolbar`: fit, export, color/label modes, plus draw-line, import, delete and undo/redo.<br>No placement tools and no edit-mode toggle.                                                       |    ✅    |  ⬜   |
-| `ChildDiagramView`  | Renders one placed child diagram under its `Transform2D`, reusing the element views with labels kept upright.<br>Falls back to a dashed "Diagram not found" placeholder; supports focus and dim states.                      |    ✅    |  ⬜   |
-| `SelectionFrame`    | Figma-style selection chrome around the selected child: dashed polygon through its world corners plus corner dots.<br>Carries the rotation handle that emits `rotatestart`.                                                  |    ✅    |  ⬜   |
+| `CompositeCanvas`   | The `<svg>` host of a composite: dashed auto-links, manual lines, every placed child, and the selected line's bend handles.<br>Adds draw-mode chrome (snap rings, draft polyline) and emits the full line-editing event set. |    ✅    |  ✅   |
+| `CompositeExplorer` | Read-only "operate and watch" wrapper over `CompositeCanvas`: click a child to fly into it, click the background to fly out.<br>Injects the flow and line-label overlays; emits `elementactivate` and `focuschange`.         |    ✅    |  ✅   |
+| `CompositeToolbar`  | The composite equivalent of `SldToolbar`: fit, export, color/label modes, plus draw-line, import, delete and undo/redo.<br>No placement tools and no edit-mode toggle.                                                       |    ✅    |  ✅   |
+| `ChildDiagramView`  | Renders one placed child diagram under its `Transform2D`, reusing the element views with labels kept upright.<br>Falls back to a dashed "Diagram not found" placeholder; supports focus and dim states.                      |    ✅    |  ✅   |
+| `SelectionFrame`    | Figma-style selection chrome around the selected child: dashed polygon through its world corners plus corner dots.<br>Carries the rotation handle that emits `rotatestart`.                                                  |    ✅    |  ✅   |
 
 ### Flow overlays (generic, domain-agnostic)
 
 | Component          | What it does                                                                                                                                                                                      | Svelte 4 | React |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------: | :---: |
-| `FlowOverlay`      | Animates travelling dots along any set of world-space polylines, driven by a consumer `FlowResolver`.<br>Pure CSS `stroke-dashoffset` motion, with `paused` and `prefers-reduced-motion` freezes. |    ✅    |  ⬜   |
-| `LineLabelOverlay` | Draws a rounded contrast pill with a value at a fraction along each line, driven by a `LineLabelResolver`.<br>Auto-rotates to the line angle without ever reading upside-down.                    |    ✅    |  ⬜   |
+| `FlowOverlay`      | Animates travelling dots along any set of world-space polylines, driven by a consumer `FlowResolver`.<br>Pure CSS `stroke-dashoffset` motion, with `paused` and `prefers-reduced-motion` freezes. |    ✅    |  ✅   |
+| `LineLabelOverlay` | Draws a rounded contrast pill with a value at a fraction along each line, driven by a `LineLabelResolver`.<br>Auto-rotates to the line angle without ever reading upside-down.                    |    ✅    |  ✅   |
 
 ### Modules (non-component public API)
 
@@ -119,7 +119,7 @@ Status legend: ✅ complete · 🚧 in progress · ⬜ pending
 | `format` (`FormatResolver`) | The per-element styling seam; pass the same function to the exporter's `theme.resolveElementFormat` so screen and export agree.                              |    ✅    |  ✅   |
 | `labels`                    | Every English default string plus the `positionTokens` class map.                                                                                            |    ✅    |  ✅   |
 | `download`                  | `downloadText` + `slugify` for client-side export.                                                                                                           |    ✅    |  ✅   |
-| `flow` types / `worldLines` | `FlowStyle` / `FlowResolver` / `LineLabel` types, and flattening a `CompositeLayout` into world-space polylines.                                             |    ✅    |  ⬜   |
+| `flow` types / `worldLines` | `FlowStyle` / `FlowResolver` / `LineLabel` types, and flattening a `CompositeLayout` into world-space polylines.                                             |    ✅    |  ✅   |
 
 ## Porting an adapter
 
