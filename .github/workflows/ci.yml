@@ -19,14 +19,23 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Build first: @sld-kit/svelte's typecheck resolves @sld-kit/core's types
+      # Build first: the adapters' typecheck resolves @sld-kit/core's types
       # from packages/core/dist (gitignored), so core must be built beforehand.
-      # Runs in workspace dependency order (core → svelte).
+      # Runs in workspace dependency order (core → svelte/react).
       - run: pnpm run build
 
       - run: pnpm run typecheck
       - run: pnpm run lint
       - run: pnpm run test
 
-      # publint + attw (guards the publishable artifact; rebuilds core).
+      # publint + attw (guards the publishable artifacts; rebuilds each package).
+      # Only core and react: both are tsup bundles with one self-contained
+      # index.d.ts. @sld-kit/svelte has NO verify:pack script on purpose —
+      # svelte-package ships the .svelte sources in dist/, so its index.d.ts
+      # imports './SldCanvas.svelte', which attw cannot resolve (it reports a
+      # false-positive "Internal resolution error" on both node16 rows).
+      # publint alone does pass there. svelte is still fully covered by the
+      # pnpm -r build / typecheck / lint / test steps above — don't "fix" this
+      # by adding the script.
       - run: pnpm --filter @sld-kit/core run verify:pack
+      - run: pnpm --filter @sld-kit/react run verify:pack

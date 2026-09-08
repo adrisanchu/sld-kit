@@ -110,3 +110,5 @@ Also: `tsup` must **not** use `treeshake` here — it routes the bundle through 
 ## Release
 
 `.github/workflows/release.yml` publishes on push to `main`: bump a package's `package.json` `version`, commit, push → that package publishes (each step checks the npm registry first, so it's idempotent; version-less pushes validate but publish nothing). `.github/workflows/ci.yml` runs build → typecheck → lint → test → `verify:pack` on PRs.
+
+`verify:pack` (publint + attw) exists only on `core` and `react`. **`@sld-kit/svelte` has none by design** — `svelte-package` ships `.svelte` files in `dist/`, so its `index.d.ts` imports `'./SldCanvas.svelte'`, which attw can't resolve (false-positive `Internal resolution error`). svelte is still covered by the `pnpm -r` build/typecheck/lint/test steps. Don't "fix" this by adding the script; see the note in `ci.yml` and `packages/README.md`.

@@ -39,6 +39,31 @@ any new adapter (Vue, Svelte 5) must honour.
 > the diagram loses its colors. Tailwind v3: add to `content`. Tailwind v4:
 > `@source "../node_modules/@sld-kit/react/dist";`
 
+## Artifact verification
+
+Every package is covered by `build`, `typecheck`, `lint` and `test` — those are root
+scripts that run `pnpm -r`, so they execute in each workspace package. On top of that,
+`verify:pack` (`build` + [publint](https://publint.dev) + [attw](https://arethetypeswrong.github.io))
+guards what actually gets published.
+
+`verify:pack` exists on **`core` and `react` only**, and that asymmetry is deliberate:
+
+| Package  | publint | attw                      |
+| -------- | :-----: | ------------------------- |
+| `core`   |   ✅    | ✅                        |
+| `react`  |   ✅    | ✅                        |
+| `svelte` |   ✅    | ❌ cannot run — see below |
+
+`svelte-package` publishes the **`.svelte` source files** into `dist/`, so the package's
+`index.d.ts` contains `import SldCanvas from './SldCanvas.svelte'`. attw's TypeScript
+resolver cannot resolve a `.svelte` specifier and reports a false-positive
+`Internal resolution error` on both node16 rows. `core` and `react` are unaffected because
+tsup emits a single self-contained `index.d.ts`.
+
+So `@sld-kit/svelte` has no `verify:pack` script at all, and CI has no line for it. **Don't
+add one** expecting it to pass — it can't, without suppressing the very rule that makes
+attw useful.
+
 ## Component status
 
 Status legend: ✅ complete · 🚧 in progress · ⬜ pending

@@ -1,8 +1,8 @@
 name: Release
 
-# Publishes @sld-kit/core and @sld-kit/svelte to npm whenever main is pushed
-# with a version that is not yet on the registry. Bump the package's
-# package.json "version", commit, push main → that package is published.
+# Publishes @sld-kit/core, @sld-kit/svelte and @sld-kit/react to npm whenever
+# main is pushed with a version that is not yet on the registry. Bump the
+# package's package.json "version", commit, push main → that package is published.
 # Pushes that do not change a version are validated but publish nothing (each
 # publish step checks the registry first, so it is idempotent).
 
@@ -43,8 +43,10 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run lint
       - run: pnpm run test
-      # Build + publint + attw — guards the artifact before publish.
+      # Build + publint + attw — guards the artifacts before publish.
+      # No @sld-kit/svelte equivalent by design; see the note in ci.yml.
       - run: pnpm --filter @sld-kit/core run verify:pack
+      - run: pnpm --filter @sld-kit/react run verify:pack
 
       - name: Publish @sld-kit/core if the version is new
         working-directory: packages/core
@@ -66,6 +68,26 @@ jobs:
 
       - name: Publish @sld-kit/svelte if the version is new
         working-directory: packages/svelte
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VERSION" version > /dev/null 2>&1; then
+            echo "$NAME@$VERSION is already published — nothing to do."
+          else
+            echo "Publishing $NAME@$VERSION…"
+            # pnpm publish (not npm) rewrites the workspace: protocol in
+            # devDependencies; provenance comes from publishConfig.provenance
+            # + id-token: write.
+            pnpm publish --access public --no-git-checks
+          fi
+
+      # Build the React components (tsup → dist) before publishing.
+      - run: pnpm --filter @sld-kit/react run build
+
+      - name: Publish @sld-kit/react if the version is new
+        working-directory: packages/react
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
