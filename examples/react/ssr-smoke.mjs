@@ -1,14 +1,31 @@
 /**
  * Headless smoke test: render the built @sld-kit/react components to strings and
  * assert they actually paint the fixture's geometry and the chrome. Covers the
- * canvas + element views, plus the Phase-2 chrome (toolbar, and the two
- * components tied to larger flows the example doesn't drive: LaneActionChip and
- * ExternalAssetPopover). Run with: node ssr-smoke.mjs
+ * canvas + element views, the Phase-2 chrome (toolbar, LaneActionChip,
+ * ExternalAssetPopover), and the Phase-3 composite + flow surface (composite
+ * canvas/explorer/toolbar, auto-links, flow dots, line labels).
+ * Run with: node ssr-smoke.mjs
  */
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { LayoutEngine, buildDocument } from '@sld-kit/core';
-import { SldCanvas, SldToolbar, LaneActionChip, ExternalAssetPopover } from '@sld-kit/react';
+import {
+  CompositeDocument,
+  CompositeLayoutEngine,
+  DiagramInstance,
+  LayoutEngine,
+  MapResolver,
+  Serializer,
+  buildDocument
+} from '@sld-kit/core';
+import {
+  SldCanvas,
+  SldToolbar,
+  LaneActionChip,
+  ExternalAssetPopover,
+  CompositeCanvas,
+  CompositeExplorer,
+  CompositeToolbar
+} from '@sld-kit/react';
 
 const doc = buildDocument({
   meta: { id: 'smoke', name: 'Smoke 400 kV' },
@@ -73,6 +90,56 @@ checks.push(
   ['external-asset popover lists asset kinds', popover.includes('Transformer') && popover.includes('Renewable')],
   ['external-asset popover has confirm/cancel', popover.includes('Add') && popover.includes('Cancel')]
 );
+
+// ── Composite + flow ────────────────────────────────────────────────────────
+// Two levels tied by a shared feeder id, so the composite auto-links them.
+const feeder = (label, direction, id) => ({ asset: 'transformer', label, direction, id });
+const levelA = buildDocument({
+  meta: { id: 'lib-a', name: 'Level A' },
+  busbars: [{ label: 'BB1', row: 0 }],
+  bays: [{ col: 0, positions: [{ type: 'transformer', row: 1, feeder: feeder('TIE', 'up', 'tie-1') }] }]
+});
+const levelB = buildDocument({
+  meta: { id: 'lib-b', name: 'Level B' },
+  busbars: [{ label: 'BB1', row: 0 }],
+  bays: [{ col: 0, positions: [{ type: 'transformer', row: 1, feeder: feeder('TIE', 'down', 'tie-1') }] }]
+});
+const resolver = new MapResolver(
+  new Map([
+    ['lib-a', Serializer.toJSON(levelA)],
+    ['lib-b', Serializer.toJSON(levelB)]
+  ])
+);
+const composite = new CompositeDocument({ id: 'ov', name: 'Overview' });
+composite.addChild(DiagramInstance.of({ libraryId: 'lib-a', x: 0, y: 0 }));
+composite.addChild(DiagramInstance.of({ libraryId: 'lib-b', x: 0, y: 400 }));
+composite.resolveChildren(resolver);
+const clayout = new CompositeLayoutEngine(new LayoutEngine()).layout(composite);
+
+const cc = renderToStaticMarkup(h(CompositeCanvas, { layout: clayout, selectedId: composite.allChildren()[0].id }));
+checks.push(
+  ['composite renders both child names', cc.includes('Level A') && cc.includes('Level B')],
+  ['composite auto-links the shared tie', clayout.links.length === 1 && cc.includes('stroke-primary/70')],
+  ['composite draws the selection frame', cc.includes('stroke-dasharray="6 4"')]
+);
+
+const explorer = renderToStaticMarkup(
+  h(CompositeExplorer, {
+    layout: clayout,
+    resolveFlow: () => ({ active: true, direction: 1 }),
+    resolveLineLabel: (k) => (k === 'link:tie-1' ? { text: '120 MW' } : null)
+  })
+);
+checks.push(
+  ['explorer animates flow dots', explorer.includes('sld-flow-dot')],
+  ['explorer draws the line label', explorer.includes('120 MW')]
+);
+
+const ctoolbar = renderToStaticMarkup(h(CompositeToolbar, { userRole: 'editor', drawActive: true, canUndo: true }));
+checks.push([
+  'composite toolbar shows draw-line + import',
+  ctoolbar.includes('Draw line') && ctoolbar.includes('Import diagram')
+]);
 
 let failed = 0;
 for (const [name, ok] of checks) {
