@@ -54,11 +54,9 @@ export function ConnectionView({
 
   const baseStrokeW = hovered && interactive ? style.connection.hoverStrokeWidth : style.connection.strokeWidth;
   const strokeW = selected ? style.connection.selectedStrokeWidth : (fmt?.strokeWidth ?? baseStrokeW);
-  const pathD = useMemo(
-    () => connectionPath(geo.points, geo.hops, SLD_LAYOUT.hopRadius),
-    [geo.points, geo.hops]
-  );
-  const label = conn.from.kind === 'external' ? conn.from.label : conn.to.kind === 'external' ? conn.to.label : conn.label;
+  const pathD = useMemo(() => connectionPath(geo.points, geo.hops, SLD_LAYOUT.hopRadius), [geo.points, geo.hops]);
+  const label =
+    conn.from.kind === 'external' ? conn.from.label : conn.to.kind === 'external' ? conn.to.label : conn.label;
   const symbolDef = geo.symbol ? symbols.get(geo.symbol.key) : undefined;
   const symbolScale =
     geo.symbol && symbolDef
@@ -90,9 +88,7 @@ export function ConnectionView({
         strokeDasharray={fmt?.dashArray ?? undefined}
         className={selected ? 'text-primary' : ''}
       />
-      {geo.arrow && (
-        <path d={arrowheadPath(geo.arrow.at, geo.arrow.angle, SLD_LAYOUT.arrowSize)} fill="currentColor" />
-      )}
+      {geo.arrow && <path d={arrowheadPath(geo.arrow.at, geo.arrow.angle, SLD_LAYOUT.arrowSize)} fill="currentColor" />}
       {geo.dot && <circle cx={geo.dot.x} cy={geo.dot.y} r={SLD_LAYOUT.nodeDotRadius} fill="currentColor" />}
       {geo.symbol && symbolDef && (
         <>
@@ -140,11 +136,7 @@ export function ConnectionView({
         </>
       )}
       {showLabel && geo.labelAt && label && (
-        <g
-          transform={
-            labelAngleDeg ? `rotate(${labelAngleDeg} ${geo.labelAt.at.x} ${geo.labelAt.at.y})` : undefined
-          }
-        >
+        <g transform={labelAngleDeg ? `rotate(${labelAngleDeg} ${geo.labelAt.at.x} ${geo.labelAt.at.y})` : undefined}>
           <text
             x={geo.labelAt.at.x}
             y={geo.labelAt.at.y}

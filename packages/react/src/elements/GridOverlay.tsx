@@ -20,12 +20,7 @@ const CHAIN = 'hsl(38 92% 50%)';
  * drop target (green = valid, red = invalid) and the cells a reflow would
  * displace elements into (amber).
  */
-export function GridOverlay({
-  layout,
-  highlight = null,
-  chainCells = [],
-  boundaryAt = null
-}: GridOverlayProps) {
+export function GridOverlay({ layout, highlight = null, chainCells = [], boundaryAt = null }: GridOverlayProps) {
   const slotRows = useMemo(
     () => Array.from({ length: layout.rows }, (_, r) => r).filter((r) => layout.rowKind(r) === 'slots'),
     [layout]

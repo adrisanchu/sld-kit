@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, type ReactNode } from 'react';
 import type { SldDocument, DiagramLayout, Point } from '@sld-kit/core';
 import { BusBarView } from './elements/BusBarView';
 import { PositionView } from './elements/PositionView';
@@ -147,6 +147,11 @@ export const SldCanvas = forwardRef<SldCanvasHandle, SldCanvasProps>(function Sl
 
   const selection = selectedIds ?? EMPTY_SELECTION;
 
+  // `version` looks redundant to the exhaustive-deps rule — it is not. `doc`
+  // mutates in place, so its identity never changes; the counter from
+  // `useSldDocument` is the only thing that says "the element lists moved".
+  // Dropping it would leave the canvas painting a stale document.
+  /* eslint-disable react-hooks/exhaustive-deps */
   const connectionItems = useMemo(
     () =>
       doc.connections().flatMap((el) => {
@@ -171,6 +176,7 @@ export const SldCanvas = forwardRef<SldCanvasHandle, SldCanvasProps>(function Sl
       }),
     [doc, layout, version]
   );
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   useImperativeHandle(
     ref,

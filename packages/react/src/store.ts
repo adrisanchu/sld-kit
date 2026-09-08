@@ -28,7 +28,9 @@ export function writable<T>(initial: T): WritableStore<T> {
     },
     subscribe(fn: (value: T) => void) {
       listeners.add(fn);
-      return () => listeners.delete(fn) as unknown as void;
+      return () => {
+        listeners.delete(fn);
+      };
     }
   };
 }

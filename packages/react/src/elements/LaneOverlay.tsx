@@ -25,13 +25,7 @@ const CORNER_R = 4;
  * lane addition. Renders column hit bands, row handle tabs, and "+"
  * affordances at the grid edges. All geometry derives from `layout`.
  */
-export function LaneOverlay({
-  layout,
-  selectedLane = null,
-  labels,
-  onSelectLane,
-  onAddLane
-}: LaneOverlayProps) {
+export function LaneOverlay({ layout, selectedLane = null, labels, onSelectLane, onAddLane }: LaneOverlayProps) {
   const L = useMemo(() => ({ ...DEFAULT_LANE_OVERLAY_LABELS, ...labels }), [labels]);
   const [hoverLane, setHoverLane] = useState<Lane | null>(null);
 
