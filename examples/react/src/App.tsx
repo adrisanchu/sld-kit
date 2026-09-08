@@ -41,6 +41,10 @@ export default function App() {
   const { canUndo, canRedo } = useCommandStack(stack);
 
   const engine = useMemo(() => new LayoutEngine(), []);
+  // `version` is the load-bearing dep here: `doc` mutates in place, so only the
+  // counter tells React the layout must be recomputed. Same for the callbacks
+  // below that read the document. exhaustive-deps can't see this.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const layout = useMemo(() => engine.layout(doc), [engine, doc, version]);
 
   const canvasRef = useRef<SldCanvasHandle>(null);
@@ -82,6 +86,7 @@ export default function App() {
       const occupied = doc.positions().some((p) => p.row === cell.row && p.col === cell.col);
       setGhost({ cell, valid: !occupied });
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [placing, layout, doc, version]
   );
 
@@ -104,6 +109,7 @@ export default function App() {
       setPlacing(null);
       setGhost(null);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [placing, layout, doc, version, run]
   );
 
@@ -156,7 +162,10 @@ export default function App() {
             }}
           >
             <Plus className="h-3 w-3" />
-            <span className={`sld-pos-${type} ml-1 h-2.5 w-2.5 rounded-full`} style={{ background: 'var(--sld-pos)' }} />
+            <span
+              className={`sld-pos-${type} ml-1 h-2.5 w-2.5 rounded-full`}
+              style={{ background: 'var(--sld-pos)' }}
+            />
           </ToolButton>
         ))}
 
@@ -218,9 +227,7 @@ export default function App() {
           }
         >
           {placing && <GridOverlay layout={layout} highlight={ghost} />}
-          {placing && ghost && (
-            <GhostPreview rect={layout.cellRect(ghost.cell)} valid={ghost.valid} type={placing} />
-          )}
+          {placing && ghost && <GhostPreview rect={layout.cellRect(ghost.cell)} valid={ghost.valid} type={placing} />}
         </SldCanvas>
       </main>
     </div>
