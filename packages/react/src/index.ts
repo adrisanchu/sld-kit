@@ -29,10 +29,21 @@ export { ExternalAssetPopover, type ExternalAssetPopoverProps } from './External
 export { LaneActionChip, type LaneActionChipProps } from './LaneActionChip';
 
 // ── Composite ("diagram of diagrams") canvas primitives ───────────────────
-// Pending — see packages/README.md for the port status.
+export { CompositeCanvas, type CompositeCanvasProps, type CompositeCanvasHandle } from './composite/CompositeCanvas';
+export {
+  CompositeExplorer,
+  type CompositeExplorerProps,
+  type CompositeExplorerHandle
+} from './composite/CompositeExplorer';
+export { CompositeToolbar, type CompositeToolbarProps } from './composite/CompositeToolbar';
+export { ChildDiagramView, type ChildDiagramViewProps } from './composite/ChildDiagramView';
+export { SelectionFrame, type SelectionFrameProps } from './composite/SelectionFrame';
 
 // ── Flow overlay (generic animated lines; domain-agnostic) ────────────────
-// Pending — see packages/README.md for the port status.
+export { FlowOverlay, type FlowOverlayProps } from './flow/FlowOverlay';
+export { LineLabelOverlay, type LineLabelOverlayProps } from './flow/LineLabelOverlay';
+export { worldLines, type WorldLine } from './flow/worldLines';
+export { type FlowStyle, type FlowResolver, type LineLabel, type LineLabelResolver } from './flow/flow';
 
 // ── Utilities ─────────────────────────────────────────────────────────────
 export { createPanZoom, type PanZoom, type ViewBox, type ContentBounds } from './panzoom';
