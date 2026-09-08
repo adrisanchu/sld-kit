@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "types": []
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}
