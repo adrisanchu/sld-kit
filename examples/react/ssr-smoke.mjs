@@ -1,12 +1,14 @@
 /**
- * Headless smoke test: render the built @sld-kit/react canvas to a string and
- * assert the element views actually paint the fixture's geometry.
- * Run with: node ssr-smoke.mjs
+ * Headless smoke test: render the built @sld-kit/react components to strings and
+ * assert they actually paint the fixture's geometry and the chrome. Covers the
+ * canvas + element views, plus the Phase-2 chrome (toolbar, and the two
+ * components tied to larger flows the example doesn't drive: LaneActionChip and
+ * ExternalAssetPopover). Run with: node ssr-smoke.mjs
  */
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { LayoutEngine, buildDocument } from '@sld-kit/core';
-import { SldCanvas } from '@sld-kit/react';
+import { SldCanvas, SldToolbar, LaneActionChip, ExternalAssetPopover } from '@sld-kit/react';
 
 const doc = buildDocument({
   meta: { id: 'smoke', name: 'Smoke 400 kV' },
@@ -46,12 +48,38 @@ const checks = [
   ['renders the transformer symbol glyph', html.includes('fill-background')]
 ];
 
+// ── Chrome ────────────────────────────────────────────────────────────────
+const toolbar = renderToStaticMarkup(
+  h(SldToolbar, { userRole: 'editor', editMode: true, tool: 'position', canUndo: true, positionType: 'renewable' })
+);
+checks.push(
+  ['toolbar shows the view controls', toolbar.includes('Zoom in') && toolbar.includes('Export')],
+  ['toolbar shows the edit cluster in edit mode', toolbar.includes('Add position') && toolbar.includes('Add bus bar')],
+  ['toolbar tints the position glyph by type', toolbar.includes('--sld-pos-renewable')],
+  ['toolbar shows the active-tool hint bar', toolbar.includes('Add position') && toolbar.includes('empty slot')]
+);
+
+const chip = renderToStaticMarkup(
+  h(LaneActionChip, { x: 10, y: 20, lane: { kind: 'col', index: 2 }, occupants: ['a', 'b'], canDelete: true })
+);
+checks.push(
+  ['lane chip titles the column (1-based)', chip.includes('Column 3')],
+  ['lane chip summarises occupancy', chip.includes('2 positions')],
+  ['lane chip offers delete', chip.includes('Delete')]
+);
+
+const popover = renderToStaticMarkup(h(ExternalAssetPopover, { x: 5, y: 5 }));
+checks.push(
+  ['external-asset popover lists asset kinds', popover.includes('Transformer') && popover.includes('Renewable')],
+  ['external-asset popover has confirm/cancel', popover.includes('Add') && popover.includes('Cancel')]
+);
+
 let failed = 0;
 for (const [name, ok] of checks) {
   console.log(`${ok ? '  ok  ' : ' FAIL '} ${name}`);
   if (!ok) failed++;
 }
 console.log(
-  `\n${doc.positions().length} positions, ${doc.busBars().length} bus bars, ${doc.connections().length} connections; ${html.length} bytes of markup`
+  `\n${doc.positions().length} positions, ${doc.busBars().length} bus bars, ${doc.connections().length} connections; ${html.length} bytes of canvas markup`
 );
 process.exit(failed === 0 ? 0 : 1);

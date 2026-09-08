@@ -8,7 +8,7 @@ A pnpm monorepo publishing several `@sld-kit/*` npm packages for **single-line (
 
 - `packages/core` (`@sld-kit/core`) — document model, layout, undo/redo commands, JSON serialization, SVG export. **Zero runtime deps, ESM-only, Node ≥ 20.**
 - `packages/svelte` (`@sld-kit/svelte`) — Svelte 4 components (headless pan/zoom canvas, element views, event-dispatching editor chrome) over the core.
-- `packages/react` (`@sld-kit/react`) — the React 18/19 sibling of the Svelte adapter, ported 1:1. Built with tsup (like core), ships a `"use client"` banner. **In progress:** canvas + element views done; chrome, composite and flow pending.
+- `packages/react` (`@sld-kit/react`) — the React 18/19 sibling of the Svelte adapter, ported 1:1. Built with tsup (like core), ships a `"use client"` banner. **In progress:** canvas, element views + editor chrome (toolbar, flyouts, popover, lane chip) done; composite and flow pending.
 - `examples/svelte` (`@sld-kit-examples/svelte`) — a SvelteKit + shadcn-svelte demo editor consuming both packages via `workspace:*`. **`private: true`, never published.** It doubles as an integration test (breaks when a package's public API changes) and as onboarding for new users. Fixtures are entirely fictional ("Example" substation) — no real data ever lands here.
 - `examples/react` (`@sld-kit-examples/react`) — the React equivalent: Vite SPA + Tailwind v4/shadcn. Same rules (private, fictional fixtures, integration test).
 
