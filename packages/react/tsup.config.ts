@@ -6,7 +6,10 @@ export default defineConfig({
   dts: true,
   sourcemap: true,
   clean: true,
-  treeshake: true,
+  // NOT `treeshake: true`: that routes esbuild's output through Rollup, which
+  // strips the top-level "use client" directive below (it warns
+  // "Module level directives cause errors when bundled"). The package is
+  // `sideEffects: false` ESM, so the consumer's bundler shakes it anyway.
   target: 'es2022',
   outDir: 'dist',
   // Every component is interactive (hooks, pointer handlers), so the whole

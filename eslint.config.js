@@ -1,6 +1,7 @@
 // @ts-check
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
   {
@@ -34,9 +35,21 @@ export default tseslint.config(
     }
   },
   {
-    // Node-context config files (svelte/vite/tailwind/postcss) — give them Node
+    // React adapter + its example: the rules-of-hooks checks the rest of the
+    // repo has no use for. The React package leans on `useSyncExternalStore`
+    // and `useImperativeHandle`, where a mis-ordered hook is a silent bug.
+    files: ['packages/react/**/*.{ts,tsx}', 'examples/react/**/*.{ts,tsx}'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn'
+    }
+  },
+  {
+    // Node-context files: config files (svelte/vite/tailwind/postcss) and the
+    // standalone `.mjs` scripts examples run under plain Node. Give them Node
     // globals and allow CommonJS `require` in the `.cjs` PostCSS config.
-    files: ['**/*.config.{js,ts}', '**/*.cjs'],
+    files: ['**/*.config.{js,ts}', '**/*.cjs', '**/*.mjs'],
     languageOptions: {
       globals: {
         process: 'readonly',
