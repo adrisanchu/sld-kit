@@ -22,14 +22,20 @@ pnpm run dev:example:react  # http://localhost:5175
 
 - **`useSldDocument`** — the version-counter bridge, driving a
   `useMemo(() => engine.layout(doc), [engine, doc, version])` chain.
-- **`useCommandStack`** — undo/redo button state.
+- **`useCommandStack`** — drives the toolbar's undo/redo enabled state.
 - **`SldCanvas`** — pan (drag / wheel / space+drag), zoom (Ctrl/Cmd+wheel,
   two-finger pinch), selection with shift-multi-select, and the imperative ref
   (`zoomIn` / `zoomOut` / `zoomToFit`).
-- **The overlay slots** — `LaneOverlay` in `background`; `GridOverlay` and
-  `GhostPreview` in `children` while a placement tool is active.
-- **Commands** — `AddPositionCommand` on click-to-place, `DeleteElementsCommand`
-  on the selection, both undoable.
+- **`SldToolbar`** — the floating editor chrome, fully wired: view controls,
+  color-mode (by type ↔ by voltage), label-mode cycle, and — in edit mode —
+  select, matrix (grid reset via `SnapshotCommand`), bus-bar and position
+  placement, the `PositionTypeFlyout`, delete and undo/redo. It internally uses
+  `PositionTypeFlyout`, `MatrixCreatorFlyout` and `ExportFlyout`.
+- **The overlay slots** — `LaneOverlay` in `background` (lane add via
+  `AddLaneCommand`); `GridOverlay` and `GhostPreview` in `children` while a
+  placement tool is active.
+- **Commands** — `AddPositionCommand`, `AddBusBarCommand`, `AddLaneCommand`,
+  `DeleteElementsCommand`, `SnapshotCommand`, all undoable through the toolbar.
 - **Export** — office-safe SVG and JSON via `SvgExporter` / `Serializer`, saved
   with the adapter's `downloadText`.
 - **Theming** — the `--sld-pos` token contract in `src/app.css`, with a dark-mode
@@ -37,7 +43,10 @@ pnpm run dev:example:react  # http://localhost:5175
 
 ## Scope
 
-This app tracks the port: it currently uses its own minimal header instead of
-`SldToolbar`, which lands with Phase 2 of the React port. Drag-to-move, lane
-insertion, dialogs and composites arrive with their components — see the
+The `connection` tool sets the active tool and shows the hint bar, but its
+canvas interaction (multi-step source→target endpoint picking and the
+`ExternalAssetPopover` flow) is deferred — it's editor orchestration, not a
+library gap. `ExternalAssetPopover` and `LaneActionChip` are exported and
+built; the `ssr-smoke.mjs` test renders them directly. Composites arrive with
+their components — see the
 [parity table](../../packages/README.md#component-status).
