@@ -1,16 +1,39 @@
 import { SvgBuilder } from '../export/SvgBuilder';
 import { SvgExporter } from '../export/SvgExporter';
 import { SLD_LAYOUT, type SldLayoutConfig } from '../layout';
+import type { Rect } from '../layout/geometry';
 import { connectionPath } from '../layout/paths';
+import { SymbolRegistry } from '../symbols/SymbolRegistry';
+import { createDefaultSymbolRegistry } from '../symbols/defaults';
 import { DEFAULT_THEME, firstFormat, resolveTheme, type SldTheme } from '../theme';
 import { CompositeDocument } from './CompositeDocument';
-import { CompositeLayoutEngine, linkConnections, lineConnections, type ChildLayout } from './CompositeLayoutEngine';
+import {
+  CompositeLayoutEngine,
+  linkConnections,
+  lineConnections,
+  type ChildLayout,
+  type CompositeLineLayout,
+  type LineGlyph
+} from './CompositeLayoutEngine';
 
 export interface CompositeSvgExportOptions {
   /** Paint an opaque background rect (default true — slides are light). */
   background?: boolean;
   /** Partial theme deep-merged over `DEFAULT_THEME` for this export. */
   theme?: Partial<SldTheme>;
+  /**
+   * Draw every child as a simplified box (name + sub-label) instead of its full
+   * internals — the grid-level view. Defaults to the document's `meta.boxMode`.
+   */
+  boxMode?: boolean;
+  /**
+   * Box fill per child (e.g. a voltage colour). Keeps the core domain-agnostic —
+   * the consumer supplies the colour, mirroring the live view's `childColorClass`.
+   * Falls back to the theme background.
+   */
+  boxFill?: (child: ChildLayout) => string | undefined;
+  /** Secondary line under the box name (e.g. an integer bus ID). */
+  boxSubLabel?: (child: ChildLayout) => string | null | undefined;
 }
 
 /**
@@ -26,11 +49,13 @@ export class CompositeSvgExporter {
     private engine: CompositeLayoutEngine = new CompositeLayoutEngine(),
     private childExporter: SvgExporter = new SvgExporter(),
     private cfg: SldLayoutConfig = SLD_LAYOUT,
-    private theme: SldTheme = DEFAULT_THEME
+    private theme: SldTheme = DEFAULT_THEME,
+    private symbols: SymbolRegistry = createDefaultSymbolRegistry()
   ) {}
 
   export(doc: CompositeDocument, options: CompositeSvgExportOptions = {}): string {
     const theme = options.theme ? resolveTheme(options.theme) : this.theme;
+    const boxMode = options.boxMode ?? doc.meta.boxMode ?? false;
     const layout = this.engine.layout(doc);
     const pad = 40;
     const bounds = layout.bounds;
@@ -68,8 +93,9 @@ export class CompositeSvgExporter {
       }
     }
 
-    // Manual lines: solid by default, but a commissioning tag on the anchored
-    // child connection restyles them (dash / width) just like the auto-links.
+    // Manual lines: the kind drives the stroke style (cable → dashed) and any
+    // structural glyph (transformer circles, demand triangle); a commissioning
+    // tag on the anchored child connection can still override dash / width.
     for (const line of layout.lines) {
       const lf = firstFormat(lineConnections(line.line, layout.children), theme.resolveElementFormat);
       b.element('path', {
@@ -77,20 +103,25 @@ export class CompositeSvgExporter {
         fill: 'none',
         stroke: theme.structure.connection,
         'stroke-width': lf?.strokeWidth ?? theme.structure.connectionStrokeWidth,
-        'stroke-dasharray': lf?.dashArray
+        'stroke-dasharray': lf?.dashArray ?? line.dashArray
       });
+      this.renderLineGlyphs(b, line, theme);
     }
 
-    // Each child inside its rigid transform.
+    // Each child inside its rigid transform — a box when boxMode, else the full
+    // internals (or a placeholder when unresolved).
     for (const child of layout.children) {
       b.open('g', { transform: child.transform.toSvgTransform() });
-      if (child.layout && child.instance.resolved) {
+      if (boxMode && child.layout && child.instance.resolved) {
+        this.renderBox(b, child, theme, options);
+      } else if (child.layout && child.instance.resolved) {
         // {0,180} label flip, exactly like the view (see CompositeLayoutEngine).
         this.childExporter.renderContent(b, child.instance.resolved, child.layout, child.labelAngleDeg, theme);
+        this.renderNameLabel(b, child, theme);
       } else {
         this.renderPlaceholder(b, child, theme);
+        this.renderNameLabel(b, child, theme);
       }
-      this.renderNameLabel(b, child, theme);
       b.close();
     }
 
@@ -123,6 +154,92 @@ export class CompositeSvgExporter {
     b.open('g', { transform: `rotate(${rotation} ${x} ${y})` });
     b.textElement('text', attrs, child.name);
     b.close();
+  }
+
+  /** Draw the kind glyphs a decorated line carries (transformer / demand). */
+  private renderLineGlyphs(b: SvgBuilder, line: CompositeLineLayout, theme: SldTheme): void {
+    if (line.glyph) this.renderGlyph(b, line.glyph, theme);
+    if (line.terminus) this.renderGlyph(b, line.terminus, theme);
+  }
+
+  /**
+   * Draw a registry glyph centred on `glyph.at`, sized to `symbolSize`, upright
+   * (orientation is available in the layout for future polish). Same office-safe
+   * shape emission as `SvgExporter.renderSymbol`: plain circles/paths/lines over
+   * an opaque backing rect that masks the line passing underneath.
+   */
+  private renderGlyph(b: SvgBuilder, glyph: LineGlyph, theme: SldTheme): void {
+    const def = this.symbols.get(glyph.key);
+    if (!def) return;
+    const s = this.cfg.symbolSize;
+    const box: Rect = { x: glyph.at.x - s / 2, y: glyph.at.y - s / 2, width: s, height: s };
+    b.element('rect', { x: box.x, y: box.y, width: box.width, height: box.height, fill: theme.structure.background });
+    const scale = Math.min(box.width / def.size[0], box.height / def.size[1]);
+    b.open('g', {
+      transform: `translate(${box.x} ${box.y}) scale(${Math.round(scale * 1000) / 1000})`,
+      stroke: theme.structure.connection,
+      fill: 'none'
+    });
+    for (const shape of def.shapes) {
+      const fill = shape.type !== 'line' && shape.fill === 'token' ? theme.structure.connection : 'none';
+      if (shape.type === 'path') {
+        b.element('path', { d: shape.d, fill, 'stroke-width': shape.strokeWidth ?? 1.6 });
+      } else if (shape.type === 'circle') {
+        b.element('circle', { cx: shape.cx, cy: shape.cy, r: shape.r, fill, 'stroke-width': shape.strokeWidth ?? 1.6 });
+      } else {
+        b.element('line', { x1: shape.x1, y1: shape.y1, x2: shape.x2, y2: shape.y2, 'stroke-width': shape.strokeWidth ?? 1.6 });
+      }
+    }
+    b.close();
+  }
+
+  /**
+   * A child as a simplified box: a rounded rect over the child frame filled with
+   * the consumer's colour (or the theme background), the diagram name centred and
+   * bold, and an optional sub-label (e.g. a bus ID) beneath it.
+   */
+  private renderBox(b: SvgBuilder, child: ChildLayout, theme: SldTheme, options: CompositeSvgExportOptions): void {
+    const { frame } = child;
+    const cx = frame.x + frame.width / 2;
+    const cy = frame.y + frame.height / 2;
+    const sub = options.boxSubLabel?.(child);
+    b.element('rect', {
+      x: frame.x,
+      y: frame.y,
+      width: frame.width,
+      height: frame.height,
+      rx: 8,
+      fill: options.boxFill?.(child) ?? theme.structure.background,
+      stroke: theme.structure.label,
+      'stroke-width': 2
+    });
+    b.textElement(
+      'text',
+      {
+        x: cx,
+        y: sub ? cy - 2 : cy + this.cfg.busLabelFontSize * 0.35,
+        'text-anchor': 'middle',
+        'font-family': this.cfg.fontFamily,
+        'font-size': this.cfg.busLabelFontSize,
+        'font-weight': 700,
+        fill: theme.structure.label
+      },
+      child.name
+    );
+    if (sub) {
+      b.textElement(
+        'text',
+        {
+          x: cx,
+          y: cy + this.cfg.labelFontSize + 2,
+          'text-anchor': 'middle',
+          'font-family': this.cfg.fontFamily,
+          'font-size': this.cfg.labelFontSize,
+          fill: theme.structure.label
+        },
+        sub
+      );
+    }
   }
 
   private renderPlaceholder(b: SvgBuilder, child: ChildLayout, theme: SldTheme): void {

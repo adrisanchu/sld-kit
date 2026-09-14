@@ -1,5 +1,5 @@
 import { newId } from '../ids';
-import { CompositeLine, type LineVertexJson } from './CompositeLine';
+import { CompositeLine, type CompositeLineKind, type LineVertexJson } from './CompositeLine';
 import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
 import type { DocumentResolver } from './DocumentResolver';
 
@@ -8,6 +8,12 @@ export interface CompositeMeta {
   name: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Persisted default render mode. `true` draws every child as a simplified
+   * box (name + id, coloured by voltage) instead of its full internals — the
+   * grid-level "box" view. Absent/false renders the detailed diagrams.
+   */
+  boxMode?: boolean;
 }
 
 export type CompositeChange =
@@ -126,6 +132,13 @@ export class CompositeDocument {
     const line = this.lines.get(id);
     if (!line) return;
     line.vertices = vertices;
+    this.emit({ type: 'lines', ids: [id] });
+  }
+
+  setLineKind(id: string, kind: CompositeLineKind): void {
+    const line = this.lines.get(id);
+    if (!line) return;
+    line.kind = kind;
     this.emit({ type: 'lines', ids: [id] });
   }
 

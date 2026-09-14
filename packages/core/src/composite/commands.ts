@@ -1,7 +1,7 @@
 import type { Command } from '../commands/Command';
 import type { SldDocument } from '../SldDocument';
 import { CompositeDocument } from './CompositeDocument';
-import { CompositeLine, type CompositeLineJson, type LineVertexJson } from './CompositeLine';
+import { CompositeLine, type CompositeLineJson, type CompositeLineKind, type LineVertexJson } from './CompositeLine';
 import { DiagramInstance, type DiagramInstanceJson, type LabelPlacement } from './DiagramInstance';
 
 export type { LabelPlacement };
@@ -149,5 +149,42 @@ export class UpdateLineCommand implements Command<CompositeDocument> {
 
   undo(doc: CompositeDocument): void {
     doc.setLineVertices(this.id, this.before);
+  }
+}
+
+/** Change a line's functional type (overhead ↔ cable ↔ transformer ↔ demand). */
+export class UpdateLineKindCommand implements Command<CompositeDocument> {
+  readonly label = 'Change line type';
+
+  constructor(
+    private id: string,
+    private before: CompositeLineKind,
+    private after: CompositeLineKind
+  ) {}
+
+  do(doc: CompositeDocument): void {
+    doc.setLineKind(this.id, this.after);
+  }
+
+  undo(doc: CompositeDocument): void {
+    doc.setLineKind(this.id, this.before);
+  }
+}
+
+/** Toggle the composite between the box (grid-level) view and the detailed view. */
+export class SetBoxModeCommand implements Command<CompositeDocument> {
+  readonly label = 'Toggle box view';
+
+  constructor(
+    private before: boolean,
+    private after: boolean
+  ) {}
+
+  do(doc: CompositeDocument): void {
+    doc.updateMeta({ boxMode: this.after });
+  }
+
+  undo(doc: CompositeDocument): void {
+    doc.updateMeta({ boxMode: this.before });
   }
 }

@@ -10,6 +10,9 @@ import {
   CommandStack,
   TransformChildCommand,
   SetChildLabelCommand,
+  AddLineCommand,
+  UpdateLineKindCommand,
+  SetBoxModeCommand,
   DiagramInstance,
   LABEL_ANCHORS,
   resolveNameLabelLayout,
@@ -620,5 +623,168 @@ describe('South ⇄ West 400 kV (high-level authoring)', () => {
         expect(after.lines[li].points[i].y).toBeCloseTo(before.lines[li].points[i].y + dy, 6);
       }
     }
+  });
+});
+
+describe('Box view — line kind', () => {
+  it('defaults a line kind to `line` and roundtrips a non-default kind', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.getLine('line-1')!.kind = 'cable';
+    const json1 = CompositeSerializer.toJSON(doc);
+    expect(json1.lines[0].kind).toBe('cable');
+    const back = CompositeSerializer.fromJSON(cycle(json1));
+    expect(back.getLine('line-1')!.kind).toBe('cable');
+    expect(CompositeSerializer.toJSON(back)).toEqual(json1);
+  });
+
+  it('loads a v1 document (no kind, no boxMode) with defaults', () => {
+    const v1 = {
+      version: 1,
+      kind: 'composite',
+      meta: { id: 'm', name: 'x' },
+      children: [],
+      lines: [{ id: 'l', vertices: [{ kind: 'point', x: 0, y: 0 }, { kind: 'point', x: 10, y: 0 }] }]
+    };
+    const doc = CompositeSerializer.fromJSON(v1);
+    expect(doc.getLine('l')!.kind).toBe('line');
+    expect(doc.meta.boxMode).toBeUndefined();
+  });
+
+  it('rejects an empty-string line kind', () => {
+    const bad = {
+      version: COMPOSITE_SCHEMA_VERSION,
+      kind: 'composite',
+      meta: { id: 'm', name: 'x' },
+      children: [],
+      lines: [{ id: 'l', kind: '', vertices: [{ kind: 'point', x: 0, y: 0 }, { kind: 'point', x: 1, y: 1 }] }]
+    };
+    expect(() => CompositeSerializer.fromJSON(bad)).toThrow(/invalid kind/);
+  });
+
+  it('places the transformer glyph at the polyline arc-length midpoint', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.getLine('line-1')!.kind = 'transformer';
+    doc.resolveChildren(resolver());
+    const line = new CompositeLayoutEngine().layout(doc).lines.find((l) => l.line.id === 'line-1')!;
+    expect(line.kind).toBe('transformer');
+    expect(line.glyph).toBeDefined();
+    expect(line.glyph!.key).toBe('external:transformer');
+    // The midpoint lies on the resolved polyline's bounding span.
+    const xs = line.points.map((p) => p.x);
+    const ys = line.points.map((p) => p.y);
+    expect(line.glyph!.at.x).toBeGreaterThanOrEqual(Math.min(...xs) - 1e-6);
+    expect(line.glyph!.at.x).toBeLessThanOrEqual(Math.max(...xs) + 1e-6);
+    expect(line.glyph!.at.y).toBeGreaterThanOrEqual(Math.min(...ys) - 1e-6);
+    expect(line.glyph!.at.y).toBeLessThanOrEqual(Math.max(...ys) + 1e-6);
+  });
+
+  it('places the demand triangle at the line free (non-anchored) end', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.addLine(
+      new CompositeLine(
+        'dem',
+        [
+          { kind: 'anchor', instanceId: HV_INSTANCE_ID, connectionId: SHARED_LINK_ID },
+          { kind: 'point', x: 999, y: -777 }
+        ],
+        'demand'
+      )
+    );
+    doc.resolveChildren(resolver());
+    const line = new CompositeLayoutEngine().layout(doc).lines.find((l) => l.line.id === 'dem')!;
+    expect(line.terminus).toBeDefined();
+    expect(line.terminus!.key).toBe('external:demand');
+    expect(line.terminus!.at).toEqual({ x: 999, y: -777 });
+  });
+
+  it('gives a cable a structural dash default; plain lines stay solid', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.getLine('line-1')!.kind = 'cable';
+    doc.resolveChildren(resolver());
+    const cable = new CompositeLayoutEngine().layout(doc).lines.find((l) => l.line.id === 'line-1')!;
+    expect(cable.dashArray).toBeTruthy();
+
+    doc.getLine('line-1')!.kind = 'line';
+    const solid = new CompositeLayoutEngine().layout(doc).lines.find((l) => l.line.id === 'line-1')!;
+    expect(solid.dashArray).toBeUndefined();
+    expect(solid.glyph).toBeUndefined();
+    expect(solid.terminus).toBeUndefined();
+  });
+
+  it('UpdateLineKindCommand do/undo swaps the kind', () => {
+    const doc = buildSouthCompositeWithLine();
+    const stack = new CommandStack<CompositeDocument>();
+    stack.execute(new UpdateLineKindCommand('line-1', 'line', 'transformer'), doc);
+    expect(doc.getLine('line-1')!.kind).toBe('transformer');
+    stack.undo(doc);
+    expect(doc.getLine('line-1')!.kind).toBe('line');
+  });
+
+  it('AddLineCommand carries the chosen kind', () => {
+    const doc = buildSouthComposite();
+    const stack = new CommandStack<CompositeDocument>();
+    stack.execute(
+      new AddLineCommand(
+        new CompositeLine('new', [{ kind: 'point', x: 0, y: 0 }, { kind: 'point', x: 5, y: 5 }], 'cable')
+      ),
+      doc
+    );
+    expect(doc.getLine('new')!.kind).toBe('cable');
+  });
+});
+
+describe('Box view — box mode', () => {
+  it('roundtrips meta.boxMode and omits it when unset', () => {
+    const doc = buildSouthComposite();
+    expect(CompositeSerializer.toJSON(doc).meta.boxMode).toBeUndefined();
+    doc.updateMeta({ boxMode: true });
+    const json = CompositeSerializer.toJSON(doc);
+    expect(json.meta.boxMode).toBe(true);
+    expect(CompositeSerializer.fromJSON(cycle(json)).meta.boxMode).toBe(true);
+  });
+
+  it('SetBoxModeCommand do/undo toggles the flag', () => {
+    const doc = buildSouthComposite();
+    const stack = new CommandStack<CompositeDocument>();
+    stack.execute(new SetBoxModeCommand(false, true), doc);
+    expect(doc.meta.boxMode).toBe(true);
+    stack.undo(doc);
+    expect(doc.meta.boxMode).toBe(false);
+  });
+
+  it('exports children as boxes (name + sub-label) and stays Office-safe', () => {
+    const doc = buildSouthComposite();
+    doc.updateMeta({ boxMode: true });
+    doc.resolveChildren(resolver());
+    const svg = new CompositeSvgExporter().export(doc, {
+      boxFill: () => '#dbeafe',
+      boxSubLabel: (c) => `#${c.instance.libraryId.slice(0, 4)}`
+    });
+    expect(svg).toContain('South 400 kV');
+    expect(svg).toContain('#dbeafe');
+    expect(svg).not.toContain('class=');
+    expect(svg).not.toContain('<style');
+    expect(svg).not.toContain('<marker');
+    expect(svg).not.toContain('<foreignObject');
+  });
+
+  it('exports cable lines dashed and transformer lines with a glyph, Office-safe', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.getLine('line-1')!.kind = 'transformer';
+    doc.addLine(
+      new CompositeLine(
+        'cab',
+        [
+          { kind: 'anchor', instanceId: MV_INSTANCE_ID, connectionId: SHARED_LINK_ID },
+          { kind: 'point', x: 120, y: 300 }
+        ],
+        'cable'
+      )
+    );
+    doc.resolveChildren(resolver());
+    const svg = new CompositeSvgExporter().export(doc);
+    expect(svg).toContain('stroke-dasharray="6 4"'); // the cable
+    expect(svg).not.toContain('<marker');
+    expect(svg).not.toContain('class=');
   });
 });

@@ -1,6 +1,6 @@
 import { SldParseError } from '../serialization/Serializer';
 import { CompositeDocument, type CompositeMeta } from './CompositeDocument';
-import { CompositeLine, type CompositeLineJson, type LineVertexJson } from './CompositeLine';
+import { CompositeLine, DEFAULT_LINE_KIND, type CompositeLineJson, type LineVertexJson } from './CompositeLine';
 import {
   DiagramInstance,
   LABEL_ANCHORS,
@@ -9,9 +9,10 @@ import {
   type LabelAnchor
 } from './DiagramInstance';
 
-// Single, current-only schema — no migrations. This is early-stage software;
-// documents authored against older shapes are rebuilt, not migrated.
-export const COMPOSITE_SCHEMA_VERSION = 1;
+// Additive schema. v2 introduced line `kind` and `meta.boxMode`; both are
+// optional with defaults, so v1 documents load transparently (missing `kind` →
+// `line`, missing `boxMode` → detailed). No structural migration is required.
+export const COMPOSITE_SCHEMA_VERSION = 2;
 
 export interface CompositeDocumentJson {
   version: number;
@@ -129,7 +130,8 @@ export class CompositeSerializer {
         id: meta.id,
         name: meta.name,
         createdAt: typeof meta.createdAt === 'string' ? meta.createdAt : now,
-        updatedAt: typeof meta.updatedAt === 'string' ? meta.updatedAt : now
+        updatedAt: typeof meta.updatedAt === 'string' ? meta.updatedAt : now,
+        ...(typeof meta.boxMode === 'boolean' ? { boxMode: meta.boxMode } : {})
       },
       children,
       lines
@@ -150,6 +152,9 @@ export class CompositeSerializer {
       if (typeof raw?.id !== 'string' || !raw.id) throw new SldParseError('Line without id');
       if (ids.has(raw.id)) throw new SldParseError(`Duplicate line id: ${raw.id}`);
       ids.add(raw.id);
+      if (raw.kind !== undefined && (typeof raw.kind !== 'string' || !raw.kind)) {
+        throw new SldParseError(`Line ${raw.id}: invalid kind`);
+      }
       if (!Array.isArray(raw.vertices) || raw.vertices.length < 2) {
         throw new SldParseError(`Line ${raw.id}: needs at least two vertices`);
       }
@@ -172,7 +177,7 @@ export class CompositeSerializer {
           throw new SldParseError(`Line ${raw.id}: unknown vertex kind`);
         }
       }
-      lines.push({ id: raw.id, vertices });
+      lines.push({ id: raw.id, kind: (raw.kind as string | undefined) ?? DEFAULT_LINE_KIND, vertices });
     }
     return lines;
   }

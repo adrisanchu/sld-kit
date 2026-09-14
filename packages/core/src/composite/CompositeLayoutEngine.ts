@@ -3,7 +3,7 @@ import { LayoutEngine, type DiagramLayout } from '../layout/LayoutEngine';
 import { Transform2D } from '../layout/Transform2D';
 import type { Point, Rect } from '../layout/geometry';
 import { CompositeDocument } from './CompositeDocument';
-import { CompositeLine } from './CompositeLine';
+import { CompositeLine, type CompositeLineKind } from './CompositeLine';
 import { chordFrame } from './lineFrame';
 import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
 
@@ -209,6 +209,16 @@ export function lineConnections(line: CompositeLine, children: ChildLayout[]): C
   );
 }
 
+/** A structural glyph placed on a line: a `SymbolRegistry` key + a placement. */
+export interface LineGlyph {
+  /** `SymbolRegistry` key, e.g. `external:transformer` / `external:demand`. */
+  key: string;
+  /** Centre of the glyph box, in world coordinates. */
+  at: Point;
+  /** Orientation of the local segment the glyph sits on, in degrees. */
+  angleDeg: number;
+}
+
 export interface CompositeLineLayout {
   line: CompositeLine;
   /**
@@ -217,6 +227,47 @@ export interface CompositeLineLayout {
    * dropped; a line with fewer than two resolvable vertices is omitted entirely.
    */
   points: Point[];
+  /** Functional type, mirrored from the line for renderers/exporters. */
+  kind: CompositeLineKind;
+  /** Structural default dash pattern for the kind (`cable` → dashed); else undefined. */
+  dashArray?: string;
+  /**
+   * The transformer glyph (two circles) at the polyline's arc-length midpoint —
+   * present only for `kind === 'transformer'`.
+   */
+  glyph?: LineGlyph;
+  /**
+   * The demand triangle at the line's free (non-anchored) end, pointing outward —
+   * present only for `kind === 'demand'` with a resolvable free end.
+   */
+  terminus?: LineGlyph;
+}
+
+/** Dashed stroke for cables; other kinds use their solid default. */
+const CABLE_DASH_ARRAY = '6 4';
+
+const segmentAngleDeg = (a: Point, b: Point): number => (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+
+/** Point at the polyline's arc-length midpoint, plus the angle of the segment it lies on. */
+function polylineMidpoint(points: Point[]): LineGlyph | null {
+  if (points.length < 2) return null;
+  let total = 0;
+  for (let i = 1; i < points.length; i++) total += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  let target = total / 2;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len === 0) continue;
+    if (target <= len) {
+      const t = target / len;
+      return { key: 'external:transformer', at: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, angleDeg: segmentAngleDeg(a, b) };
+    }
+    target -= len;
+  }
+  const a = points[points.length - 2];
+  const b = points[points.length - 1];
+  return { key: 'external:transformer', at: { x: b.x, y: b.y }, angleDeg: segmentAngleDeg(a, b) };
 }
 
 /** An external connection tip in world coordinates — snap/convert targets for the UI. */
@@ -332,9 +383,42 @@ export class CompositeLayoutEngine {
           if (tip) points.push(tip);
         }
       });
-      if (points.length >= 2) out.push({ line, points });
+      if (points.length >= 2) out.push(this.decorateLine(line, points));
     }
     return out;
+  }
+
+  /**
+   * Attach the kind-driven presentation to a resolved polyline: the cable dash
+   * default, the transformer glyph at the arc-length midpoint, and the demand
+   * triangle at the line's free (non-anchored) end pointing outward.
+   */
+  private decorateLine(line: CompositeLine, points: Point[]): CompositeLineLayout {
+    const layout: CompositeLineLayout = { line, points, kind: line.kind };
+
+    if (line.kind === 'cable') layout.dashArray = CABLE_DASH_ARRAY;
+
+    if (line.kind === 'transformer') {
+      const glyph = polylineMidpoint(points);
+      if (glyph) layout.glyph = glyph;
+    }
+
+    if (line.kind === 'demand') {
+      const n = line.vertices.length;
+      const lastFree = n > 0 && line.vertices[n - 1].kind !== 'anchor';
+      const firstFree = n > 0 && line.vertices[0].kind !== 'anchor';
+      if (lastFree) {
+        const b = points[points.length - 1];
+        const a = points[points.length - 2];
+        layout.terminus = { key: 'external:demand', at: b, angleDeg: segmentAngleDeg(a, b) };
+      } else if (firstFree) {
+        const b = points[0];
+        const a = points[1];
+        layout.terminus = { key: 'external:demand', at: b, angleDeg: segmentAngleDeg(a, b) };
+      }
+    }
+
+    return layout;
   }
 
   /** Every child's external connection tips in world coordinates (UI snap/convert targets). */

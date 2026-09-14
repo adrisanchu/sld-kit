@@ -85,7 +85,13 @@ export {
   type LabelAnchor,
   type LabelPlacement
 } from './composite/DiagramInstance';
-export { CompositeLine, type CompositeLineJson, type LineVertexJson } from './composite/CompositeLine';
+export {
+  CompositeLine,
+  DEFAULT_LINE_KIND,
+  type CompositeLineKind,
+  type CompositeLineJson,
+  type LineVertexJson
+} from './composite/CompositeLine';
 export { chordFrame, type ChordFrame, type RelCoord } from './composite/lineFrame';
 export { CompositeDocument, type CompositeMeta, type CompositeChange } from './composite/CompositeDocument';
 export {
@@ -101,6 +107,7 @@ export {
   type NameLabelLayout,
   type CompositeLink,
   type CompositeLineLayout,
+  type LineGlyph,
   type ExternalConnectionTip,
   type CompositeLayout
 } from './composite/CompositeLayoutEngine';
@@ -117,5 +124,7 @@ export {
   SetChildLabelCommand,
   AddLineCommand,
   RemoveLineCommand,
-  UpdateLineCommand
+  UpdateLineCommand,
+  UpdateLineKindCommand,
+  SetBoxModeCommand
 } from './composite/commands';
