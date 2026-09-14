@@ -79,6 +79,7 @@ Status legend: ✅ complete · 🚧 in progress · ⬜ pending
 | `GhostPreview`   | Translucent snapped preview of the position being placed or dragged, centred in the target slot.<br>Green outline when the drop is valid, dashed red when rejected.                                                                                 |    ✅    |  ✅   |
 | `GridOverlay`    | Edit-mode layer outlining every free slot with a dashed rounded rect.<br>Tints the drop target green/red and the cells a reflow would displace amber; draws the bus-bar insertion boundary line.                                                    |    ✅    |  ✅   |
 | `LaneOverlay`    | Row/column selection chrome: full-height column hit bands, row highlight bands and numbered handle tabs in the left margin.<br>Adds dashed "+" affordances at the grid edges; emits `selectlane` / `addlane`.                                       |    ✅    |  ✅   |
+| `SymbolGlyph`    | Draws a `SymbolRegistry` glyph scaled into a box over an optional opaque backing rect, stroking `currentColor`.<br>Shared by `ConnectionView` (external asset glyphs) and the composite line adornments (transformer / demand).                    |    ⬜    |  ✅   |
 
 ### Editor chrome (event-dispatching, no dialogs)
 
@@ -100,6 +101,21 @@ Status legend: ✅ complete · 🚧 in progress · ⬜ pending
 | `CompositeToolbar`  | The composite equivalent of `SldToolbar`: fit, export, color/label modes, plus draw-line, import, delete and undo/redo.<br>No placement tools and no edit-mode toggle.                                                       |    ✅    |  ✅   |
 | `ChildDiagramView`  | Renders one placed child diagram under its `Transform2D`, reusing the element views with labels kept upright.<br>Falls back to a dashed "Diagram not found" placeholder; supports focus and dim states.                      |    ✅    |  ✅   |
 | `SelectionFrame`    | Figma-style selection chrome around the selected child: dashed polygon through its world corners plus corner dots.<br>Carries the rotation handle that emits `rotatestart`.                                                  |    ✅    |  ✅   |
+
+#### Box view (grid-level SLD)
+
+A simplified "diagram of boxes": zoomed out each child is a voltage-coloured box
+(name + bus id); zoom in (explore fly-in) reveals its full SLD. Lines between
+boxes carry a **kind** — overhead (solid), cable (dashed), transformer (two-circle
+glyph) or demand (triangle terminus) — and drawing is constrained to orthogonal
+segments. Built as additive props on the existing composite components plus a
+small routing module; no new document type (extends `CompositeDocument`).
+
+| Capability                                  | Where                                                      | Svelte 4 | React |
+| ------------------------------------------- | ---------------------------------------------------------- | :------: | :---: |
+| `boxMode` / `boxSubLabel`                   | `CompositeCanvas`, `ChildDiagramView`, `CompositeExplorer` |    ⬜    |  ✅   |
+| Line kinds + glyphs                         | `CompositeCanvas` (core `CompositeLine.kind` + layout)     |    ⬜    |  ✅   |
+| `orthogonal` draw + `orthogonalizePolyline` | `CompositeCanvas` + `routing`                              |    ⬜    |  ✅   |
 
 ### Flow overlays (generic, domain-agnostic)
 

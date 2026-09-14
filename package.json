@@ -20,6 +20,8 @@
     "build:example": "pnpm --filter @sld-kit-examples/svelte build",
     "dev:example:react": "pnpm --filter @sld-kit-examples/react dev",
     "build:example:react": "pnpm --filter @sld-kit-examples/react build",
+    "dev:example:react-box": "pnpm --filter @sld-kit-examples/react-box dev",
+    "build:example:react-box": "pnpm --filter @sld-kit-examples/react-box build",
     "start:node": "pnpm --filter @sld-kit-examples/node start"
   },
   "pnpm": {
