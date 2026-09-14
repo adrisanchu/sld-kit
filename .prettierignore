@@ -2,3 +2,7 @@ dist/
 node_modules/
 coverage/
 pnpm-lock.yaml
+# Generated output — already ignored by eslint.config.js; keep the two in sync
+# so `pnpm format` doesn't rewrite the example's adapter-static build.
+build/
+.svelte-kit/

@@ -6,15 +6,16 @@ Besides onboarding, each example doubles as an integration test: because it buil
 the local packages, a breaking change to a package's public API breaks the example's
 typecheck/build in CI.
 
-| Example            | Stack                           | Packages used                      |
-| ------------------ | ------------------------------- | ---------------------------------- |
-| [`node`](node)     | Plain Node script (no build)    | `@sld-kit/core`                    |
-| [`svelte`](svelte) | SvelteKit 2 + Svelte 4 + shadcn | `@sld-kit/core`, `@sld-kit/svelte` |
+| Example            | Stack                                | Packages used                      |
+| ------------------ | ------------------------------------ | ---------------------------------- |
+| [`node`](node)     | Plain Node script (no build)         | `@sld-kit/core`                    |
+| [`svelte`](svelte) | SvelteKit 2 + Svelte 4 + shadcn      | `@sld-kit/core`, `@sld-kit/svelte` |
+| [`react`](react)   | Vite + React 19 + Tailwind v4/shadcn | `@sld-kit/core`, `@sld-kit/react`  |
 
 Start with [`node`](node) for the smallest possible "install and use it yourself"
 quickstart: a script that builds a diagram and exports an SVG.
 
-Planned as the corresponding packages land: `svelte5` (Svelte 5 / runes) and `react`.
+Planned as the corresponding packages land: `svelte5` (Svelte 5 / runes).
 
 All example data is **fictional** (an invented "Example" substation) — no real network
 data belongs in this repo.

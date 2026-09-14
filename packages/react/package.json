@@ -1,0 +1,68 @@
+{
+  "name": "@sld-kit/react",
+  "version": "0.1.0",
+  "description": "React components for single-line (electrical) diagrams: a headless pan/zoom canvas, element views, and event-dispatching editor chrome built on @sld-kit/core.",
+  "type": "module",
+  "sideEffects": false,
+  "license": "MIT",
+  "author": "Adrian Sanchez R",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adrisanchu/sld-kit.git",
+    "directory": "packages/react"
+  },
+  "homepage": "https://github.com/adrisanchu/sld-kit/tree/main/packages/react#readme",
+  "keywords": [
+    "sld",
+    "single-line-diagram",
+    "electrical",
+    "react",
+    "diagram",
+    "svg"
+  ],
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"no tests yet\" && exit 0",
+    "prepublishOnly": "pnpm run build",
+    "verify:pack": "pnpm run build && publint && attw --pack --ignore-rules cjs-resolves-to-esm"
+  },
+  "peerDependencies": {
+    "@sld-kit/core": "^0.8.0",
+    "lucide-react": ">=0.400.0",
+    "react": "^18.2.0 || ^19.0.0",
+    "react-dom": "^18.2.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.4",
+    "@sld-kit/core": "workspace:^",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "lucide-react": "^0.469.0",
+    "publint": "^0.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

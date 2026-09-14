@@ -1,0 +1,160 @@
+@import 'tailwindcss';
+
+/*
+  Tailwind must scan the built @sld-kit/react package too, or utilities used
+  only there (fill-background, stroke-primary, text-muted-foreground…) get
+  purged and the diagram loses its colours / dark-mode styling. This is the
+  Tailwind v4 equivalent of the `content` glob in examples/svelte.
+*/
+@source "../node_modules/@sld-kit/react/dist";
+
+@custom-variant dark (&:is(.dark *));
+
+/* shadcn tokens (slate base). In Tailwind v4 these hold complete colours. */
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.129 0.042 264.695);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.129 0.042 264.695);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.129 0.042 264.695);
+  --primary: oklch(0.208 0.042 265.755);
+  --primary-foreground: oklch(0.984 0.003 247.858);
+  --secondary: oklch(0.968 0.007 247.896);
+  --secondary-foreground: oklch(0.208 0.042 265.755);
+  --muted: oklch(0.968 0.007 247.896);
+  --muted-foreground: oklch(0.554 0.046 257.417);
+  --accent: oklch(0.968 0.007 247.896);
+  --accent-foreground: oklch(0.208 0.042 265.755);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.929 0.013 255.508);
+  --input: oklch(0.929 0.013 255.508);
+  --ring: oklch(0.704 0.04 256.788);
+}
+
+.dark {
+  --background: oklch(0.129 0.042 264.695);
+  --foreground: oklch(0.984 0.003 247.858);
+  --card: oklch(0.208 0.042 265.755);
+  --card-foreground: oklch(0.984 0.003 247.858);
+  --popover: oklch(0.208 0.042 265.755);
+  --popover-foreground: oklch(0.984 0.003 247.858);
+  --primary: oklch(0.929 0.013 255.508);
+  --primary-foreground: oklch(0.208 0.042 265.755);
+  --secondary: oklch(0.279 0.041 260.031);
+  --secondary-foreground: oklch(0.984 0.003 247.858);
+  --muted: oklch(0.279 0.041 260.031);
+  --muted-foreground: oklch(0.704 0.04 256.788);
+  --accent: oklch(0.279 0.041 260.031);
+  --accent-foreground: oklch(0.984 0.003 247.858);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.551 0.027 264.364);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+/*
+  SLD position-type tokens. Same palette as examples/svelte, but held as
+  **complete colours** rather than HSL triplets — @sld-kit/react reads
+  `var(--sld-pos)` directly and applies alpha with fill-opacity /
+  stroke-opacity. See packages/README.md, "One intentional styling divergence".
+*/
+:root {
+  --sld-pos-line: hsl(217 91% 60%);
+  --sld-pos-transformer: hsl(38 92% 50%);
+  --sld-pos-central: hsl(258 90% 66%);
+  --sld-pos-renewable: hsl(142 71% 45%);
+  --sld-pos-reserve: hsl(215 20% 65%);
+  --sld-pos-storage: hsl(173 80% 40%); /* teal — distinct from renewable green */
+  --sld-pos-demand: hsl(0 84% 60%); /* red — consumer/load */
+
+  --sld-volt-hv: hsl(0 84% 60%); /* ≥ 400 kV */
+  --sld-volt-mv: hsl(142 71% 45%); /* 200–< 400 kV */
+  --sld-volt-unknown: hsl(215 20% 55%); /* unresolved kV */
+}
+
+.dark {
+  --sld-pos-line: hsl(217 91% 68%);
+  --sld-pos-transformer: hsl(38 92% 58%);
+  --sld-pos-central: hsl(258 90% 74%);
+  --sld-pos-renewable: hsl(142 69% 58%);
+  --sld-pos-reserve: hsl(215 16% 57%);
+  --sld-pos-storage: hsl(173 66% 55%);
+  --sld-pos-demand: hsl(0 90% 68%);
+
+  --sld-volt-hv: hsl(0 84% 68%);
+  --sld-volt-mv: hsl(142 69% 55%);
+  --sld-volt-unknown: hsl(215 16% 60%);
+}
+
+/*
+  The class-per-type contract (`positionTokens`): each class maps its type
+  token onto the shared `--sld-pos` slot the element views paint with.
+*/
+.sld-pos-line {
+  --sld-pos: var(--sld-pos-line);
+}
+.sld-pos-transformer {
+  --sld-pos: var(--sld-pos-transformer);
+}
+.sld-pos-central {
+  --sld-pos: var(--sld-pos-central);
+}
+.sld-pos-renewable {
+  --sld-pos: var(--sld-pos-renewable);
+}
+.sld-pos-reserve {
+  --sld-pos: var(--sld-pos-reserve);
+}
+.sld-pos-storage {
+  --sld-pos: var(--sld-pos-storage);
+}
+.sld-pos-demand {
+  --sld-pos: var(--sld-pos-demand);
+}
+
+/* Voltage buckets reuse the same slot, passed to a canvas as `colorClass`. */
+.sld-volt-hv {
+  --sld-pos: var(--sld-volt-hv);
+}
+.sld-volt-mv {
+  --sld-pos: var(--sld-volt-mv);
+}
+.sld-volt-unknown {
+  --sld-pos: var(--sld-volt-unknown);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+}
