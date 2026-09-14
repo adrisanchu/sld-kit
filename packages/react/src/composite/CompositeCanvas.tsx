@@ -1,14 +1,17 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, type ReactNode } from 'react';
 import {
   SLD_LAYOUT,
+  connectionPath,
   firstFormat,
   linkConnections,
   lineConnections,
   type CompositeLayout,
   type ChildLayout,
   type CompositeLineLayout,
+  type LineGlyph,
   type ExternalConnectionTip,
-  type Point
+  type Point,
+  type Rect
 } from '@sld-kit/core';
 import { createPanZoom, type ContentBounds } from '../panzoom';
 import { useStore } from '../useStore';
@@ -17,6 +20,14 @@ import type { FormatResolver } from '../format';
 import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
 import { ChildDiagramView } from './ChildDiagramView';
 import { SelectionFrame } from './SelectionFrame';
+import { SymbolGlyph } from './SymbolGlyph';
+import { orthogonalizePolyline } from './routing';
+
+/** Centre a glyph box of `symbolSize` on a line adornment's anchor point. */
+function glyphBox(g: LineGlyph): Rect {
+  const s = SLD_LAYOUT.symbolSize;
+  return { x: g.at.x - s / 2, y: g.at.y - s / 2, width: s, height: s };
+}
 
 export interface CompositeCanvasProps {
   layout: CompositeLayout;
@@ -42,6 +53,19 @@ export interface CompositeCanvasProps {
   snapTargets?: ExternalConnectionTip[];
   /** In-progress polyline being drawn, in composite coordinates. */
   draftPoints?: Point[];
+  /**
+   * Constrain drawing to axis-aligned (Manhattan) segments — the box-diagram
+   * rule. The in-progress draft is rendered elbowed; the consumer applies the
+   * same `orthogonalizePolyline` on commit so screen and stored line agree.
+   */
+  orthogonal?: boolean;
+  /**
+   * Box (grid-level) mode: render every child as a single box instead of its
+   * internals. Forwarded to each `ChildDiagramView`.
+   */
+  boxMode?: boolean;
+  /** Secondary line under each box name (e.g. an integer bus ID). Box mode only. */
+  boxSubLabel?: (child: ChildLayout) => string | null;
   /** CSS class per position type; the consumer's stylesheet supplies the colors. */
   tokens?: PositionTokens;
   /** Per-child color class override (e.g. a voltage bucket). */
@@ -116,6 +140,9 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     drawMode = false,
     snapTargets = [],
     draftPoints = [],
+    orthogonal = false,
+    boxMode = false,
+    boxSubLabel,
     tokens = DEFAULT_POSITION_TOKENS,
     childColorClass = () => null,
     childConnectionColorClass,
@@ -349,23 +376,31 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         );
       })}
 
-      {/* Manual lines (solid), underneath the children — matches the SVG export. */}
+      {/* Manual lines, underneath the children — matches the SVG export. The kind
+          drives the stroke (cable → dashed) and any glyph (transformer circles,
+          demand triangle); rounded orthogonal corners via `connectionPath`. */}
       {layout.lines.map((ln) => {
         const cls = lineColorClass(ln);
         const lf = firstFormat(lineConnections(ln.line, layout.children), fmt);
+        const dash = lf?.dashArray ?? ln.dashArray;
         return (
-          <polyline
+          <g
             key={ln.line.id}
-            points={ln.points.map((p) => `${p.x},${p.y}`).join(' ')}
-            fill="none"
-            stroke={cls ? 'currentColor' : undefined}
-            className={cls ?? 'stroke-primary'}
+            className={cls ?? 'text-primary'}
             style={cls ? { color: 'var(--sld-pos)' } : undefined}
-            strokeWidth={
-              ln.line.id === selectedLineId ? cs.lineSelectedStrokeWidth : (lf?.strokeWidth ?? cs.lineStrokeWidth)
-            }
-            strokeDasharray={lf?.dashArray ?? undefined}
-          />
+          >
+            <path
+              d={connectionPath(ln.points, undefined, SLD_LAYOUT.hopRadius)}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={
+                ln.line.id === selectedLineId ? cs.lineSelectedStrokeWidth : (lf?.strokeWidth ?? cs.lineStrokeWidth)
+              }
+              strokeDasharray={dash ?? undefined}
+            />
+            {ln.glyph && <SymbolGlyph symbolKey={ln.glyph.key} box={glyphBox(ln.glyph)} style={style} />}
+            {ln.terminus && <SymbolGlyph symbolKey={ln.terminus.key} box={glyphBox(ln.terminus)} style={style} />}
+          </g>
         );
       })}
 
@@ -387,6 +422,8 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
           showBusBarLabels={showBusBarLabels}
           showConnectionLabels={showConnectionLabels}
           showChildNames={showChildNames}
+          boxMode={boxMode}
+          boxSubLabel={boxSubLabel}
           notFoundLabel={notFoundLabel}
           onChildDown={onChildDown}
           onChildFocus={onChildFocus}
@@ -478,8 +515,12 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
           {draftPoints.length > 0 && (
             <>
               {draftPoints.length > 1 && (
-                <polyline
-                  points={draftPoints.map((p) => `${p.x},${p.y}`).join(' ')}
+                <path
+                  d={connectionPath(
+                    orthogonal ? orthogonalizePolyline(draftPoints) : draftPoints,
+                    undefined,
+                    SLD_LAYOUT.hopRadius
+                  )}
                   fill="none"
                   className="stroke-primary"
                   strokeWidth={cs.draftStrokeWidth}

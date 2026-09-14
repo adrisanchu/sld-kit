@@ -30,6 +30,10 @@ export interface CompositeExplorerProps {
   showBusBarLabels?: boolean;
   showConnectionLabels?: boolean;
   showChildNames?: boolean;
+  /** Render children as boxes until flown into; forwarded to the canvas. */
+  boxMode?: boolean;
+  /** Secondary line under each box name (e.g. an integer bus ID). Box mode only. */
+  boxSubLabel?: (child: ChildLayout) => string | null;
   notFoundLabel?: string;
   /**
    * The child currently flown into, or `null` at the grid overview. Controlled
@@ -75,6 +79,8 @@ export const CompositeExplorer = forwardRef<CompositeExplorerHandle, CompositeEx
     showBusBarLabels = true,
     showConnectionLabels = true,
     showChildNames = true,
+    boxMode = false,
+    boxSubLabel,
     notFoundLabel = DEFAULT_CHILD_NOT_FOUND,
     focusedId: focusedIdProp,
     onFocusChange,
@@ -135,6 +141,8 @@ export const CompositeExplorer = forwardRef<CompositeExplorerHandle, CompositeEx
       showBusBarLabels={showBusBarLabels}
       showConnectionLabels={showConnectionLabels}
       showChildNames={showChildNames}
+      boxMode={boxMode}
+      boxSubLabel={boxSubLabel}
       notFoundLabel={notFoundLabel}
       onChildFocus={(e) => focusChild(e.id)}
       onElementActivate={(e) => onElementActivate?.(e)}

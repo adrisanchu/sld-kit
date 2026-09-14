@@ -1,11 +1,9 @@
 import { useMemo, useState } from 'react';
 import type { Connection, ConnectionGeometry, ElementFormat } from '@sld-kit/core';
-import { SLD_LAYOUT, arrowheadPath, connectionPath, createDefaultSymbolRegistry } from '@sld-kit/core';
+import { SLD_LAYOUT, arrowheadPath, connectionPath } from '@sld-kit/core';
 import type { FormatResolver } from '../format';
 import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
-
-/** Shared: the registry is stateless and tiny, so one instance serves every view. */
-const symbols = createDefaultSymbolRegistry();
+import { SymbolGlyph } from '../composite/SymbolGlyph';
 
 export interface ConnectionViewProps {
   conn: Connection;
@@ -57,11 +55,6 @@ export function ConnectionView({
   const pathD = useMemo(() => connectionPath(geo.points, geo.hops, SLD_LAYOUT.hopRadius), [geo.points, geo.hops]);
   const label =
     conn.from.kind === 'external' ? conn.from.label : conn.to.kind === 'external' ? conn.to.label : conn.label;
-  const symbolDef = geo.symbol ? symbols.get(geo.symbol.key) : undefined;
-  const symbolScale =
-    geo.symbol && symbolDef
-      ? Math.min(geo.symbol.box.width / symbolDef.size[0], geo.symbol.box.height / symbolDef.size[1])
-      : 1;
 
   function handlePointerDown(e: React.PointerEvent) {
     if (!interactive) return;
@@ -90,51 +83,7 @@ export function ConnectionView({
       />
       {geo.arrow && <path d={arrowheadPath(geo.arrow.at, geo.arrow.angle, SLD_LAYOUT.arrowSize)} fill="currentColor" />}
       {geo.dot && <circle cx={geo.dot.x} cy={geo.dot.y} r={SLD_LAYOUT.nodeDotRadius} fill="currentColor" />}
-      {geo.symbol && symbolDef && (
-        <>
-          <rect
-            x={geo.symbol.box.x}
-            y={geo.symbol.box.y}
-            width={geo.symbol.box.width}
-            height={geo.symbol.box.height}
-            className="fill-background"
-          />
-          <g
-            transform={`translate(${geo.symbol.box.x} ${geo.symbol.box.y}) scale(${symbolScale})`}
-            stroke="currentColor"
-            fill="none"
-          >
-            {symbolDef.shapes.map((shape, i) =>
-              shape.type === 'path' ? (
-                <path
-                  key={i}
-                  d={shape.d}
-                  fill={shape.fill === 'token' ? 'currentColor' : 'none'}
-                  strokeWidth={shape.strokeWidth ?? style.symbol.strokeWidth}
-                />
-              ) : shape.type === 'circle' ? (
-                <circle
-                  key={i}
-                  cx={shape.cx}
-                  cy={shape.cy}
-                  r={shape.r}
-                  fill={shape.fill === 'token' ? 'currentColor' : 'none'}
-                  strokeWidth={shape.strokeWidth ?? style.symbol.strokeWidth}
-                />
-              ) : (
-                <line
-                  key={i}
-                  x1={shape.x1}
-                  y1={shape.y1}
-                  x2={shape.x2}
-                  y2={shape.y2}
-                  strokeWidth={shape.strokeWidth ?? style.symbol.strokeWidth}
-                />
-              )
-            )}
-          </g>
-        </>
-      )}
+      {geo.symbol && <SymbolGlyph symbolKey={geo.symbol.key} box={geo.symbol.box} style={style} />}
       {showLabel && geo.labelAt && label && (
         <g transform={labelAngleDeg ? `rotate(${labelAngleDeg} ${geo.labelAt.at.x} ${geo.labelAt.at.y})` : undefined}>
           <text

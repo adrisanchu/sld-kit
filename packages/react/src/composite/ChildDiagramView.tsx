@@ -41,6 +41,15 @@ export interface ChildDiagramViewProps {
   showConnectionLabels?: boolean;
   /** The always-on diagram name at the child's top-left (issue #17); on by default. */
   showChildNames?: boolean;
+  /**
+   * Box (grid-level) mode: render the child as a single colour-filled box with
+   * its name centred instead of its full internals — the simplified SLD view.
+   * A `focused` child (explore fly-in) still renders detailed, so zooming into a
+   * box reveals the diagram underneath.
+   */
+  boxMode?: boolean;
+  /** Secondary line under the box name (e.g. an integer bus ID). Box mode only. */
+  boxSubLabel?: (child: ChildLayout) => string | null;
   /** Fallback text when a child diagram can't be resolved. */
   notFoundLabel?: string;
   onChildDown?: (detail: { id: string; event: React.PointerEvent }) => void;
@@ -71,6 +80,8 @@ export function ChildDiagramView({
   showBusBarLabels = true,
   showConnectionLabels = true,
   showChildNames = true,
+  boxMode = false,
+  boxSubLabel,
   notFoundLabel = DEFAULT_CHILD_NOT_FOUND,
   onChildDown,
   onChildFocus,
@@ -80,6 +91,9 @@ export function ChildDiagramView({
 
   const { instance, layout, labelAngleDeg } = child;
   const resolved = instance.resolved;
+  // Box mode collapses the child to a single box — but a focused (flown-into)
+  // child always renders detailed, so a box reveals its diagram on zoom-in.
+  const boxDisplay = boxMode && !!resolved && !!layout && !(explore && focused);
   // Connections fall back to the child's colorClass unless explicitly overridden.
   const connColor = connectionColorClass === undefined ? colorClass : connectionColorClass;
 
@@ -126,7 +140,51 @@ export function ChildDiagramView({
 
   return (
     <g transform={child.transform.toSvgTransform()} opacity={dimmed ? 0.3 : 1} className="sld-child">
-      {resolved && layout ? (
+      {boxDisplay ? (
+        // Grid-level box: a colour-filled rounded rect + centred name (+ sub-label).
+        <g className={colorClass ?? undefined}>
+          <rect
+            x={child.frame.x}
+            y={child.frame.y}
+            width={child.frame.width}
+            height={child.frame.height}
+            rx={8}
+            fill={colorClass ? 'var(--sld-pos)' : undefined}
+            fillOpacity={colorClass ? 0.12 : undefined}
+            stroke={colorClass ? 'var(--sld-pos)' : undefined}
+            strokeWidth={2}
+            className={colorClass ? undefined : 'fill-muted stroke-border'}
+          />
+          <g
+            transform={
+              labelAngleDeg
+                ? `rotate(${labelAngleDeg} ${child.frame.x + child.frame.width / 2} ${child.frame.y + child.frame.height / 2})`
+                : undefined
+            }
+          >
+            <text
+              x={child.frame.x + child.frame.width / 2}
+              y={child.frame.y + child.frame.height / 2 + (boxSubLabel?.(child) ? -4 : 6)}
+              textAnchor="middle"
+              fontSize={16}
+              className="pointer-events-none select-none fill-foreground font-bold"
+            >
+              {child.name}
+            </text>
+            {boxSubLabel?.(child) && (
+              <text
+                x={child.frame.x + child.frame.width / 2}
+                y={child.frame.y + child.frame.height / 2 + 16}
+                textAnchor="middle"
+                fontSize={13}
+                className="pointer-events-none select-none fill-muted-foreground"
+              >
+                {boxSubLabel(child)}
+              </text>
+            )}
+          </g>
+        </g>
+      ) : resolved && layout ? (
         <>
           {connectionItems.map(({ el, geo }) => (
             <ConnectionView
@@ -208,8 +266,9 @@ export function ChildDiagramView({
       {/* Always-on diagram name at its chosen slot, larger + bold so it stands
           apart from element labels. Rides with the child's orientation plus the
           label's own rotation. Independent of the label-visibility toggles
-          (issue #17); pointer-transparent so clicking it just selects the diagram. */}
-      {showChildNames && (
+          (issue #17); pointer-transparent so clicking it just selects the diagram.
+          Suppressed in box mode, where the name is drawn centred inside the box. */}
+      {showChildNames && !boxDisplay && (
         <text
           x={child.nameLabel.x}
           y={child.nameLabel.y}
