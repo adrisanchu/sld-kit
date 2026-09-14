@@ -131,7 +131,10 @@ export class CompositeSerializer {
         name: meta.name,
         createdAt: typeof meta.createdAt === 'string' ? meta.createdAt : now,
         updatedAt: typeof meta.updatedAt === 'string' ? meta.updatedAt : now,
-        ...(typeof meta.boxMode === 'boolean' ? { boxMode: meta.boxMode } : {})
+        ...(typeof meta.boxMode === 'boolean' ? { boxMode: meta.boxMode } : {}),
+        ...(typeof meta.defaultRouting === 'string' && meta.defaultRouting
+          ? { defaultRouting: meta.defaultRouting }
+          : {})
       },
       children,
       lines
@@ -155,6 +158,9 @@ export class CompositeSerializer {
       if (raw.kind !== undefined && (typeof raw.kind !== 'string' || !raw.kind)) {
         throw new SldParseError(`Line ${raw.id}: invalid kind`);
       }
+      if (raw.routing !== undefined && (typeof raw.routing !== 'string' || !raw.routing)) {
+        throw new SldParseError(`Line ${raw.id}: invalid routing`);
+      }
       if (!Array.isArray(raw.vertices) || raw.vertices.length < 2) {
         throw new SldParseError(`Line ${raw.id}: needs at least two vertices`);
       }
@@ -177,7 +183,12 @@ export class CompositeSerializer {
           throw new SldParseError(`Line ${raw.id}: unknown vertex kind`);
         }
       }
-      lines.push({ id: raw.id, kind: (raw.kind as string | undefined) ?? DEFAULT_LINE_KIND, vertices });
+      lines.push({
+        id: raw.id,
+        kind: (raw.kind as string | undefined) ?? DEFAULT_LINE_KIND,
+        ...(raw.routing !== undefined ? { routing: raw.routing as string } : {}),
+        vertices
+      });
     }
     return lines;
   }

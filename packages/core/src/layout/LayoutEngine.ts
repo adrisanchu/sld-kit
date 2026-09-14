@@ -91,7 +91,7 @@ export class LayoutEngine {
     }
     // Extra space needed for a horizontal exit: beyond the bar overhang,
     // across the stem, past the arrowhead, plus room for the label text.
-    const labelRoom = 80;
+    const labelRoom = cfg.externalLabelRoom;
     const leftShift = hasLeftExit
       ? Math.max(0, labelRoom + cfg.busBarOverhang + cfg.externalStemLength - cfg.margin)
       : 0;

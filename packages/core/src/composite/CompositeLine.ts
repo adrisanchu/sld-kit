@@ -1,4 +1,5 @@
 import { newId } from '../ids';
+import type { LineRouting } from './routing';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -47,6 +48,11 @@ export interface CompositeLineJson {
   id: string;
   /** Functional type; drives stroke style + glyph. Default `line`. */
   kind?: CompositeLineKind;
+  /**
+   * Drawing style for the stored vertices. Absent → the composite's
+   * `meta.defaultRouting` (itself defaulting to `straight`). See {@link LineRouting}.
+   */
+  routing?: LineRouting;
   /** Ordered vertices of the polyline; at least two. */
   vertices: LineVertexJson[];
 }
@@ -65,7 +71,9 @@ export class CompositeLine {
     public readonly id: string,
     public vertices: LineVertexJson[],
     /** Functional type; drives stroke style + glyph. Default `line` (overhead). */
-    public kind: CompositeLineKind = DEFAULT_LINE_KIND
+    public kind: CompositeLineKind = DEFAULT_LINE_KIND,
+    /** Drawing style; `undefined` inherits the composite's `defaultRouting`. */
+    public routing?: LineRouting
   ) {}
 
   /** Connection ids this line claims via anchor vertices (drives auto-link suppression). */
@@ -79,6 +87,7 @@ export class CompositeLine {
     return {
       id: this.id,
       kind: this.kind,
+      ...(this.routing !== undefined ? { routing: this.routing } : {}),
       vertices: this.vertices.map((v) =>
         v.kind === 'point'
           ? { kind: 'point', x: round2(v.x), y: round2(v.y) }
@@ -90,6 +99,6 @@ export class CompositeLine {
   }
 
   static fromJSON(json: CompositeLineJson): CompositeLine {
-    return new CompositeLine(json.id ?? newId(), json.vertices, json.kind ?? DEFAULT_LINE_KIND);
+    return new CompositeLine(json.id ?? newId(), json.vertices, json.kind ?? DEFAULT_LINE_KIND, json.routing);
   }
 }

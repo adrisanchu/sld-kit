@@ -92,10 +92,17 @@ export {
   type CompositeLineJson,
   type LineVertexJson
 } from './composite/CompositeLine';
+export {
+  orthogonalizePolyline,
+  routePolyline,
+  DEFAULT_LINE_ROUTING,
+  type LineRouting
+} from './composite/routing';
 export { chordFrame, type ChordFrame, type RelCoord } from './composite/lineFrame';
 export { CompositeDocument, type CompositeMeta, type CompositeChange } from './composite/CompositeDocument';
 export {
   CompositeLayoutEngine,
+  BOX_CHILD_LAYOUT,
   labelFlipDeg,
   linkConnections,
   lineConnections,

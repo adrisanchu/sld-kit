@@ -13,6 +13,7 @@ import {
   AddLineCommand,
   UpdateLineKindCommand,
   SetBoxModeCommand,
+  orthogonalizePolyline,
   DiagramInstance,
   LABEL_ANCHORS,
   resolveNameLabelLayout,
@@ -768,6 +769,19 @@ describe('Box view — box mode', () => {
     expect(svg).not.toContain('<foreignObject');
   });
 
+  it('roundtrips line.routing and meta.defaultRouting', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.updateMeta({ defaultRouting: 'orthogonal' });
+    doc.getLine('line-1')!.routing = 'straight';
+    const json1 = CompositeSerializer.toJSON(doc);
+    expect(json1.meta.defaultRouting).toBe('orthogonal');
+    expect(json1.lines[0].routing).toBe('straight');
+    const back = CompositeSerializer.fromJSON(cycle(json1));
+    expect(back.meta.defaultRouting).toBe('orthogonal');
+    expect(back.getLine('line-1')!.routing).toBe('straight');
+    expect(CompositeSerializer.toJSON(back)).toEqual(json1);
+  });
+
   it('exports cable lines dashed and transformer lines with a glyph, Office-safe', () => {
     const doc = buildSouthCompositeWithLine();
     doc.getLine('line-1')!.kind = 'transformer';
@@ -786,5 +800,44 @@ describe('Box view — box mode', () => {
     expect(svg).toContain('stroke-dasharray="6 4"'); // the cable
     expect(svg).not.toContain('<marker');
     expect(svg).not.toContain('class=');
+  });
+});
+
+describe('Line routing', () => {
+  const axisAligned = (pts: { x: number; y: number }[]) =>
+    pts.every((p, i) => i === 0 || p.x === pts[i - 1].x || p.y === pts[i - 1].y);
+
+  it('orthogonalizePolyline inserts a dominant-axis elbow (or nothing when aligned)', () => {
+    expect(orthogonalizePolyline([{ x: 0, y: 0 }, { x: 10, y: 4 }])).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 4 }
+    ]);
+    expect(orthogonalizePolyline([{ x: 0, y: 0 }, { x: 4, y: 10 }])).toEqual([
+      { x: 0, y: 0 },
+      { x: 0, y: 10 },
+      { x: 4, y: 10 }
+    ]);
+    expect(orthogonalizePolyline([{ x: 0, y: 0 }, { x: 10, y: 0 }])).toEqual([{ x: 0, y: 0 }, { x: 10, y: 0 }]);
+  });
+
+  it('meta.defaultRouting orthogonal makes every resolved line segment axis-aligned', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.updateMeta({ defaultRouting: 'orthogonal' });
+    doc.resolveChildren(resolver());
+    const line = new CompositeLayoutEngine().layout(doc).lines[0];
+    expect(line.points.length).toBeGreaterThanOrEqual(2);
+    expect(axisAligned(line.points)).toBe(true);
+  });
+
+  it('a per-line straight override opts out of an orthogonal default', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.updateMeta({ defaultRouting: 'orthogonal' });
+    doc.getLine('line-1')!.routing = 'straight';
+    doc.resolveChildren(resolver());
+    const line = new CompositeLayoutEngine().layout(doc).lines[0];
+    // The free bend at {250,400} stays a diagonal join — not re-routed.
+    expect(line.points).toContainEqual({ x: 250, y: 400 });
+    expect(axisAligned(line.points)).toBe(false);
   });
 });

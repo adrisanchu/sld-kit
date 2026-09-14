@@ -1,5 +1,6 @@
 import { newId } from '../ids';
 import { CompositeLine, type CompositeLineKind, type LineVertexJson } from './CompositeLine';
+import type { LineRouting } from './routing';
 import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
 import type { DocumentResolver } from './DocumentResolver';
 
@@ -14,6 +15,11 @@ export interface CompositeMeta {
    * grid-level "box" view. Absent/false renders the detailed diagrams.
    */
   boxMode?: boolean;
+  /**
+   * Default drawing style for lines (and auto-links) that don't set their own
+   * `routing`. Absent → `straight`. The box view sets this to `orthogonal`.
+   */
+  defaultRouting?: LineRouting;
 }
 
 export type CompositeChange =
@@ -139,6 +145,13 @@ export class CompositeDocument {
     const line = this.lines.get(id);
     if (!line) return;
     line.kind = kind;
+    this.emit({ type: 'lines', ids: [id] });
+  }
+
+  setLineRouting(id: string, routing: LineRouting | undefined): void {
+    const line = this.lines.get(id);
+    if (!line) return;
+    line.routing = routing;
     this.emit({ type: 'lines', ids: [id] });
   }
 

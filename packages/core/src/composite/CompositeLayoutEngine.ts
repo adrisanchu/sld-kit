@@ -1,14 +1,40 @@
 import { Connection } from '../elements/Connection';
+import { SLD_LAYOUT, type SldLayoutConfig } from '../layout';
 import { LayoutEngine, type DiagramLayout } from '../layout/LayoutEngine';
 import { Transform2D } from '../layout/Transform2D';
 import type { Point, Rect } from '../layout/geometry';
 import { CompositeDocument } from './CompositeDocument';
 import { CompositeLine, type CompositeLineKind } from './CompositeLine';
+import { routePolyline, type LineRouting } from './routing';
 import { chordFrame } from './lineFrame';
 import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
 
 /** Fixed frame for an unresolved child, so it stays selectable and movable. */
 export const PLACEHOLDER_FRAME = { width: 360, height: 240 } as const;
+
+/**
+ * Compact single-diagram layout used for box-mode children. It hides feeder
+ * labels (box mode never shows them), so margins, stems and `externalLabelRoom`
+ * shrink and the child frame hugs its connection tips — the box then wraps the
+ * bus tightly while lines still anchor to the real, non-overlapping SLD tips.
+ */
+export const BOX_CHILD_LAYOUT: SldLayoutConfig = {
+  ...SLD_LAYOUT,
+  margin: 30,
+  cellWidth: 74,
+  cellHeight: 34,
+  cellGapX: 16,
+  cellGapY: 16,
+  busBarRowHeight: 14,
+  busBarThickness: 4,
+  busBarOverhang: 10,
+  positionBoxWidth: 56,
+  positionBoxHeight: 28,
+  externalStemLength: 16,
+  arrowSize: 6,
+  symbolSize: 12,
+  externalLabelRoom: 8
+};
 
 /** Gap kept between the name label and the frame edge it hugs, in child-local units. */
 export const NAME_LABEL_PAD = 6;
@@ -293,14 +319,25 @@ export interface CompositeLayout {
  * composite merely wraps that geometry in the instance's `Transform2D`.
  */
 export class CompositeLayoutEngine {
-  constructor(private childEngine: LayoutEngine = new LayoutEngine()) {}
+  private boxChildEngine: LayoutEngine;
+
+  constructor(
+    private childEngine: LayoutEngine = new LayoutEngine(),
+    boxChildEngine?: LayoutEngine
+  ) {
+    this.boxChildEngine = boxChildEngine ?? new LayoutEngine(BOX_CHILD_LAYOUT);
+  }
 
   layout(doc: CompositeDocument): CompositeLayout {
+    const boxMode = doc.meta.boxMode ?? false;
+    const defaultRouting = doc.meta.defaultRouting;
+    // Box mode lays children out compactly so the box hugs its connection tips.
+    const engine = boxMode ? this.boxChildEngine : this.childEngine;
     const children: ChildLayout[] = [];
 
     for (const instance of doc.allChildren()) {
       const resolved = instance.resolved;
-      const layout = resolved ? this.childEngine.layout(resolved) : null;
+      const layout = resolved ? engine.layout(resolved) : null;
       const frame: Rect = layout
         ? { x: 0, y: 0, width: layout.size.width, height: layout.size.height }
         : { x: 0, y: 0, width: PLACEHOLDER_FRAME.width, height: PLACEHOLDER_FRAME.height };
@@ -319,11 +356,11 @@ export class CompositeLayoutEngine {
       });
     }
 
-    const lines = this.resolveLines(doc.allLines(), children);
+    const lines = this.resolveLines(doc.allLines(), children, defaultRouting);
     // A manual line for a shared id takes precedence: suppress its auto-link.
     const claimed = new Set<string>();
     for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
-    const links = this.detectLinks(children, claimed);
+    const links = this.detectLinks(children, claimed, defaultRouting);
     const bounds = this.unionBounds(children, links, lines);
     return { children, links, lines, bounds };
   }
@@ -347,7 +384,11 @@ export class CompositeLayoutEngine {
   }
 
   /** Resolve every manual line's vertices to a world polyline (see `CompositeLineLayout`). */
-  private resolveLines(lines: CompositeLine[], children: ChildLayout[]): CompositeLineLayout[] {
+  private resolveLines(
+    lines: CompositeLine[],
+    children: ChildLayout[],
+    defaultRouting: LineRouting | undefined
+  ): CompositeLineLayout[] {
     const byId = new Map(children.map((c) => [c.instance.id, c]));
     const out: CompositeLineLayout[] = [];
     for (const line of lines) {
@@ -383,7 +424,12 @@ export class CompositeLayoutEngine {
           if (tip) points.push(tip);
         }
       });
-      if (points.length >= 2) out.push(this.decorateLine(line, points));
+      if (points.length >= 2) {
+        // Apply the drawing style (per-line, else the composite default) to the
+        // resolved world path before decorating, so glyphs sit on the drawn line.
+        const routing = line.routing ?? defaultRouting ?? 'straight';
+        out.push(this.decorateLine(line, routePolyline(points, routing)));
+      }
     }
     return out;
   }
@@ -445,7 +491,11 @@ export class CompositeLayoutEngine {
    * instances. When more than two children share an id, the first two (in
    * insertion order) link, the rest are skipped (documented v1 limitation).
    */
-  private detectLinks(children: ChildLayout[], suppressed: Set<string> = new Set()): CompositeLink[] {
+  private detectLinks(
+    children: ChildLayout[],
+    suppressed: Set<string> = new Set(),
+    defaultRouting?: LineRouting
+  ): CompositeLink[] {
     const index = new Map<string, { instanceId: string; tip: Point }[]>();
 
     for (const child of children) {
@@ -467,11 +517,13 @@ export class CompositeLayoutEngine {
     for (const [connectionId, ends] of index) {
       if (ends.length < 2) continue;
       const [first, second] = ends;
+      // Auto-links have no per-line override, so they follow the composite default.
+      const points = routePolyline([first.tip, second.tip], defaultRouting ?? 'straight');
       links.push({
         connectionId,
         a: { instanceId: first.instanceId, point: first.tip },
         b: { instanceId: second.instanceId, point: second.tip },
-        points: [first.tip, second.tip]
+        points
       });
     }
     return links;
