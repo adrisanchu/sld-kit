@@ -56,6 +56,12 @@ export interface SldViewStyle {
     /** Manual lines, at rest / selected. */
     lineStrokeWidth: number;
     lineSelectedStrokeWidth: number;
+    /** Box (grid-level) view: thicker lines + bigger box chrome so it reads from afar. */
+    boxLineStrokeWidth: number;
+    boxStrokeWidth: number;
+    boxFillOpacity: number;
+    boxNameFontSize: number;
+    boxIdFontSize: number;
     /** Draggable bend vertex + hollow "add bend" handles. */
     vertexHandleRadius: number;
     addHandleRadius: number;
@@ -83,6 +89,11 @@ export const DEFAULT_VIEW_STYLE: SldViewStyle = {
     linkDashArray: '6 4',
     lineStrokeWidth: 2,
     lineSelectedStrokeWidth: 3,
+    boxLineStrokeWidth: 4,
+    boxStrokeWidth: 3,
+    boxFillOpacity: 0.14,
+    boxNameFontSize: 22,
+    boxIdFontSize: 16,
     vertexHandleRadius: 5,
     addHandleRadius: 4,
     handleStrokeWidth: 1.5,

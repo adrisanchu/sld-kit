@@ -357,7 +357,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
               points={pts}
               fill="none"
               className="stroke-primary/70"
-              strokeWidth={lf?.strokeWidth ?? cs.linkStrokeWidth}
+              strokeWidth={lf?.strokeWidth ?? (boxMode ? cs.boxLineStrokeWidth : cs.linkStrokeWidth)}
               strokeDasharray={lf?.dashArray ?? cs.linkDashArray}
             />
             {link.points.map((p, i) => (
@@ -394,7 +394,9 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
               fill="none"
               stroke="currentColor"
               strokeWidth={
-                ln.line.id === selectedLineId ? cs.lineSelectedStrokeWidth : (lf?.strokeWidth ?? cs.lineStrokeWidth)
+                ln.line.id === selectedLineId
+                  ? cs.lineSelectedStrokeWidth
+                  : (lf?.strokeWidth ?? (boxMode ? cs.boxLineStrokeWidth : cs.lineStrokeWidth))
               }
               strokeDasharray={dash ?? undefined}
             />
@@ -409,7 +411,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         <ChildDiagramView
           key={child.instance.id}
           child={child}
-          interactive={interactive}
+          interactive={interactive && !drawMode}
           explore={explore}
           focused={explore && child.instance.id === focusedId}
           dimmed={explore && focusedId !== null && child.instance.id !== focusedId}
