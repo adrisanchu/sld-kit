@@ -8,18 +8,19 @@ import {
   CompositeSvgExporter,
   RemoveLineCommand,
   SetBoxModeCommand,
+  TransformChildCommand,
   newId,
   type ChildLayout,
   type Command,
   type CompositeDocument,
   type CompositeLineKind,
   type CompositeLineLayout,
-  type LineVertexJson
+  type LineVertexJson,
+  type Point
 } from '@sld-kit/core';
 import {
   CompositeCanvas,
   downloadText,
-  orthogonalizePolyline,
   slugify,
   useCommandStack,
   useSldDocument,
@@ -64,8 +65,17 @@ export default function App() {
   const [tool, setTool] = useState<Tool>('select');
   const [lineKind, setLineKind] = useState<CompositeLineKind>('line');
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft[]>([]);
   const [dark, setDark] = useState(false);
+
+  // Box drag: transient setChildTransform during the gesture, one undoable
+  // TransformChildCommand committed on pointer-up (mirrors the Svelte editor).
+  const dragRef = useRef<{
+    id: string;
+    startPtr: Point;
+    before: { x: number; y: number; angleDeg: number };
+  } | null>(null);
 
   const boxMode = !!composite.meta.boxMode;
   const run = useCallback((cmd: Command<CompositeDocument>) => stack.execute(cmd, composite), [stack, composite]);
@@ -97,16 +107,14 @@ export default function App() {
 
   const commitDraw = useCallback(() => {
     if (draft.length >= 2) {
-      // orthogonalize preserves the endpoints, so pts[0]/pts[last] === the first
-      // and last click — anchor those to a box terminal when they snapped.
-      const firstSnap = draft[0].snap;
-      const lastSnap = draft[draft.length - 1].snap;
-      const pts = orthogonalizePolyline(draft.map((d) => d.point));
-      const vertices: LineVertexJson[] = pts.map((p, i) => {
-        if (i === 0 && firstSnap) return { kind: 'anchor', instanceId: firstSnap.instanceId, connectionId: firstSnap.connectionId };
-        if (i === pts.length - 1 && lastSnap) return { kind: 'anchor', instanceId: lastSnap.instanceId, connectionId: lastSnap.connectionId };
-        return { kind: 'point', x: p.x, y: p.y };
-      });
+      // Store the raw clicked path (endpoints anchored to a box terminal when
+      // snapped); the composite's `defaultRouting: 'orthogonal'` makes the core
+      // layout render it axis-aligned — the same result the draft preview shows.
+      const vertices: LineVertexJson[] = draft.map((d, i) =>
+        d.snap && (i === 0 || i === draft.length - 1)
+          ? { kind: 'anchor', instanceId: d.snap.instanceId, connectionId: d.snap.connectionId }
+          : { kind: 'point', x: d.point.x, y: d.point.y }
+      );
       run(new AddLineCommand(new CompositeLine(newId(), vertices, lineKind)));
     }
     setDraft([]);
@@ -117,6 +125,56 @@ export default function App() {
     run(new RemoveLineCommand(selectedLineId));
     setSelectedLineId(null);
   }, [selectedLineId, run]);
+
+  const handleChildDown = useCallback(
+    ({ id, event }: { id: string; event: React.PointerEvent }) => {
+      if (tool !== 'select') return;
+      setSelectedChildId(id);
+      setSelectedLineId(null);
+      const child = composite.getChild(id);
+      const handle = canvasRef.current;
+      if (!child || !handle) return;
+      dragRef.current = {
+        id,
+        startPtr: handle.clientToSvg(event.clientX, event.clientY),
+        before: { x: child.x, y: child.y, angleDeg: child.angleDeg }
+      };
+    },
+    [tool, composite]
+  );
+
+  // Global drag handlers: move transiently, commit one undoable step on release.
+  useEffect(() => {
+    const move = (e: PointerEvent) => {
+      const d = dragRef.current;
+      const handle = canvasRef.current;
+      if (!d || !handle) return;
+      const p = handle.clientToSvg(e.clientX, e.clientY);
+      composite.setChildTransform(d.id, d.before.x + (p.x - d.startPtr.x), d.before.y + (p.y - d.startPtr.y), d.before.angleDeg);
+    };
+    const up = () => {
+      const d = dragRef.current;
+      if (!d) return;
+      dragRef.current = null;
+      const child = composite.getChild(d.id);
+      if (!child) return;
+      const after = { x: child.x, y: child.y, angleDeg: child.angleDeg };
+      if (after.x !== d.before.x || after.y !== d.before.y) {
+        stack.execute(new TransformChildCommand('Move box', d.id, d.before, after), composite);
+      }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+  }, [composite, stack]);
+
+  const clearSelection = () => {
+    setSelectedLineId(null);
+    setSelectedChildId(null);
+  };
 
   const toggleBoxMode = () => run(new SetBoxModeCommand(boxMode, !boxMode));
 
@@ -180,13 +238,18 @@ export default function App() {
           orthogonal
           snapTargets={snapTargets}
           draftPoints={draft.map((d) => d.point)}
+          selectedId={selectedChildId}
           selectedLineId={selectedLineId}
           childColorClass={childColorClass}
           lineColorClass={lineColorClass}
+          onChildDown={handleChildDown}
           onCanvasPoint={onCanvasPoint}
           onDrawCommit={commitDraw}
-          onLineDown={({ id }) => setSelectedLineId(id)}
-          onClearSelection={() => setSelectedLineId(null)}
+          onLineDown={({ id }) => {
+            setSelectedLineId(id);
+            setSelectedChildId(null);
+          }}
+          onClearSelection={clearSelection}
         />
 
         {/* Minimal floating chrome — the app owns all orchestration; the canvas
