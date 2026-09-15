@@ -31,6 +31,31 @@ pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
 - **Office-safe export** — `CompositeSvgExporter` with `boxMode`, `boxFill` and
   `boxSubLabel` produces a PowerPoint-pasteable SVG.
 
+## Floating-connector router (`src/box/`)
+
+The box/detail toggle used to break: line geometry was stored per-view (fixed
+connectors, a fixture alignment pass, an absolute demand point), so a path valid
+in one view stranded the demand or dived into a box in the other. `src/box/` is a
+self-contained, OOP **floating-connector router** — an example-local prototype of
+`docs/requirements/simplified-sld-box/floating-connectors-plan.md`, kept out of
+the published packages for now:
+
+- **`PortResolver`** turns a `(instanceId, connectionId)` reference into a
+  floating `Port` (`{ point, side }`) resolved to the **active view's frame** — a
+  box-perimeter point (spread across same-side feeders by slot) in box mode, the
+  **SLD arrow tip** in detail mode. Nothing is stored; ports recompute per layout.
+- **`OrthogonalRouter`** stubs out of each port perpendicular to its side, then
+  joins with a Manhattan L/Z (near-aligned facing ports snap to a straight
+  trunk). A demand is a node-relative **lead** — a stub off its feeder, never an
+  absolute point.
+- **`BoxLayoutEngine` extends `CompositeLayoutEngine`**, reusing the child layout
+  but overriding line resolution with the router. Because it subclasses the core
+  engine, `new CompositeSvgExporter(boxEngine)` exports the *same* routed geometry
+  — screen and export stay in lock-step.
+
+The result: the same document lays out cleanly in **both** views with no stored
+per-view geometry (the fixture's `alignVertical` + demand-point hacks are gone).
+
 Everything the app decides — voltage colours, the bus-id label, the active line
 kind, dialogs — lives here, not in the package: the components only emit semantic
 callbacks (the adapter contract).

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AddLineCommand,
   CommandStack,
-  CompositeLayoutEngine,
   CompositeLine,
   CompositeSerializer,
   CompositeSvgExporter,
@@ -27,6 +26,7 @@ import {
   type CompositeCanvasHandle
 } from '@sld-kit/react';
 import { Boxes, Layers, Maximize, PenLine, MousePointer2, Redo2, Trash2, Undo2 } from 'lucide-react';
+import { BoxLayoutEngine } from './box';
 import { buildBoxComposite, voltageClass, voltageFill } from './fixture';
 
 const LINE_KINDS: { kind: CompositeLineKind; label: string }[] = [
@@ -54,11 +54,13 @@ export default function App() {
   const version = useSldDocument(composite);
   const { canUndo, canRedo } = useCommandStack(stack);
 
-  const engine = useMemo(() => new CompositeLayoutEngine(), []);
+  // The floating-connector box engine resolves line endpoints to the active
+  // view's frame (box perimeter vs SLD tip) and routes the bends, so box↔detail
+  // never strands or bends a line into a box (see `./box`).
+  const boxEngine = useMemo(() => new BoxLayoutEngine(), []);
   // `version` is the load-bearing dep: `composite` mutates in place.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const layout = useMemo(() => engine.layout(composite), [engine, composite, version]);
-  const snapTargets = useMemo(() => engine.externalConnectionTips(layout.children), [engine, layout]);
+  const { layout, snapTargets } = useMemo(() => boxEngine.build(composite), [boxEngine, composite, version]);
 
   const canvasRef = useRef<CompositeCanvasHandle>(null);
 
@@ -195,7 +197,9 @@ export default function App() {
   }, [selectedLineId, deleteSelected]);
 
   const exportSvg = () => {
-    const svg = new CompositeSvgExporter().export(composite, {
+    // Export through the same box engine the canvas uses, so the SVG carries the
+    // floating-connector routing (not the core engine's fixed-connector geometry).
+    const svg = new CompositeSvgExporter(boxEngine).export(composite, {
       boxMode: true,
       boxFill: (c) => voltageFill(c.instance.resolved?.meta.voltageKv),
       boxSubLabel: busLabel

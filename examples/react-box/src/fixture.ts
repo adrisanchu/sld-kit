@@ -10,7 +10,6 @@
  */
 import {
   CompositeDocument,
-  CompositeLayoutEngine,
   CompositeLine,
   DiagramInstance,
   MapResolver,
@@ -85,43 +84,26 @@ const SUBS: { id: string; name: string; bus: number; kv: number; x: number; y: n
 
 const anchor = (instanceId: string, connectionId: string): LineVertexJson => ({ kind: 'anchor', instanceId, connectionId });
 
-/** World tip of a child's external feeder, in the current box layout. */
-function feederTip(composite: CompositeDocument, instanceId: string, connectionId: string) {
-  const engine = new CompositeLayoutEngine();
-  return (
-    engine
-      .externalConnectionTips(engine.layout(composite).children)
-      .find((t) => t.instanceId === instanceId && t.connectionId === connectionId)?.point ?? null
-  );
-}
-
 /**
- * Straighten a vertical connection: nudge the lower box in x so its `up` feeder
- * tip sits directly under the upper box's `down` feeder tip. The two anchors then
- * share an x, so the orthogonal router draws a clean vertical instead of an elbow.
- * (Feeders land in different columns per child, and a left-exit reserves column
- * room, so the aligned x can't be hand-guessed — it's read back from the layout.)
+ * A demand line: one anchored feeder end plus a placeholder free end. The box
+ * router recomputes the free end as a node-relative *lead* (a stub off the
+ * feeder's side), so the stored coordinate is never used — hence `(0, 0)`. This
+ * is what replaces the old absolute-demand-point hack; the lead stays attached
+ * and vertical in both the box and detail views.
  */
-function alignVertical(
-  composite: CompositeDocument,
-  upperId: string,
-  downConnId: string,
-  lowerId: string,
-  upConnId: string
-): void {
-  const top = feederTip(composite, upperId, downConnId);
-  const bottom = feederTip(composite, lowerId, upConnId);
-  const child = composite.getChild(lowerId);
-  if (top && bottom && child) composite.setChildTransform(lowerId, child.x + (top.x - bottom.x), child.y, child.angleDeg);
-}
+const demandLead = (instanceId: string, connectionId: string): LineVertexJson[] => [
+  anchor(instanceId, connectionId),
+  { kind: 'point', x: 0, y: 0 }
+];
 
 /** Build the box composite: the six boxes plus lines of every kind between them. */
 export function buildBoxComposite(): CompositeDocument {
   const resolver = new MapResolver(new Map(SUBS.map((s) => [s.id, Serializer.toJSON(buildSub(s.id, s.name, s.bus, s.kv, s.feeders))])));
 
-  // `defaultRouting: 'orthogonal'` makes every line snap to the axis in the core
-  // layout — the box-diagram rule — so lines are orthogonal regardless of where
-  // the boxes sit. Individual lines can still override with their own `routing`.
+  // `defaultRouting: 'orthogonal'` selects the floating-connector auto router
+  // (attach per view + computed bends), so lines stay orthogonal and attached
+  // regardless of where the boxes sit. Individual lines can override with their
+  // own `routing`.
   const composite = new CompositeDocument({
     id: 'box-overview',
     name: 'Example grid — box view',
@@ -139,19 +121,12 @@ export function buildBoxComposite(): CompositeDocument {
   composite.addLine(new CompositeLine(newId(), [anchor('lib-delta', 'delta-echo'), anchor('lib-echo', 'echo-delta')], 'cable'));
   composite.addLine(new CompositeLine(newId(), [anchor('lib-echo', 'echo-foxtrot'), anchor('lib-foxtrot', 'foxtrot-echo')], 'line'));
 
+  // The demand hangs off FOXTROT's 'down' feeder as a node-relative lead — the
+  // router keeps it attached and vertical in both views (no alignment pass, no
+  // absolute point).
+  composite.addLine(new CompositeLine(newId(), demandLead('lib-foxtrot', 'foxtrot-dem'), 'demand'));
+
   composite.resolveChildren(resolver);
-
-  // Line up the two vertical connections so they draw as clean verticals.
-  alignVertical(composite, 'lib-alpha', 'alpha-charlie', 'lib-charlie', 'charlie-alpha');
-  alignVertical(composite, 'lib-echo', 'echo-foxtrot', 'lib-foxtrot', 'foxtrot-echo');
-
-  // The demand hangs straight down from FOXTROT (now aligned): anchor its 'down'
-  // feeder, then drop a free end directly below the resolved tip so it stays vertical.
-  const demTip = feederTip(composite, 'lib-foxtrot', 'foxtrot-dem');
-  const demEnd: LineVertexJson = demTip
-    ? { kind: 'point', x: demTip.x, y: demTip.y + 200 }
-    : { kind: 'point', x: 1240, y: 1200 };
-  composite.addLine(new CompositeLine(newId(), [anchor('lib-foxtrot', 'foxtrot-dem'), demEnd], 'demand'));
 
   return composite;
 }
