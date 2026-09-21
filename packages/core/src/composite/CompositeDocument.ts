@@ -1,4 +1,5 @@
 import { newId } from '../ids';
+import type { ExternalDirection } from '../types';
 import { CompositeLine, type CompositeLineKind, type LineVertexJson } from './CompositeLine';
 import type { LineRouting } from './routing';
 import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
@@ -20,6 +21,14 @@ export interface CompositeMeta {
    * `routing`. Absent → `straight`. The box view sets this to `orthogonal`.
    */
   defaultRouting?: LineRouting;
+  /**
+   * Auto-facing policy. When `true`, a feeder with a peer derives its exit side
+   * from the live box positions (the side that faces the peer) — a presentation
+   * policy recomputed every layout, so it re-derives during a drag for free.
+   * Absent/`false` → strict: feeders keep their authored (physical) direction.
+   * A manual pin (`DiagramInstance.portDirections`) still overrides it.
+   */
+  autoFacing?: boolean;
 }
 
 export type CompositeChange =
@@ -119,6 +128,20 @@ export class CompositeDocument {
     child.labelAnchor = anchor;
     child.labelDirection = normalizeQuarterTurn(direction);
     this.emit({ type: 'children', ids: [id] });
+  }
+
+  /**
+   * Pin (or clear, with `undefined`) a feeder's exit-direction override on a
+   * child. A composition-owned presentation choice, mirroring `setChildLabel` —
+   * the highest-precedence input to the effective-direction `COALESCE`.
+   */
+  setPortDirection(instanceId: string, connectionId: string, dir: ExternalDirection | undefined): void {
+    const child = this.children.get(instanceId);
+    if (!child) return;
+    child.portDirections = dir
+      ? { ...child.portDirections, [connectionId]: dir }
+      : Object.fromEntries(Object.entries(child.portDirections).filter(([id]) => id !== connectionId));
+    this.emit({ type: 'children', ids: [instanceId] });
   }
 
   addLine(line: CompositeLine): void {

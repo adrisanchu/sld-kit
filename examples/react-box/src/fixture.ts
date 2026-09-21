@@ -103,12 +103,17 @@ export function buildBoxComposite(): CompositeDocument {
   // `defaultRouting: 'orthogonal'` selects the floating-connector auto router
   // (attach per view + computed bends), so lines stay orthogonal and attached
   // regardless of where the boxes sit. Individual lines can override with their
-  // own `routing`.
+  // own `routing`. `autoFacing: true` demos the flexible archetype: a feeder's
+  // exit side is derived from the live box positions, so dragging a box across
+  // its peer flips which edge the tie leaves from — live, no code change. The
+  // authored feeder directions stay the physical-truth base (a manual pin still
+  // wins over auto).
   const composite = new CompositeDocument({
     id: 'box-overview',
     name: 'Example grid — box view',
     boxMode: true,
-    defaultRouting: 'orthogonal'
+    defaultRouting: 'orthogonal',
+    autoFacing: true
   });
 
   // Instance id === library id here (each bus placed once), so anchors read clearly.

@@ -1,6 +1,8 @@
 import { SldDocument } from '../SldDocument';
+import { Connection } from '../elements/Connection';
 import { Serializer, SldParseError } from '../serialization/Serializer';
 import { newId } from '../ids';
+import type { ExternalDirection } from '../types';
 import type { DocumentResolver } from './DocumentResolver';
 
 /**
@@ -65,6 +67,13 @@ export interface DiagramInstanceJson {
    * diagram (e.g. vertical). Default 0.
    */
   labelDirection?: number;
+  /**
+   * Per-feeder exit-direction overrides the *composition* owns, keyed by the
+   * child's connection id. A manual "pin" that shadows the feeder's authored
+   * (physical) direction — the highest-precedence input to
+   * {@link DiagramInstance.effectiveDirection}. Omitted when empty.
+   */
+  portDirections?: Record<string, ExternalDirection>;
 }
 
 /** Options for {@link DiagramInstance.of} — the readable way to place a child. */
@@ -79,6 +88,8 @@ export interface DiagramInstanceOptions {
   angleDeg?: number;
   /** Name-label slot + direction (defaults to `top-left`, direction 0). */
   label?: LabelPlacement;
+  /** Per-feeder exit-direction pins (connectionId → side); defaults to none. */
+  portDirections?: Record<string, ExternalDirection>;
 }
 
 /**
@@ -102,7 +113,9 @@ export class DiagramInstance {
     /** Name-label slot (default `top-left`). */
     public labelAnchor: LabelAnchor = DEFAULT_LABEL_ANCHOR,
     /** Name-label extra rotation in quarter turns (default 0). */
-    public labelDirection: number = 0
+    public labelDirection: number = 0,
+    /** Per-feeder exit-direction pins (connectionId → side); composition-owned. */
+    public portDirections: Record<string, ExternalDirection> = {}
   ) {}
 
   /**
@@ -120,7 +133,8 @@ export class DiagramInstance {
       opts.y ?? 0,
       opts.angleDeg ?? 0,
       opts.label?.anchor ?? DEFAULT_LABEL_ANCHOR,
-      normalizeQuarterTurn(opts.label?.direction ?? 0)
+      normalizeQuarterTurn(opts.label?.direction ?? 0),
+      { ...(opts.portDirections ?? {}) }
     );
   }
 
@@ -147,7 +161,35 @@ export class DiagramInstance {
     }
   }
 
+  /**
+   * The feeder's authored (physical) exit direction: the `direction` on the
+   * resolved child's external endpoint, or `null` when the child left it implicit
+   * (the layout derives it from row position — the composite's resolver falls
+   * back to the arrow angle). This is the physical-truth base of the `COALESCE`.
+   */
+  authoredDirection(connectionId: string): ExternalDirection | null {
+    const el = this.resolved?.getElement(connectionId);
+    if (!(el instanceof Connection)) return null;
+    const ext = el.from.kind === 'external' ? el.from : el.to.kind === 'external' ? el.to : null;
+    return ext?.direction ?? null;
+  }
+
+  /**
+   * The effective exit direction for a feeder: a `COALESCE` chain, most-specific
+   * first — a manual pin the composition stores, then an optional facing side the
+   * engine injects (auto-facing policy; unused until it's on), then the authored
+   * physical direction. `null` means all three are absent (implicit authored), so
+   * the resolver falls back to the layout-derived arrow angle.
+   */
+  effectiveDirection(
+    connectionId: string,
+    opts: { facing?: ExternalDirection | null } = {}
+  ): ExternalDirection | null {
+    return this.portDirections[connectionId] ?? opts.facing ?? this.authoredDirection(connectionId);
+  }
+
   toJSON(): DiagramInstanceJson {
+    const hasPins = Object.keys(this.portDirections).length > 0;
     return {
       id: this.id,
       libraryId: this.libraryId,
@@ -155,7 +197,8 @@ export class DiagramInstance {
       y: this.y,
       angleDeg: this.angleDeg,
       labelAnchor: this.labelAnchor,
-      labelDirection: this.labelDirection
+      labelDirection: this.labelDirection,
+      ...(hasPins ? { portDirections: { ...this.portDirections } } : {})
     };
   }
 
@@ -167,7 +210,8 @@ export class DiagramInstance {
       json.y,
       json.angleDeg,
       json.labelAnchor ?? DEFAULT_LABEL_ANCHOR,
-      normalizeQuarterTurn(json.labelDirection ?? 0)
+      normalizeQuarterTurn(json.labelDirection ?? 0),
+      { ...(json.portDirections ?? {}) }
     );
   }
 }

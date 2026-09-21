@@ -1,4 +1,5 @@
 import { SldParseError } from '../serialization/Serializer';
+import type { ExternalDirection } from '../types';
 import { CompositeDocument, type CompositeMeta } from './CompositeDocument';
 import { CompositeLine, DEFAULT_LINE_KIND, type CompositeLineJson, type LineVertexJson } from './CompositeLine';
 import {
@@ -9,10 +10,16 @@ import {
   type LabelAnchor
 } from './DiagramInstance';
 
-// Additive schema. v2 introduced line `kind` and `meta.boxMode`; both are
-// optional with defaults, so v1 documents load transparently (missing `kind` →
-// `line`, missing `boxMode` → detailed). No structural migration is required.
+// Additive schema. v2 introduced line `kind` and `meta.boxMode`, and also carries
+// per-instance `portDirections` (feeder exit-direction pins) and
+// `meta.autoFacing` — both optional with defaults (missing `portDirections` →
+// none, missing `autoFacing` → strict), so no version bump or structural
+// migration is required. v1 documents load transparently (missing `kind` →
+// `line`, missing `boxMode` → detailed).
 export const COMPOSITE_SCHEMA_VERSION = 2;
+
+/** The four valid feeder exit directions, for pin validation. */
+const EXTERNAL_DIRECTIONS = ['up', 'down', 'left', 'right'] as const;
 
 export interface CompositeDocumentJson {
   version: number;
@@ -48,7 +55,8 @@ export class CompositeSerializer {
         y: round2(c.y),
         angleDeg: normalizeAngle(c.angleDeg),
         labelAnchor: c.labelAnchor,
-        labelDirection: normalizeQuarterTurn(c.labelDirection)
+        labelDirection: normalizeQuarterTurn(c.labelDirection),
+        ...(Object.keys(c.portDirections).length ? { portDirections: { ...c.portDirections } } : {})
       })),
       lines: doc.allLines().map((l) => l.toJSON())
     };
@@ -109,6 +117,7 @@ export class CompositeSerializer {
       if (child.labelDirection !== undefined && !isFinite(child.labelDirection)) {
         throw new SldParseError(`Child ${child.id}: invalid labelDirection`);
       }
+      const portDirections = this.validatePortDirections(child.portDirections, child.id as string);
       children.push({
         id: child.id,
         libraryId: child.libraryId,
@@ -116,7 +125,8 @@ export class CompositeSerializer {
         y: round2(child.y as number),
         angleDeg: normalizeAngle(child.angleDeg as number),
         labelAnchor: (child.labelAnchor as LabelAnchor | undefined) ?? 'top-left',
-        labelDirection: normalizeQuarterTurn((child.labelDirection as number | undefined) ?? 0)
+        labelDirection: normalizeQuarterTurn((child.labelDirection as number | undefined) ?? 0),
+        ...(portDirections ? { portDirections } : {})
       });
     }
 
@@ -132,6 +142,7 @@ export class CompositeSerializer {
         createdAt: typeof meta.createdAt === 'string' ? meta.createdAt : now,
         updatedAt: typeof meta.updatedAt === 'string' ? meta.updatedAt : now,
         ...(typeof meta.boxMode === 'boolean' ? { boxMode: meta.boxMode } : {}),
+        ...(typeof meta.autoFacing === 'boolean' ? { autoFacing: meta.autoFacing } : {}),
         ...(typeof meta.defaultRouting === 'string' && meta.defaultRouting
           ? { defaultRouting: meta.defaultRouting }
           : {})
@@ -139,6 +150,26 @@ export class CompositeSerializer {
       children,
       lines
     };
+  }
+
+  /**
+   * Validate a child's feeder exit-direction pins: an object mapping connection
+   * ids to one of the four {@link ExternalDirection}s. Returns `undefined` when
+   * absent or empty (so it's omitted from the roundtrip, like an unset pin).
+   */
+  private static validatePortDirections(input: unknown, childId: string): Record<string, ExternalDirection> | undefined {
+    if (input === undefined) return undefined;
+    if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+      throw new SldParseError(`Child ${childId}: invalid portDirections`);
+    }
+    const out: Record<string, ExternalDirection> = {};
+    for (const [connectionId, dir] of Object.entries(input as Record<string, unknown>)) {
+      if (!EXTERNAL_DIRECTIONS.includes(dir as ExternalDirection)) {
+        throw new SldParseError(`Child ${childId}: invalid port direction "${String(dir)}" for ${connectionId}`);
+      }
+      out[connectionId] = dir as ExternalDirection;
+    }
+    return Object.keys(out).length ? out : undefined;
   }
 
   /**

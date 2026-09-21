@@ -100,9 +100,9 @@ export {
 } from './composite/routing';
 export { chordFrame, type ChordFrame, type RelCoord } from './composite/lineFrame';
 // Floating-connector box router (promoted from the react-box example).
-export { Port, SIDE_VECTORS, sideAxis, sideFromAngle, type BoxSide } from './composite/ports';
+export { Port, SIDE_VECTORS, sideAxis, sideFromAngle, rotateSide, facingSide, type BoxSide } from './composite/ports';
 export { OrthogonalRouter } from './composite/OrthogonalRouter';
-export { PortResolver } from './composite/PortResolver';
+export { PortResolver, feederKey, type PortResolverOptions } from './composite/PortResolver';
 export { segmentAngleDeg, simplify, arcMidpoint } from './composite/polyline';
 export {
   STUB_LENGTH,
@@ -146,5 +146,7 @@ export {
   RemoveLineCommand,
   UpdateLineCommand,
   UpdateLineKindCommand,
-  SetBoxModeCommand
+  SetBoxModeCommand,
+  SetPortDirectionCommand,
+  SetAutoFacingCommand
 } from './composite/commands';

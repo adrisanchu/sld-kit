@@ -13,10 +13,14 @@ import {
   AddLineCommand,
   UpdateLineKindCommand,
   SetBoxModeCommand,
+  SetPortDirectionCommand,
+  SetAutoFacingCommand,
+  facingSide,
   orthogonalizePolyline,
   DiagramInstance,
   buildDocument,
   newId,
+  type ExternalDirection,
   LABEL_ANCHORS,
   resolveNameLabelLayout,
   MapResolver,
@@ -874,5 +878,221 @@ describe('Line routing', () => {
       // The triangle sits on the free (outward) end.
       expect(demand.terminus?.at).toEqual(b);
     }
+  });
+});
+
+describe('Port direction override (COALESCE)', () => {
+  // A child with one explicit-direction feeder ('a' → down) and one implicit
+  // feeder ('b', no authored direction — the layout derives it from row).
+  const childDoc = () =>
+    buildDocument({
+      meta: { id: 'k', name: 'K', substation: 'K', voltageKv: 220 },
+      busbars: [{ label: 'BB', row: 0 }],
+      bays: [
+        { col: 0, positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'A', direction: 'down', id: 'a' } }] },
+        { col: 1, positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'B', id: 'b' } }] }
+      ]
+    });
+  const childResolver = () => new MapResolver(new Map([['k', Serializer.toJSON(childDoc())]]));
+
+  it('effectiveDirection coalesces pin → facing → authored (implicit → null)', () => {
+    const inst = DiagramInstance.of({ id: 'k', libraryId: 'k' });
+    inst.resolve(childResolver());
+
+    // Authored base: explicit feeder direction, else null (implicit).
+    expect(inst.authoredDirection('a')).toBe('down');
+    expect(inst.authoredDirection('b')).toBeNull();
+    expect(inst.effectiveDirection('a')).toBe('down');
+    expect(inst.effectiveDirection('b')).toBeNull();
+
+    // Injected facing beats authored; a manual pin beats facing.
+    expect(inst.effectiveDirection('a', { facing: 'left' })).toBe('left');
+    inst.portDirections = { a: 'right' };
+    expect(inst.effectiveDirection('a')).toBe('right');
+    expect(inst.effectiveDirection('a', { facing: 'left' })).toBe('right');
+  });
+
+  it('a pin flips the feeder exit side in the box view', () => {
+    const build = () => {
+      const doc = new CompositeDocument({ id: 'c', name: 'c', boxMode: true, defaultRouting: 'orthogonal' });
+      doc.addChild(DiagramInstance.of({ id: 'k', libraryId: 'k' }));
+      doc.addLine(
+        new CompositeLine(newId(), [{ kind: 'anchor', instanceId: 'k', connectionId: 'a' }, { kind: 'point', x: 0, y: 0 }], 'demand')
+      );
+      doc.resolveChildren(childResolver());
+      return doc;
+    };
+    const engine = new CompositeLayoutEngine();
+
+    const doc = build();
+    const authored = engine.layout(doc).lines[0].points;
+    // Authored 'down': the lead runs vertically downward.
+    expect(authored[authored.length - 1].y).toBeGreaterThan(authored[0].y);
+    expect(authored[authored.length - 1].x).toBe(authored[0].x);
+
+    doc.setPortDirection('k', 'a', 'right');
+    const pinned = engine.layout(doc).lines[0].points;
+    // Pinned 'right': the lead now runs horizontally to the right.
+    expect(pinned[pinned.length - 1].x).toBeGreaterThan(pinned[0].x);
+    expect(pinned[pinned.length - 1].y).toBe(pinned[0].y);
+  });
+
+  it('SetPortDirectionCommand pins and undo clears the pin', () => {
+    const doc = new CompositeDocument({ id: 'c', name: 'c' });
+    doc.addChild(DiagramInstance.of({ id: 'k', libraryId: 'k' }));
+    const stack = new CommandStack<CompositeDocument>();
+
+    stack.execute(new SetPortDirectionCommand('Pin feeder', 'k', 'a', undefined, 'left'), doc);
+    expect(doc.getChild('k')!.portDirections).toEqual({ a: 'left' });
+    stack.undo(doc);
+    expect(doc.getChild('k')!.portDirections).toEqual({});
+  });
+
+  it('roundtrips child.portDirections and omits it when empty', () => {
+    const doc = buildSouthComposite();
+    const child = doc.allChildren()[0];
+    expect(CompositeSerializer.toJSON(doc).children[0].portDirections).toBeUndefined();
+
+    doc.setPortDirection(child.id, 'feeder-x', 'up');
+    const json = CompositeSerializer.toJSON(doc);
+    expect(json.children[0].portDirections).toEqual({ 'feeder-x': 'up' });
+    const back = CompositeSerializer.fromJSON(cycle(json));
+    expect(back.getChild(child.id)!.portDirections).toEqual({ 'feeder-x': 'up' });
+  });
+
+  it('rejects an invalid port direction', () => {
+    const bad = {
+      version: COMPOSITE_SCHEMA_VERSION,
+      kind: 'composite',
+      meta: { id: 'm', name: 'x' },
+      children: [{ id: 'a', libraryId: 'l', x: 0, y: 0, angleDeg: 0, portDirections: { f: 'sideways' } }],
+      lines: []
+    };
+    expect(() => CompositeSerializer.fromJSON(bad)).toThrow(/invalid port direction/);
+  });
+
+  it('loads a document with no portDirections as an empty pin map', () => {
+    const doc = CompositeSerializer.fromJSON({
+      version: COMPOSITE_SCHEMA_VERSION,
+      kind: 'composite',
+      meta: { id: 'm', name: 'x' },
+      children: [{ id: 'a', libraryId: 'l', x: 0, y: 0, angleDeg: 0 }],
+      lines: []
+    });
+    expect(doc.getChild('a')!.portDirections).toEqual({});
+  });
+});
+
+describe('Auto-facing policy', () => {
+  it('facingSide picks the dominant axis (diagonals quantise to it)', () => {
+    const o = { x: 0, y: 0 };
+    expect(facingSide(o, { x: 10, y: 3 })).toBe('right');
+    expect(facingSide(o, { x: -10, y: 3 })).toBe('left');
+    expect(facingSide(o, { x: 3, y: 10 })).toBe('down');
+    expect(facingSide(o, { x: 3, y: -10 })).toBe('up');
+    // Diagonal: the bigger delta wins.
+    expect(facingSide(o, { x: 10, y: 9 })).toBe('right');
+    expect(facingSide(o, { x: 9, y: 10 })).toBe('down');
+  });
+
+  // ALPHA (feeder authored 'right') tied to BRAVO (authored 'left'); BRAVO placed
+  // at `bravoX`. A single overhead line between them, box mode, orthogonal.
+  const twoBoxDoc = (bravoX: number, opts: { autoFacing?: boolean; pinAlpha?: ExternalDirection; boxMode?: boolean } = {}) => {
+    const box = (id: string, name: string, feederId: string, dir: ExternalDirection) =>
+      buildDocument({
+        meta: { id, name, substation: name, voltageKv: 400 },
+        busbars: [{ label: 'BB', row: 0 }],
+        bays: [{ col: 0, positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'L1', direction: dir, id: feederId } }] }]
+      });
+    const res = new MapResolver(
+      new Map([
+        ['al', Serializer.toJSON(box('al', 'ALPHA', 'a-b', 'right'))],
+        ['br', Serializer.toJSON(box('br', 'BRAVO', 'b-a', 'left'))]
+      ])
+    );
+    const doc = new CompositeDocument({
+      id: 'c',
+      name: 'c',
+      boxMode: opts.boxMode ?? true,
+      defaultRouting: 'orthogonal',
+      autoFacing: opts.autoFacing ?? true
+    });
+    doc.addChild(DiagramInstance.of({ id: 'al', libraryId: 'al', x: 0, y: 0, portDirections: opts.pinAlpha ? { 'a-b': opts.pinAlpha } : {} }));
+    doc.addChild(DiagramInstance.of({ id: 'br', libraryId: 'br', x: bravoX, y: 0 }));
+    doc.addLine(new CompositeLine(newId(), [{ kind: 'anchor', instanceId: 'al', connectionId: 'a-b' }, { kind: 'anchor', instanceId: 'br', connectionId: 'b-a' }], 'line'));
+    doc.resolveChildren(res);
+    return doc;
+  };
+
+  // ALPHA's resolved exit side, read from its line attach point (kept exactly by
+  // the router) relative to ALPHA's box centre — robust even when a straight run
+  // simplifies the stub away.
+  const alphaSide = (doc: CompositeDocument): ExternalDirection => {
+    const layout = new CompositeLayoutEngine().layout(doc);
+    const al = layout.children.find((c) => c.instance.id === 'al')!;
+    const cx = al.worldBounds.x + al.worldBounds.width / 2;
+    const cy = al.worldBounds.y + al.worldBounds.height / 2;
+    const at = layout.lines[0].points[0];
+    const dx = at.x - cx;
+    const dy = at.y - cy;
+    return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'down' : 'up';
+  };
+
+  it('derives the exit side from live positions', () => {
+    expect(alphaSide(twoBoxDoc(500))).toBe('right'); // BRAVO to the right → ALPHA faces right
+    expect(alphaSide(twoBoxDoc(-500))).toBe('left'); // BRAVO to the left → ALPHA faces left
+  });
+
+  it('re-derives facing when a box is dragged across its peer (drag frame)', () => {
+    const doc = twoBoxDoc(500);
+    expect(alphaSide(doc)).toBe('right');
+    doc.setChildTransform('br', -500, 0, 0); // simulate a transient drag past ALPHA
+    expect(alphaSide(doc)).toBe('left'); // the feeder flipped live, no command, no persisted side
+  });
+
+  it('a manual pin beats auto-facing', () => {
+    // BRAVO is to the right (auto would face right), but ALPHA is pinned 'up'.
+    expect(alphaSide(twoBoxDoc(500, { pinAlpha: 'up' }))).toBe('up');
+  });
+
+  it('strict mode (autoFacing off) keeps the authored side', () => {
+    // BRAVO to the left, but strict → ALPHA keeps its authored 'right'.
+    expect(alphaSide(twoBoxDoc(-500, { autoFacing: false }))).toBe('right');
+  });
+
+  it('detail view re-lays out the child so the arrow tip moves to the effective side', () => {
+    // Detail view renders real geometry: the arrow tip itself must move, not just
+    // the port side. BRAVO to the left → ALPHA's L1 tip lands on ALPHA's own left.
+    const detail = twoBoxDoc(-500, { boxMode: false });
+    expect(alphaSide(detail)).toBe('left');
+    // The re-layout changes the child frame vs the authored ('right') layout.
+    const authoredWidth = new CompositeLayoutEngine().layout(twoBoxDoc(500, { boxMode: false })).children.find((c) => c.instance.id === 'al')!.frame.width;
+    const flippedWidth = new CompositeLayoutEngine().layout(detail).children.find((c) => c.instance.id === 'al')!.frame.width;
+    expect(flippedWidth).not.toBe(authoredWidth);
+  });
+
+  it('box and detail views agree on the effective side (both-views consistency)', () => {
+    for (const bravoX of [500, -500]) {
+      const box = alphaSide(twoBoxDoc(bravoX, { boxMode: true }));
+      const detail = alphaSide(twoBoxDoc(bravoX, { boxMode: false }));
+      expect(detail).toBe(box);
+    }
+  });
+
+  it('SetAutoFacingCommand toggles the policy with undo', () => {
+    const doc = new CompositeDocument({ id: 'c', name: 'c' });
+    const stack = new CommandStack<CompositeDocument>();
+    stack.execute(new SetAutoFacingCommand(false, true), doc);
+    expect(doc.meta.autoFacing).toBe(true);
+    stack.undo(doc);
+    expect(doc.meta.autoFacing).toBe(false);
+  });
+
+  it('roundtrips meta.autoFacing and omits it when unset', () => {
+    const doc = buildSouthComposite();
+    expect(CompositeSerializer.toJSON(doc).meta.autoFacing).toBeUndefined();
+    doc.updateMeta({ autoFacing: true });
+    expect(CompositeSerializer.toJSON(doc).meta.autoFacing).toBe(true);
+    expect(CompositeSerializer.fromJSON(cycle(CompositeSerializer.toJSON(doc))).meta.autoFacing).toBe(true);
   });
 });

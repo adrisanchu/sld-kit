@@ -1,5 +1,6 @@
 import type { Command } from '../commands/Command';
 import type { SldDocument } from '../SldDocument';
+import type { ExternalDirection } from '../types';
 import { CompositeDocument } from './CompositeDocument';
 import { CompositeLine, type CompositeLineJson, type CompositeLineKind, type LineVertexJson } from './CompositeLine';
 import { DiagramInstance, type DiagramInstanceJson, type LabelPlacement } from './DiagramInstance';
@@ -171,6 +172,30 @@ export class UpdateLineKindCommand implements Command<CompositeDocument> {
   }
 }
 
+/**
+ * Pin (or clear) a feeder's exit direction on a child, via before/after
+ * snapshots — a deliberate per-instance override that beats the auto-facing
+ * policy and the child's authored direction. `undefined` clears the pin (back to
+ * auto/authored). Undoable like any discrete edit.
+ */
+export class SetPortDirectionCommand implements Command<CompositeDocument> {
+  constructor(
+    readonly label: string,
+    private instanceId: string,
+    private connectionId: string,
+    private before: ExternalDirection | undefined,
+    private after: ExternalDirection | undefined
+  ) {}
+
+  do(doc: CompositeDocument): void {
+    doc.setPortDirection(this.instanceId, this.connectionId, this.after);
+  }
+
+  undo(doc: CompositeDocument): void {
+    doc.setPortDirection(this.instanceId, this.connectionId, this.before);
+  }
+}
+
 /** Toggle the composite between the box (grid-level) view and the detailed view. */
 export class SetBoxModeCommand implements Command<CompositeDocument> {
   readonly label = 'Toggle box view';
@@ -186,5 +211,27 @@ export class SetBoxModeCommand implements Command<CompositeDocument> {
 
   undo(doc: CompositeDocument): void {
     doc.updateMeta({ boxMode: this.before });
+  }
+}
+
+/**
+ * Toggle the composite's auto-facing policy (strict ↔ flexible). Derived facing
+ * sides aren't persisted, so this only flips the policy flag; the layout
+ * re-derives every feeder's side on the next pass.
+ */
+export class SetAutoFacingCommand implements Command<CompositeDocument> {
+  readonly label = 'Toggle auto-facing';
+
+  constructor(
+    private before: boolean,
+    private after: boolean
+  ) {}
+
+  do(doc: CompositeDocument): void {
+    doc.updateMeta({ autoFacing: this.after });
+  }
+
+  undo(doc: CompositeDocument): void {
+    doc.updateMeta({ autoFacing: this.before });
   }
 }

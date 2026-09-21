@@ -33,6 +33,30 @@ export function sideFromAngle(angleDeg: number): BoxSide {
   return 'up';
 }
 
+/** Outward angle (degrees, 0 = +x, 90 = down) of a side — the inverse of {@link sideFromAngle}. */
+const SIDE_ANGLE: Record<BoxSide, number> = { right: 0, down: 90, left: 180, up: 270 };
+
+/**
+ * Rotate a child-local side into world axes by `deg` (the instance's rotation),
+ * so a feeder's effective exit direction (authored or pinned, both child-local)
+ * lands on the right world edge whatever the child's `angleDeg`.
+ */
+export function rotateSide(side: BoxSide, deg: number): BoxSide {
+  return sideFromAngle(SIDE_ANGLE[side] + deg);
+}
+
+/**
+ * The **world** side of `from` that faces `to`: the dominant axis of the peer
+ * vector (`|dx| ≥ |dy|` → left/right, else up/down). Diagonals quantise to the
+ * dominant axis. Drives the auto-facing policy — recomputed from live box
+ * centres every layout, so a drag re-derives the facing side for free.
+ */
+export function facingSide(from: Point, to: Point): BoxSide {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'down' : 'up';
+}
+
 /**
  * A floating connector: the world point a line attaches to, plus the side it
  * leaves along. The point is resolved *per view* (box perimeter vs SLD arrow
