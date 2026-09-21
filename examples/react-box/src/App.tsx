@@ -7,7 +7,9 @@ import {
   CompositeSerializer,
   CompositeSvgExporter,
   RemoveLineCommand,
+  SetAutoFacingCommand,
   SetBoxModeCommand,
+  SetPortDirectionCommand,
   TransformChildCommand,
   newId,
   type ChildLayout,
@@ -15,6 +17,7 @@ import {
   type CompositeDocument,
   type CompositeLineKind,
   type CompositeLineLayout,
+  type ExternalDirection,
   type LineVertexJson,
   type Point
 } from '@sld-kit/core';
@@ -26,7 +29,7 @@ import {
   useSldDocument,
   type CompositeCanvasHandle
 } from '@sld-kit/react';
-import { Boxes, Layers, Maximize, PenLine, MousePointer2, Redo2, Trash2, Undo2 } from 'lucide-react';
+import { Boxes, Layers, Magnet, Maximize, PenLine, MousePointer2, Redo2, Trash2, Undo2 } from 'lucide-react';
 import { buildBoxComposite, voltageClass, voltageFill } from './fixture';
 
 const LINE_KINDS: { kind: CompositeLineKind; label: string }[] = [
@@ -81,6 +84,7 @@ export default function App() {
   } | null>(null);
 
   const boxMode = !!composite.meta.boxMode;
+  const autoFacing = !!composite.meta.autoFacing;
   const run = useCallback((cmd: Command<CompositeDocument>) => stack.execute(cmd, composite), [stack, composite]);
 
   const childColorClass = useCallback((c: ChildLayout) => voltageClass(c.instance.resolved?.meta.voltageKv), []);
@@ -180,6 +184,18 @@ export default function App() {
   };
 
   const toggleBoxMode = () => run(new SetBoxModeCommand(boxMode, !boxMode));
+  const toggleAutoFacing = () => run(new SetAutoFacingCommand(autoFacing, !autoFacing));
+
+  // Pin a feeder's exit side (the canvas cycles it clockwise on click). The pin
+  // beats auto-facing; undo clears it back to auto/authored. `before` is the
+  // current pin so undo restores exactly.
+  const pinPortDirection = useCallback(
+    ({ instanceId, connectionId, side }: { instanceId: string; connectionId: string; side: ExternalDirection }) => {
+      const before = composite.getChild(instanceId)?.portDirections[connectionId];
+      run(new SetPortDirectionCommand('Pin feeder side', instanceId, connectionId, before, side));
+    },
+    [composite, run]
+  );
 
   const toggleDark = () => {
     const next = !dark;
@@ -254,6 +270,7 @@ export default function App() {
             setSelectedLineId(id);
             setSelectedChildId(null);
           }}
+          onPortDirection={pinPortDirection}
           onClearSelection={clearSelection}
         />
 
@@ -287,6 +304,13 @@ export default function App() {
           <Divider />
           <ToolButton title={boxMode ? 'Show detail' : 'Show boxes'} onClick={toggleBoxMode}>
             {boxMode ? <Layers className="h-4 w-4" /> : <Boxes className="h-4 w-4" />}
+          </ToolButton>
+          <ToolButton
+            title={autoFacing ? 'Auto-facing: on (feeders face their peer)' : 'Auto-facing: off (strict/authored)'}
+            active={autoFacing}
+            onClick={toggleAutoFacing}
+          >
+            <Magnet className="h-4 w-4" />
           </ToolButton>
           <ToolButton title="Delete line" disabled={!selectedLineId} onClick={deleteSelected}>
             <Trash2 className="h-4 w-4" />

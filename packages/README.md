@@ -107,15 +107,24 @@ Status legend: ✅ complete · 🚧 in progress · ⬜ pending
 A simplified "diagram of boxes": zoomed out each child is a voltage-coloured box
 (name + bus id); zoom in (explore fly-in) reveals its full SLD. Lines between
 boxes carry a **kind** — overhead (solid), cable (dashed), transformer (two-circle
-glyph) or demand (triangle terminus) — and drawing is constrained to orthogonal
-segments. Built as additive props on the existing composite components plus a
-small routing module; no new document type (extends `CompositeDocument`).
+glyph) or demand (triangle terminus) — and route with **floating connectors**:
+the core layout resolves each endpoint to the active view's frame (box perimeter
+vs SLD arrow tip) and computes the bends, so the *same* document lays out cleanly
+in both views. A feeder's exit side follows a `COALESCE`: a per-instance **pin**
+(highest), an optional **auto-facing** policy (`meta.autoFacing` — the side that
+faces the peer, derived from live positions, so it re-derives during a drag), then
+the child's **authored** direction. All in `@sld-kit/core` (extends
+`CompositeDocument`; no new document type), so both adapters and the SVG export
+inherit it.
 
-| Capability                                  | Where                                                      | Svelte 4 | React |
-| ------------------------------------------- | ---------------------------------------------------------- | :------: | :---: |
-| `boxMode` / `boxSubLabel`                   | `CompositeCanvas`, `ChildDiagramView`, `CompositeExplorer` |    ⬜    |  ✅   |
-| Line kinds + glyphs                         | `CompositeCanvas` (core `CompositeLine.kind` + layout)     |    ⬜    |  ✅   |
-| `orthogonal` draw + `orthogonalizePolyline` | `CompositeCanvas` + `routing`                              |    ⬜    |  ✅   |
+| Capability                                       | Where                                                      | Svelte 4 | React |
+| ------------------------------------------------ | ---------------------------------------------------------- | :------: | :---: |
+| `boxMode` / `boxSubLabel`                        | `CompositeCanvas`, `ChildDiagramView`, `CompositeExplorer` |    ⬜    |  ✅   |
+| Line kinds + glyphs                              | `CompositeCanvas` (core `CompositeLine.kind` + layout)     |    ⬜    |  ✅   |
+| `orthogonal` draw + `orthogonalizePolyline`      | `CompositeCanvas` + `routing`                              |    ⬜    |  ✅   |
+| Floating-connector router (`perimeterTips` snap) | core `CompositeLayoutEngine`; `snapTargets` prop           |    ⬜    |  ✅   |
+| Port-direction override (`onPortDirection`)      | `CompositeCanvas` feeder handle → `SetPortDirectionCommand` |    ⬜    |  ✅   |
+| Auto-facing policy (`meta.autoFacing`)           | core-derived; `SetAutoFacingCommand` (no adapter surface)  |    ⬜    |  ✅   |
 
 ### Flow overlays (generic, domain-agnostic)
 

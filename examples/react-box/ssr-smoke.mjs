@@ -67,6 +67,22 @@ const svg = new CompositeSvgExporter().export(composite, {
   boxSubLabel: (child) => String(child.instance.resolved?.meta.data?.busId ?? '')
 });
 
+// Auto-facing: with the policy on, a feeder derives its exit side from live box
+// positions, so moving a peer across a box flips which edge the tie leaves from.
+const alphaSideWithBetaAt = (betaX) => {
+  const doc = new CompositeDocument({ id: 'af', name: 'af', boxMode: true, defaultRouting: 'orthogonal', autoFacing: true });
+  doc.addChild(DiagramInstance.of({ id: 'a', libraryId: 'a', x: 0, y: 0 }));
+  doc.addChild(DiagramInstance.of({ id: 'b', libraryId: 'b', x: betaX, y: 0 }));
+  doc.addLine(new CompositeLine(newId(), [{ kind: 'anchor', instanceId: 'a', connectionId: 'a-b' }, { kind: 'anchor', instanceId: 'b', connectionId: 'b-a' }], 'line'));
+  doc.resolveChildren(resolver);
+  const l = new CompositeLayoutEngine().layout(doc);
+  const al = l.children.find((c) => c.instance.id === 'a');
+  const cx = al.worldBounds.x + al.worldBounds.width / 2;
+  return l.lines[0].points[0].x >= cx ? 'right' : 'left';
+};
+const facingRight = alphaSideWithBetaAt(900);
+const facingLeft = alphaSideWithBetaAt(-900);
+
 const checks = [
   ['renders an <svg>', /<svg/.test(html)],
   ['renders box names', html.includes('ALPHA') && html.includes('BETA') && html.includes('GAMMA')],
@@ -75,7 +91,8 @@ const checks = [
   ['draws a dashed cable', html.includes('stroke-dasharray="6 4"')],
   ['draws a transformer glyph backing', html.includes('fill-background')],
   ['export is office-safe (no class/style/marker)', !svg.includes('class=') && !svg.includes('<style') && !svg.includes('<marker')],
-  ['export renders boxes', svg.includes('ALPHA') && svg.includes('#dcfce7')]
+  ['export renders boxes', svg.includes('ALPHA') && svg.includes('#dcfce7')],
+  ['auto-facing derives the exit side from live positions', facingRight === 'right' && facingLeft === 'left']
 ];
 
 let failed = 0;

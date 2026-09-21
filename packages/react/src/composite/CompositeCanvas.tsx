@@ -5,11 +5,13 @@ import {
   firstFormat,
   linkConnections,
   lineConnections,
+  rotateSide,
   type CompositeLayout,
   type ChildLayout,
   type CompositeLineLayout,
   type LineGlyph,
   type ExternalConnectionTip,
+  type ExternalDirection,
   type Point,
   type Rect
 } from '@sld-kit/core';
@@ -106,6 +108,13 @@ export interface CompositeCanvasProps {
   onLineSegmentDown?: (detail: { id: string; index: number; point: Point; event: React.PointerEvent }) => void;
   onCanvasPoint?: (detail: { point: Point; snap: { instanceId: string; connectionId: string } | null }) => void;
   onDrawCommit?: () => void;
+  /**
+   * Box mode: the user clicked a feeder handle on the selected child to override
+   * its exit side. `side` is the next side in a clockwise cycle (a child-local
+   * {@link ExternalDirection}). Headless — the consumer runs the pin command
+   * (e.g. `SetPortDirectionCommand`); undo clears it back to auto/authored.
+   */
+  onPortDirection?: (detail: { instanceId: string; connectionId: string; side: ExternalDirection }) => void;
 }
 
 /** Imperative API, obtained with a `ref` — the analogue of Svelte's `bind:this`. */
@@ -166,7 +175,8 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     onLineVertexDelete,
     onLineSegmentDown,
     onCanvasPoint,
-    onDrawCommit
+    onDrawCommit,
+    onPortDirection
   },
   ref
 ) {
@@ -278,6 +288,30 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     e.preventDefault();
     suppressNextClick.current = true;
     onLineSegmentDown?.({ id, index, point, event: e });
+  };
+
+  // Clockwise successor of each box side — the pin cycle a feeder click walks.
+  const NEXT_SIDE = { up: 'right', right: 'down', down: 'left', left: 'up' } as const;
+
+  /**
+   * Click a feeder handle to override its exit side: derive the tip's current
+   * world side (its offset from the child centre), advance it one turn clockwise,
+   * un-rotate into the child's own frame, and emit it as a pin. Purely headless —
+   * the consumer decides how to persist it.
+   */
+  const handlePortDirection = (tip: ExternalConnectionTip, child: ChildLayout, e: React.PointerEvent) => {
+    if (!interactive) return;
+    e.stopPropagation();
+    e.preventDefault();
+    suppressNextClick.current = true;
+    const cx = child.worldBounds.x + child.worldBounds.width / 2;
+    const cy = child.worldBounds.y + child.worldBounds.height / 2;
+    const dx = tip.point.x - cx;
+    const dy = tip.point.y - cy;
+    const current: ExternalDirection = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'down' : 'up';
+    // The handle shows a world side; the pin is child-local, so un-rotate it.
+    const side = rotateSide(NEXT_SIDE[current], -child.instance.angleDeg);
+    onPortDirection?.({ instanceId: tip.instanceId, connectionId: tip.connectionId, side });
   };
 
   const handlePointerDown = useCallback(
@@ -500,6 +534,30 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
           )}
         </>
       )}
+
+      {/* Box-mode feeder handles on the selected child: click one to override its
+          exit side (cycles clockwise). Only shown for the selected box so the
+          canvas stays uncluttered; auto-facing needs no handle (it's derived). */}
+      {boxMode &&
+        interactive &&
+        !drawMode &&
+        selectedChild &&
+        onPortDirection &&
+        snapTargets
+          .filter((t) => t.instanceId === selectedChild.instance.id)
+          .map((t) => (
+            <circle
+              key={`pin:${t.connectionId}`}
+              cx={t.point.x}
+              cy={t.point.y}
+              r={cs.snapHandleRadius}
+              className="fill-background stroke-primary pointer-events-auto cursor-pointer"
+              strokeWidth={cs.handleStrokeWidth}
+              onPointerDown={(e) => handlePortDirection(t, selectedChild, e)}
+            >
+              <title>Click to rotate this feeder's exit side</title>
+            </circle>
+          ))}
 
       {/* Draw-mode overlay: snap targets + in-progress polyline. */}
       {drawMode && interactive && (
