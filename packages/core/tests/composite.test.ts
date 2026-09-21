@@ -15,14 +15,16 @@ import {
   SetBoxModeCommand,
   orthogonalizePolyline,
   DiagramInstance,
+  buildDocument,
+  newId,
   LABEL_ANCHORS,
   resolveNameLabelLayout,
   MapResolver,
   Transform2D,
   linkConnections,
   lineConnections,
+  CompositeDocument,
   type SldElement,
-  type CompositeDocument,
   type SldDocumentJson
 } from '../src';
 import {
@@ -839,5 +841,38 @@ describe('Line routing', () => {
     // The free bend at {250,400} stays a diagonal join — not re-routed.
     expect(line.points).toContainEqual({ x: 250, y: 400 });
     expect(axisAligned(line.points)).toBe(false);
+  });
+
+  // A demand's free end is a node-relative *lead* off its feeder, resolved per
+  // view — never the stored placeholder coordinate. The floating model runs in
+  // both the box and detail views of a box-epic composite, so toggling boxMode
+  // must not strand the demand at the origin (regression: the box→detail toggle
+  // flips meta.boxMode, so the lead has to survive the non-box view too).
+  it('resolves a demand to a node-relative lead in both box and detail views', () => {
+    const child = buildDocument({
+      meta: { id: 'fox', name: 'FOXTROT', substation: 'FOXTROT', voltageKv: 220 },
+      busbars: [{ label: 'BB', row: 0 }],
+      bays: [{ col: 0, positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'D1', direction: 'down', id: 'fox-dem' } }] }]
+    });
+    const res = new MapResolver(new Map([['fox', Serializer.toJSON(child)]]));
+
+    for (const boxMode of [true, false]) {
+      const doc = new CompositeDocument({ id: 'c', name: 'c', boxMode, defaultRouting: 'orthogonal' });
+      doc.addChild(DiagramInstance.of({ id: 'fox', libraryId: 'fox', x: 0, y: 0 }));
+      doc.addLine(
+        new CompositeLine(newId(), [{ kind: 'anchor', instanceId: 'fox', connectionId: 'fox-dem' }, { kind: 'point', x: 0, y: 0 }], 'demand')
+      );
+      doc.resolveChildren(res);
+      const [demand] = new CompositeLayoutEngine().layout(doc).lines;
+      const [a, b] = [demand.points[0], demand.points[demand.points.length - 1]];
+      expect(demand.kind).toBe('demand');
+      // A straight vertical lead (the 'down' feeder), never the stored (0,0).
+      expect(demand.points).toHaveLength(2);
+      expect(a.x).toBe(b.x);
+      expect(b.y).toBeGreaterThan(a.y);
+      expect(demand.points).not.toContainEqual({ x: 0, y: 0 });
+      // The triangle sits on the free (outward) end.
+      expect(demand.terminus?.at).toEqual(b);
+    }
   });
 });

@@ -296,8 +296,11 @@ export interface CompositeLayout {
   bounds: Rect;
 }
 
-/** A resolved box-view line endpoint: a floating port (anchored) or a free point. */
+/** A resolved floating-line endpoint: a floating port (anchored) or a free point. */
 type BoxEnd = { port: Port; point?: undefined } | { port?: undefined; point: Point } | null;
+
+/** The world point a resolved floating endpoint attaches at (port attach point or free point). */
+const floatingEndPoint = (e: NonNullable<BoxEnd>): Point => (e.port ? e.port.point : e.point);
 
 /**
  * Lays out a composite by reusing the existing single-diagram `LayoutEngine`
@@ -345,10 +348,14 @@ export class CompositeLayoutEngine {
       });
     }
 
-    // Box mode routes with floating connectors (attach per view + computed
-    // bends); the detail path keeps the fixed-connector tip resolution. Gating on
-    // box mode leaves non-box composites — even `orthogonal` ones — untouched.
-    if (boxMode) return this.layoutBox(doc, children, defaultRouting);
+    // The floating-connector model (attach-per-view, node-relative leads,
+    // orthogonal auto-routing) runs whenever the composite shows boxes OR uses
+    // orthogonal routing — the box epic. `boxMode` then only selects perimeter
+    // (box) vs SLD-tip (detail) attach, so a box composite stays consistent
+    // across the box↔detail toggle. Plain composites (straight routing, no box
+    // mode) keep the legacy fixed-connector path untouched.
+    const floating = boxMode || defaultRouting === 'orthogonal';
+    if (floating) return this.layoutFloating(doc, children, boxMode, defaultRouting);
 
     const lines = this.resolveLines(doc.allLines(), children, defaultRouting);
     // A manual line for a shared id takes precedence: suppress its auto-link.
@@ -360,22 +367,24 @@ export class CompositeLayoutEngine {
   }
 
   /**
-   * Box-view layout: resolve every line/link endpoint to a floating {@link Port}
-   * on the active view's frame (box perimeter) and route the bends orthogonally,
-   * so the same document lays out cleanly in both views with no stored pixel
-   * geometry. `straight` lines still draw their resolved points as-is.
+   * Floating-connector layout (the box epic, both views): resolve every line/link
+   * endpoint to a floating {@link Port} on the active view's frame — box perimeter
+   * when `boxMode`, else the SLD arrow tip — and route the bends orthogonally, so
+   * the same document lays out cleanly in both views with no stored pixel
+   * geometry. `straight`/`curved` lines still draw their resolved points as-is.
    */
-  private layoutBox(
+  private layoutFloating(
     doc: CompositeDocument,
     children: ChildLayout[],
+    boxMode: boolean,
     defaultRouting: LineRouting | undefined
   ): CompositeLayout {
-    const resolver = new PortResolver(children, true);
+    const resolver = new PortResolver(children, boxMode);
     const routingDefault = defaultRouting ?? 'straight';
 
     const lines: CompositeLineLayout[] = [];
     for (const line of doc.allLines()) {
-      const routed = this.routeBoxLine(line, resolver, line.routing ?? routingDefault);
+      const routed = this.routeFloatingLine(line, resolver, line.routing ?? routingDefault);
       if (routed) lines.push(routed);
     }
 
@@ -383,14 +392,14 @@ export class CompositeLayoutEngine {
     // then route the remaining auto-links through the same floating router.
     const claimed = new Set<string>();
     for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
-    const links = this.detectBoxLinks(children, resolver, claimed, routingDefault);
+    const links = this.detectFloatingLinks(children, resolver, claimed, routingDefault);
 
     return { children, links, lines, bounds: this.unionBounds(children, links, lines) };
   }
 
   /** Resolve one line's endpoints to floating ports and route its polyline. */
-  private routeBoxLine(line: CompositeLine, resolver: PortResolver, routing: LineRouting): CompositeLineLayout | null {
-    const ends = line.vertices.map((v) => this.resolveBoxEnd(v, resolver));
+  private routeFloatingLine(line: CompositeLine, resolver: PortResolver, routing: LineRouting): CompositeLineLayout | null {
+    const ends = line.vertices.map((v) => this.resolveFloatingEnd(v, resolver));
     const first = ends[0];
     const last = ends[ends.length - 1];
 
@@ -400,28 +409,35 @@ export class CompositeLayoutEngine {
     if (line.kind === 'demand') {
       const anchored = first?.port ? first : last?.port ? last : null;
       if (!anchored?.port) return null;
-      return this.decorateBoxLine(line, this.router.lead(anchored.port, DEMAND_LEAD_LENGTH));
+      return this.decorateFloatingLine(line, this.router.lead(anchored.port, DEMAND_LEAD_LENGTH));
     }
 
-    const orthogonal = routing === 'orthogonal';
-    let points: Point[] | null = null;
+    // Non-orthogonal styles draw every resolved vertex as-is (ports at their
+    // attach point), preserving intermediate free `point` bends. The auto router
+    // is used only for `orthogonal`, where it ignores intermediate bends and
+    // routes between the two floating ends (perpendicular stubs + L/Z join).
+    if (routing !== 'orthogonal') {
+      const pts = ends.flatMap((e) => (e ? [floatingEndPoint(e)] : []));
+      return pts.length >= 2 ? this.decorateFloatingLine(line, simplify(pts)) : null;
+    }
 
+    let points: Point[] | null = null;
     if (first?.port && last?.port) {
-      points = orthogonal ? this.router.route(first.port, last.port) : simplify([first.port.point, last.port.point]);
+      points = this.router.route(first.port, last.port);
     } else if (first?.port && last?.point) {
-      points = orthogonal ? this.router.toPoint(first.port, last.point) : simplify([first.port.point, last.point]);
+      points = this.router.toPoint(first.port, last.point);
     } else if (first?.point && last?.port) {
-      points = orthogonal ? this.router.toPoint(last.port, first.point) : simplify([last.port.point, first.point]);
+      points = this.router.toPoint(last.port, first.point);
     } else {
       // No floating end: draw the resolved free points straight (manual polyline).
       const raw = ends.flatMap((e) => (e?.point ? [e.point] : []));
       points = raw.length >= 2 ? simplify(raw) : null;
     }
 
-    return points ? this.decorateBoxLine(line, points) : null;
+    return points ? this.decorateFloatingLine(line, points) : null;
   }
 
-  private resolveBoxEnd(v: CompositeLine['vertices'][number], resolver: PortResolver): BoxEnd {
+  private resolveFloatingEnd(v: CompositeLine['vertices'][number], resolver: PortResolver): BoxEnd {
     if (v.kind === 'anchor') {
       const port = resolver.resolve(v.instanceId, v.connectionId);
       return port ? { port } : null;
@@ -430,8 +446,8 @@ export class CompositeLayoutEngine {
     return null; // `rel` bends aren't used by the auto router (phase 1)
   }
 
-  /** Attach the kind's stroke/glyph presentation to a routed box-view polyline. */
-  private decorateBoxLine(line: CompositeLine, points: Point[]): CompositeLineLayout {
+  /** Attach the kind's stroke/glyph presentation to a routed floating-line polyline. */
+  private decorateFloatingLine(line: CompositeLine, points: Point[]): CompositeLineLayout {
     const layout: CompositeLineLayout = { line, points, kind: line.kind };
 
     if (line.kind === 'cable') layout.dashArray = CABLE_DASH_ARRAY;
@@ -453,11 +469,12 @@ export class CompositeLayoutEngine {
   }
 
   /**
-   * Box-view auto-links: same shared-id detection as {@link detectLinks}, but
+   * Floating auto-links: same shared-id detection as {@link detectLinks}, but
    * each end resolves to a floating {@link Port} and the tie routes through the
-   * orthogonal router (matching the box lines), instead of a straight tip chord.
+   * orthogonal router (matching the floating lines) when the default routing is
+   * `orthogonal`, instead of a straight tip chord.
    */
-  private detectBoxLinks(
+  private detectFloatingLinks(
     children: ChildLayout[],
     resolver: PortResolver,
     suppressed: Set<string>,
