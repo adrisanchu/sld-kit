@@ -1,4 +1,5 @@
 import { newId } from '../ids';
+import type { LineRouting } from './routing';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -25,9 +26,33 @@ export type LineVertexJson =
   | { kind: 'rel'; t: number; ox: number; oy: number }
   | { kind: 'anchor'; instanceId: string; connectionId: string };
 
+/**
+ * The functional type of a composite line — drives its stroke style and any
+ * structural glyph the layout places on it. Open string, mirroring
+ * `PositionType`: the four defaults seed autocompletion, but any non-empty
+ * string is accepted and renders as a plain solid line.
+ *
+ *  - `line` — overhead line: a plain solid stroke (the default).
+ *  - `cable` — underground cable: a dashed stroke.
+ *  - `transformer` — a solid stroke with the two-circle transformer glyph at
+ *    its midpoint.
+ *  - `demand` — a solid stroke ending in a filled triangle (a simplified
+ *    distribution demand) at its free (non-anchored) end.
+ */
+export type CompositeLineKind = 'line' | 'cable' | 'transformer' | 'demand' | (string & {});
+
+export const DEFAULT_LINE_KIND: CompositeLineKind = 'line';
+
 export interface CompositeLineJson {
   /** Line id — unique within the composite (namespaced separately from children). */
   id: string;
+  /** Functional type; drives stroke style + glyph. Default `line`. */
+  kind?: CompositeLineKind;
+  /**
+   * Drawing style for the stored vertices. Absent → the composite's
+   * `meta.defaultRouting` (itself defaulting to `straight`). See {@link LineRouting}.
+   */
+  routing?: LineRouting;
   /** Ordered vertices of the polyline; at least two. */
   vertices: LineVertexJson[];
 }
@@ -44,7 +69,11 @@ export interface CompositeLineJson {
 export class CompositeLine {
   constructor(
     public readonly id: string,
-    public vertices: LineVertexJson[]
+    public vertices: LineVertexJson[],
+    /** Functional type; drives stroke style + glyph. Default `line` (overhead). */
+    public kind: CompositeLineKind = DEFAULT_LINE_KIND,
+    /** Drawing style; `undefined` inherits the composite's `defaultRouting`. */
+    public routing?: LineRouting
   ) {}
 
   /** Connection ids this line claims via anchor vertices (drives auto-link suppression). */
@@ -57,6 +86,8 @@ export class CompositeLine {
   toJSON(): CompositeLineJson {
     return {
       id: this.id,
+      kind: this.kind,
+      ...(this.routing !== undefined ? { routing: this.routing } : {}),
       vertices: this.vertices.map((v) =>
         v.kind === 'point'
           ? { kind: 'point', x: round2(v.x), y: round2(v.y) }
@@ -68,6 +99,6 @@ export class CompositeLine {
   }
 
   static fromJSON(json: CompositeLineJson): CompositeLine {
-    return new CompositeLine(json.id ?? newId(), json.vertices);
+    return new CompositeLine(json.id ?? newId(), json.vertices, json.kind ?? DEFAULT_LINE_KIND, json.routing);
   }
 }

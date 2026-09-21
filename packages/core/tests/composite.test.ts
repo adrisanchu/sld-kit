@@ -10,15 +10,25 @@ import {
   CommandStack,
   TransformChildCommand,
   SetChildLabelCommand,
+  AddLineCommand,
+  UpdateLineKindCommand,
+  SetBoxModeCommand,
+  SetPortDirectionCommand,
+  SetAutoFacingCommand,
+  facingSide,
+  orthogonalizePolyline,
   DiagramInstance,
+  buildDocument,
+  newId,
+  type ExternalDirection,
   LABEL_ANCHORS,
   resolveNameLabelLayout,
   MapResolver,
   Transform2D,
   linkConnections,
   lineConnections,
+  CompositeDocument,
   type SldElement,
-  type CompositeDocument,
   type SldDocumentJson
 } from '../src';
 import {
@@ -620,5 +630,469 @@ describe('South ⇄ West 400 kV (high-level authoring)', () => {
         expect(after.lines[li].points[i].y).toBeCloseTo(before.lines[li].points[i].y + dy, 6);
       }
     }
+  });
+});
+
+describe('Box view — line kind', () => {
+  it('defaults a line kind to `line` and roundtrips a non-default kind', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.getLine('line-1')!.kind = 'cable';
+    const json1 = CompositeSerializer.toJSON(doc);
+    expect(json1.lines[0].kind).toBe('cable');
+    const back = CompositeSerializer.fromJSON(cycle(json1));
+    expect(back.getLine('line-1')!.kind).toBe('cable');
+    expect(CompositeSerializer.toJSON(back)).toEqual(json1);
+  });
+
+  it('loads a v1 document (no kind, no boxMode) with defaults', () => {
+    const v1 = {
+      version: 1,
+      kind: 'composite',
+      meta: { id: 'm', name: 'x' },
+      children: [],
+      lines: [{ id: 'l', vertices: [{ kind: 'point', x: 0, y: 0 }, { kind: 'point', x: 10, y: 0 }] }]
+    };
+    const doc = CompositeSerializer.fromJSON(v1);
+    expect(doc.getLine('l')!.kind).toBe('line');
+    expect(doc.meta.boxMode).toBeUndefined();
+  });
+
+  it('rejects an empty-string line kind', () => {
+    const bad = {
+      version: COMPOSITE_SCHEMA_VERSION,
+      kind: 'composite',
+      meta: { id: 'm', name: 'x' },
+      children: [],
+      lines: [{ id: 'l', kind: '', vertices: [{ kind: 'point', x: 0, y: 0 }, { kind: 'point', x: 1, y: 1 }] }]
+    };
+    expect(() => CompositeSerializer.fromJSON(bad)).toThrow(/invalid kind/);
+  });
+
+  it('places the transformer glyph at the polyline arc-length midpoint', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.getLine('line-1')!.kind = 'transformer';
+    doc.resolveChildren(resolver());
+    const line = new CompositeLayoutEngine().layout(doc).lines.find((l) => l.line.id === 'line-1')!;
+    expect(line.kind).toBe('transformer');
+    expect(line.glyph).toBeDefined();
+    expect(line.glyph!.key).toBe('external:transformer');
+    // The midpoint lies on the resolved polyline's bounding span.
+    const xs = line.points.map((p) => p.x);
+    const ys = line.points.map((p) => p.y);
+    expect(line.glyph!.at.x).toBeGreaterThanOrEqual(Math.min(...xs) - 1e-6);
+    expect(line.glyph!.at.x).toBeLessThanOrEqual(Math.max(...xs) + 1e-6);
+    expect(line.glyph!.at.y).toBeGreaterThanOrEqual(Math.min(...ys) - 1e-6);
+    expect(line.glyph!.at.y).toBeLessThanOrEqual(Math.max(...ys) + 1e-6);
+  });
+
+  it('places the demand triangle at the line free (non-anchored) end', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.addLine(
+      new CompositeLine(
+        'dem',
+        [
+          { kind: 'anchor', instanceId: HV_INSTANCE_ID, connectionId: SHARED_LINK_ID },
+          { kind: 'point', x: 999, y: -777 }
+        ],
+        'demand'
+      )
+    );
+    doc.resolveChildren(resolver());
+    const line = new CompositeLayoutEngine().layout(doc).lines.find((l) => l.line.id === 'dem')!;
+    expect(line.terminus).toBeDefined();
+    expect(line.terminus!.key).toBe('external:demand');
+    expect(line.terminus!.at).toEqual({ x: 999, y: -777 });
+  });
+
+  it('gives a cable a structural dash default; plain lines stay solid', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.getLine('line-1')!.kind = 'cable';
+    doc.resolveChildren(resolver());
+    const cable = new CompositeLayoutEngine().layout(doc).lines.find((l) => l.line.id === 'line-1')!;
+    expect(cable.dashArray).toBeTruthy();
+
+    doc.getLine('line-1')!.kind = 'line';
+    const solid = new CompositeLayoutEngine().layout(doc).lines.find((l) => l.line.id === 'line-1')!;
+    expect(solid.dashArray).toBeUndefined();
+    expect(solid.glyph).toBeUndefined();
+    expect(solid.terminus).toBeUndefined();
+  });
+
+  it('UpdateLineKindCommand do/undo swaps the kind', () => {
+    const doc = buildSouthCompositeWithLine();
+    const stack = new CommandStack<CompositeDocument>();
+    stack.execute(new UpdateLineKindCommand('line-1', 'line', 'transformer'), doc);
+    expect(doc.getLine('line-1')!.kind).toBe('transformer');
+    stack.undo(doc);
+    expect(doc.getLine('line-1')!.kind).toBe('line');
+  });
+
+  it('AddLineCommand carries the chosen kind', () => {
+    const doc = buildSouthComposite();
+    const stack = new CommandStack<CompositeDocument>();
+    stack.execute(
+      new AddLineCommand(
+        new CompositeLine('new', [{ kind: 'point', x: 0, y: 0 }, { kind: 'point', x: 5, y: 5 }], 'cable')
+      ),
+      doc
+    );
+    expect(doc.getLine('new')!.kind).toBe('cable');
+  });
+});
+
+describe('Box view — box mode', () => {
+  it('roundtrips meta.boxMode and omits it when unset', () => {
+    const doc = buildSouthComposite();
+    expect(CompositeSerializer.toJSON(doc).meta.boxMode).toBeUndefined();
+    doc.updateMeta({ boxMode: true });
+    const json = CompositeSerializer.toJSON(doc);
+    expect(json.meta.boxMode).toBe(true);
+    expect(CompositeSerializer.fromJSON(cycle(json)).meta.boxMode).toBe(true);
+  });
+
+  it('SetBoxModeCommand do/undo toggles the flag', () => {
+    const doc = buildSouthComposite();
+    const stack = new CommandStack<CompositeDocument>();
+    stack.execute(new SetBoxModeCommand(false, true), doc);
+    expect(doc.meta.boxMode).toBe(true);
+    stack.undo(doc);
+    expect(doc.meta.boxMode).toBe(false);
+  });
+
+  it('exports children as boxes (name + sub-label) and stays Office-safe', () => {
+    const doc = buildSouthComposite();
+    doc.updateMeta({ boxMode: true });
+    doc.resolveChildren(resolver());
+    const svg = new CompositeSvgExporter().export(doc, {
+      boxFill: () => '#dbeafe',
+      boxSubLabel: (c) => `#${c.instance.libraryId.slice(0, 4)}`
+    });
+    expect(svg).toContain('South 400 kV');
+    expect(svg).toContain('#dbeafe');
+    expect(svg).not.toContain('class=');
+    expect(svg).not.toContain('<style');
+    expect(svg).not.toContain('<marker');
+    expect(svg).not.toContain('<foreignObject');
+  });
+
+  it('roundtrips line.routing and meta.defaultRouting', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.updateMeta({ defaultRouting: 'orthogonal' });
+    doc.getLine('line-1')!.routing = 'straight';
+    const json1 = CompositeSerializer.toJSON(doc);
+    expect(json1.meta.defaultRouting).toBe('orthogonal');
+    expect(json1.lines[0].routing).toBe('straight');
+    const back = CompositeSerializer.fromJSON(cycle(json1));
+    expect(back.meta.defaultRouting).toBe('orthogonal');
+    expect(back.getLine('line-1')!.routing).toBe('straight');
+    expect(CompositeSerializer.toJSON(back)).toEqual(json1);
+  });
+
+  it('exports cable lines dashed and transformer lines with a glyph, Office-safe', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.getLine('line-1')!.kind = 'transformer';
+    doc.addLine(
+      new CompositeLine(
+        'cab',
+        [
+          { kind: 'anchor', instanceId: MV_INSTANCE_ID, connectionId: SHARED_LINK_ID },
+          { kind: 'point', x: 120, y: 300 }
+        ],
+        'cable'
+      )
+    );
+    doc.resolveChildren(resolver());
+    const svg = new CompositeSvgExporter().export(doc);
+    expect(svg).toContain('stroke-dasharray="6 4"'); // the cable
+    expect(svg).not.toContain('<marker');
+    expect(svg).not.toContain('class=');
+  });
+});
+
+describe('Line routing', () => {
+  const axisAligned = (pts: { x: number; y: number }[]) =>
+    pts.every((p, i) => i === 0 || p.x === pts[i - 1].x || p.y === pts[i - 1].y);
+
+  it('orthogonalizePolyline inserts a dominant-axis elbow (or nothing when aligned)', () => {
+    expect(orthogonalizePolyline([{ x: 0, y: 0 }, { x: 10, y: 4 }])).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 4 }
+    ]);
+    expect(orthogonalizePolyline([{ x: 0, y: 0 }, { x: 4, y: 10 }])).toEqual([
+      { x: 0, y: 0 },
+      { x: 0, y: 10 },
+      { x: 4, y: 10 }
+    ]);
+    expect(orthogonalizePolyline([{ x: 0, y: 0 }, { x: 10, y: 0 }])).toEqual([{ x: 0, y: 0 }, { x: 10, y: 0 }]);
+  });
+
+  it('meta.defaultRouting orthogonal makes every resolved line segment axis-aligned', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.updateMeta({ defaultRouting: 'orthogonal' });
+    doc.resolveChildren(resolver());
+    const line = new CompositeLayoutEngine().layout(doc).lines[0];
+    expect(line.points.length).toBeGreaterThanOrEqual(2);
+    expect(axisAligned(line.points)).toBe(true);
+  });
+
+  it('a per-line straight override opts out of an orthogonal default', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.updateMeta({ defaultRouting: 'orthogonal' });
+    doc.getLine('line-1')!.routing = 'straight';
+    doc.resolveChildren(resolver());
+    const line = new CompositeLayoutEngine().layout(doc).lines[0];
+    // The free bend at {250,400} stays a diagonal join — not re-routed.
+    expect(line.points).toContainEqual({ x: 250, y: 400 });
+    expect(axisAligned(line.points)).toBe(false);
+  });
+
+  // A demand's free end is a node-relative *lead* off its feeder, resolved per
+  // view — never the stored placeholder coordinate. The floating model runs in
+  // both the box and detail views of a box-epic composite, so toggling boxMode
+  // must not strand the demand at the origin (regression: the box→detail toggle
+  // flips meta.boxMode, so the lead has to survive the non-box view too).
+  it('resolves a demand to a node-relative lead in both box and detail views', () => {
+    const child = buildDocument({
+      meta: { id: 'fox', name: 'FOXTROT', substation: 'FOXTROT', voltageKv: 220 },
+      busbars: [{ label: 'BB', row: 0 }],
+      bays: [{ col: 0, positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'D1', direction: 'down', id: 'fox-dem' } }] }]
+    });
+    const res = new MapResolver(new Map([['fox', Serializer.toJSON(child)]]));
+
+    for (const boxMode of [true, false]) {
+      const doc = new CompositeDocument({ id: 'c', name: 'c', boxMode, defaultRouting: 'orthogonal' });
+      doc.addChild(DiagramInstance.of({ id: 'fox', libraryId: 'fox', x: 0, y: 0 }));
+      doc.addLine(
+        new CompositeLine(newId(), [{ kind: 'anchor', instanceId: 'fox', connectionId: 'fox-dem' }, { kind: 'point', x: 0, y: 0 }], 'demand')
+      );
+      doc.resolveChildren(res);
+      const [demand] = new CompositeLayoutEngine().layout(doc).lines;
+      const [a, b] = [demand.points[0], demand.points[demand.points.length - 1]];
+      expect(demand.kind).toBe('demand');
+      // A straight vertical lead (the 'down' feeder), never the stored (0,0).
+      expect(demand.points).toHaveLength(2);
+      expect(a.x).toBe(b.x);
+      expect(b.y).toBeGreaterThan(a.y);
+      expect(demand.points).not.toContainEqual({ x: 0, y: 0 });
+      // The triangle sits on the free (outward) end.
+      expect(demand.terminus?.at).toEqual(b);
+    }
+  });
+});
+
+describe('Port direction override (COALESCE)', () => {
+  // A child with one explicit-direction feeder ('a' → down) and one implicit
+  // feeder ('b', no authored direction — the layout derives it from row).
+  const childDoc = () =>
+    buildDocument({
+      meta: { id: 'k', name: 'K', substation: 'K', voltageKv: 220 },
+      busbars: [{ label: 'BB', row: 0 }],
+      bays: [
+        { col: 0, positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'A', direction: 'down', id: 'a' } }] },
+        { col: 1, positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'B', id: 'b' } }] }
+      ]
+    });
+  const childResolver = () => new MapResolver(new Map([['k', Serializer.toJSON(childDoc())]]));
+
+  it('effectiveDirection coalesces pin → facing → authored (implicit → null)', () => {
+    const inst = DiagramInstance.of({ id: 'k', libraryId: 'k' });
+    inst.resolve(childResolver());
+
+    // Authored base: explicit feeder direction, else null (implicit).
+    expect(inst.authoredDirection('a')).toBe('down');
+    expect(inst.authoredDirection('b')).toBeNull();
+    expect(inst.effectiveDirection('a')).toBe('down');
+    expect(inst.effectiveDirection('b')).toBeNull();
+
+    // Injected facing beats authored; a manual pin beats facing.
+    expect(inst.effectiveDirection('a', { facing: 'left' })).toBe('left');
+    inst.portDirections = { a: 'right' };
+    expect(inst.effectiveDirection('a')).toBe('right');
+    expect(inst.effectiveDirection('a', { facing: 'left' })).toBe('right');
+  });
+
+  it('a pin flips the feeder exit side in the box view', () => {
+    const build = () => {
+      const doc = new CompositeDocument({ id: 'c', name: 'c', boxMode: true, defaultRouting: 'orthogonal' });
+      doc.addChild(DiagramInstance.of({ id: 'k', libraryId: 'k' }));
+      doc.addLine(
+        new CompositeLine(newId(), [{ kind: 'anchor', instanceId: 'k', connectionId: 'a' }, { kind: 'point', x: 0, y: 0 }], 'demand')
+      );
+      doc.resolveChildren(childResolver());
+      return doc;
+    };
+    const engine = new CompositeLayoutEngine();
+
+    const doc = build();
+    const authored = engine.layout(doc).lines[0].points;
+    // Authored 'down': the lead runs vertically downward.
+    expect(authored[authored.length - 1].y).toBeGreaterThan(authored[0].y);
+    expect(authored[authored.length - 1].x).toBe(authored[0].x);
+
+    doc.setPortDirection('k', 'a', 'right');
+    const pinned = engine.layout(doc).lines[0].points;
+    // Pinned 'right': the lead now runs horizontally to the right.
+    expect(pinned[pinned.length - 1].x).toBeGreaterThan(pinned[0].x);
+    expect(pinned[pinned.length - 1].y).toBe(pinned[0].y);
+  });
+
+  it('SetPortDirectionCommand pins and undo clears the pin', () => {
+    const doc = new CompositeDocument({ id: 'c', name: 'c' });
+    doc.addChild(DiagramInstance.of({ id: 'k', libraryId: 'k' }));
+    const stack = new CommandStack<CompositeDocument>();
+
+    stack.execute(new SetPortDirectionCommand('Pin feeder', 'k', 'a', undefined, 'left'), doc);
+    expect(doc.getChild('k')!.portDirections).toEqual({ a: 'left' });
+    stack.undo(doc);
+    expect(doc.getChild('k')!.portDirections).toEqual({});
+  });
+
+  it('roundtrips child.portDirections and omits it when empty', () => {
+    const doc = buildSouthComposite();
+    const child = doc.allChildren()[0];
+    expect(CompositeSerializer.toJSON(doc).children[0].portDirections).toBeUndefined();
+
+    doc.setPortDirection(child.id, 'feeder-x', 'up');
+    const json = CompositeSerializer.toJSON(doc);
+    expect(json.children[0].portDirections).toEqual({ 'feeder-x': 'up' });
+    const back = CompositeSerializer.fromJSON(cycle(json));
+    expect(back.getChild(child.id)!.portDirections).toEqual({ 'feeder-x': 'up' });
+  });
+
+  it('rejects an invalid port direction', () => {
+    const bad = {
+      version: COMPOSITE_SCHEMA_VERSION,
+      kind: 'composite',
+      meta: { id: 'm', name: 'x' },
+      children: [{ id: 'a', libraryId: 'l', x: 0, y: 0, angleDeg: 0, portDirections: { f: 'sideways' } }],
+      lines: []
+    };
+    expect(() => CompositeSerializer.fromJSON(bad)).toThrow(/invalid port direction/);
+  });
+
+  it('loads a document with no portDirections as an empty pin map', () => {
+    const doc = CompositeSerializer.fromJSON({
+      version: COMPOSITE_SCHEMA_VERSION,
+      kind: 'composite',
+      meta: { id: 'm', name: 'x' },
+      children: [{ id: 'a', libraryId: 'l', x: 0, y: 0, angleDeg: 0 }],
+      lines: []
+    });
+    expect(doc.getChild('a')!.portDirections).toEqual({});
+  });
+});
+
+describe('Auto-facing policy', () => {
+  it('facingSide picks the dominant axis (diagonals quantise to it)', () => {
+    const o = { x: 0, y: 0 };
+    expect(facingSide(o, { x: 10, y: 3 })).toBe('right');
+    expect(facingSide(o, { x: -10, y: 3 })).toBe('left');
+    expect(facingSide(o, { x: 3, y: 10 })).toBe('down');
+    expect(facingSide(o, { x: 3, y: -10 })).toBe('up');
+    // Diagonal: the bigger delta wins.
+    expect(facingSide(o, { x: 10, y: 9 })).toBe('right');
+    expect(facingSide(o, { x: 9, y: 10 })).toBe('down');
+  });
+
+  // ALPHA (feeder authored 'right') tied to BRAVO (authored 'left'); BRAVO placed
+  // at `bravoX`. A single overhead line between them, box mode, orthogonal.
+  const twoBoxDoc = (bravoX: number, opts: { autoFacing?: boolean; pinAlpha?: ExternalDirection; boxMode?: boolean } = {}) => {
+    const box = (id: string, name: string, feederId: string, dir: ExternalDirection) =>
+      buildDocument({
+        meta: { id, name, substation: name, voltageKv: 400 },
+        busbars: [{ label: 'BB', row: 0 }],
+        bays: [{ col: 0, positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'L1', direction: dir, id: feederId } }] }]
+      });
+    const res = new MapResolver(
+      new Map([
+        ['al', Serializer.toJSON(box('al', 'ALPHA', 'a-b', 'right'))],
+        ['br', Serializer.toJSON(box('br', 'BRAVO', 'b-a', 'left'))]
+      ])
+    );
+    const doc = new CompositeDocument({
+      id: 'c',
+      name: 'c',
+      boxMode: opts.boxMode ?? true,
+      defaultRouting: 'orthogonal',
+      autoFacing: opts.autoFacing ?? true
+    });
+    doc.addChild(DiagramInstance.of({ id: 'al', libraryId: 'al', x: 0, y: 0, portDirections: opts.pinAlpha ? { 'a-b': opts.pinAlpha } : {} }));
+    doc.addChild(DiagramInstance.of({ id: 'br', libraryId: 'br', x: bravoX, y: 0 }));
+    doc.addLine(new CompositeLine(newId(), [{ kind: 'anchor', instanceId: 'al', connectionId: 'a-b' }, { kind: 'anchor', instanceId: 'br', connectionId: 'b-a' }], 'line'));
+    doc.resolveChildren(res);
+    return doc;
+  };
+
+  // ALPHA's resolved exit side, read from its line attach point (kept exactly by
+  // the router) relative to ALPHA's box centre — robust even when a straight run
+  // simplifies the stub away.
+  const alphaSide = (doc: CompositeDocument): ExternalDirection => {
+    const layout = new CompositeLayoutEngine().layout(doc);
+    const al = layout.children.find((c) => c.instance.id === 'al')!;
+    const cx = al.worldBounds.x + al.worldBounds.width / 2;
+    const cy = al.worldBounds.y + al.worldBounds.height / 2;
+    const at = layout.lines[0].points[0];
+    const dx = at.x - cx;
+    const dy = at.y - cy;
+    return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'down' : 'up';
+  };
+
+  it('derives the exit side from live positions', () => {
+    expect(alphaSide(twoBoxDoc(500))).toBe('right'); // BRAVO to the right → ALPHA faces right
+    expect(alphaSide(twoBoxDoc(-500))).toBe('left'); // BRAVO to the left → ALPHA faces left
+  });
+
+  it('re-derives facing when a box is dragged across its peer (drag frame)', () => {
+    const doc = twoBoxDoc(500);
+    expect(alphaSide(doc)).toBe('right');
+    doc.setChildTransform('br', -500, 0, 0); // simulate a transient drag past ALPHA
+    expect(alphaSide(doc)).toBe('left'); // the feeder flipped live, no command, no persisted side
+  });
+
+  it('a manual pin beats auto-facing', () => {
+    // BRAVO is to the right (auto would face right), but ALPHA is pinned 'up'.
+    expect(alphaSide(twoBoxDoc(500, { pinAlpha: 'up' }))).toBe('up');
+  });
+
+  it('strict mode (autoFacing off) keeps the authored side', () => {
+    // BRAVO to the left, but strict → ALPHA keeps its authored 'right'.
+    expect(alphaSide(twoBoxDoc(-500, { autoFacing: false }))).toBe('right');
+  });
+
+  it('detail view re-lays out the child so the arrow tip moves to the effective side', () => {
+    // Detail view renders real geometry: the arrow tip itself must move, not just
+    // the port side. BRAVO to the left → ALPHA's L1 tip lands on ALPHA's own left.
+    const detail = twoBoxDoc(-500, { boxMode: false });
+    expect(alphaSide(detail)).toBe('left');
+    // The re-layout changes the child frame vs the authored ('right') layout.
+    const authoredWidth = new CompositeLayoutEngine().layout(twoBoxDoc(500, { boxMode: false })).children.find((c) => c.instance.id === 'al')!.frame.width;
+    const flippedWidth = new CompositeLayoutEngine().layout(detail).children.find((c) => c.instance.id === 'al')!.frame.width;
+    expect(flippedWidth).not.toBe(authoredWidth);
+  });
+
+  it('box and detail views agree on the effective side (both-views consistency)', () => {
+    for (const bravoX of [500, -500]) {
+      const box = alphaSide(twoBoxDoc(bravoX, { boxMode: true }));
+      const detail = alphaSide(twoBoxDoc(bravoX, { boxMode: false }));
+      expect(detail).toBe(box);
+    }
+  });
+
+  it('SetAutoFacingCommand toggles the policy with undo', () => {
+    const doc = new CompositeDocument({ id: 'c', name: 'c' });
+    const stack = new CommandStack<CompositeDocument>();
+    stack.execute(new SetAutoFacingCommand(false, true), doc);
+    expect(doc.meta.autoFacing).toBe(true);
+    stack.undo(doc);
+    expect(doc.meta.autoFacing).toBe(false);
+  });
+
+  it('roundtrips meta.autoFacing and omits it when unset', () => {
+    const doc = buildSouthComposite();
+    expect(CompositeSerializer.toJSON(doc).meta.autoFacing).toBeUndefined();
+    doc.updateMeta({ autoFacing: true });
+    expect(CompositeSerializer.toJSON(doc).meta.autoFacing).toBe(true);
+    expect(CompositeSerializer.fromJSON(cycle(CompositeSerializer.toJSON(doc))).meta.autoFacing).toBe(true);
   });
 });

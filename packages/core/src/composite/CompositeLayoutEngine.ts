@@ -1,14 +1,48 @@
 import { Connection } from '../elements/Connection';
+import { SldDocument } from '../SldDocument';
+import { Serializer } from '../serialization/Serializer';
+import type { ExternalDirection } from '../types';
+import { SLD_LAYOUT, type SldLayoutConfig } from '../layout';
 import { LayoutEngine, type DiagramLayout } from '../layout/LayoutEngine';
 import { Transform2D } from '../layout/Transform2D';
 import type { Point, Rect } from '../layout/geometry';
 import { CompositeDocument } from './CompositeDocument';
-import { CompositeLine } from './CompositeLine';
+import { CompositeLine, type CompositeLineKind, type LineVertexJson } from './CompositeLine';
+import { routePolyline, type LineRouting } from './routing';
 import { chordFrame } from './lineFrame';
 import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
+import { OrthogonalRouter } from './OrthogonalRouter';
+import { PortResolver, feederKey } from './PortResolver';
+import { facingSide, rotateSide, type Port } from './ports';
+import { CABLE_DASH_ARRAY, DEMAND_LEAD_LENGTH, DEMAND_SYMBOL, TRANSFORMER_SYMBOL } from './layout-constants';
+import { arcMidpoint, segmentAngleDeg, simplify } from './polyline';
 
 /** Fixed frame for an unresolved child, so it stays selectable and movable. */
 export const PLACEHOLDER_FRAME = { width: 360, height: 240 } as const;
+
+/**
+ * Compact single-diagram layout used for box-mode children. It hides feeder
+ * labels (box mode never shows them), so margins, stems and `externalLabelRoom`
+ * shrink and the child frame hugs its connection tips — the box then wraps the
+ * bus tightly while lines still anchor to the real, non-overlapping SLD tips.
+ */
+export const BOX_CHILD_LAYOUT: SldLayoutConfig = {
+  ...SLD_LAYOUT,
+  margin: 30,
+  cellWidth: 74,
+  cellHeight: 34,
+  cellGapX: 16,
+  cellGapY: 16,
+  busBarRowHeight: 14,
+  busBarThickness: 4,
+  busBarOverhang: 10,
+  positionBoxWidth: 56,
+  positionBoxHeight: 28,
+  externalStemLength: 16,
+  arrowSize: 6,
+  symbolSize: 12,
+  externalLabelRoom: 8
+};
 
 /** Gap kept between the name label and the frame edge it hugs, in child-local units. */
 export const NAME_LABEL_PAD = 6;
@@ -209,6 +243,16 @@ export function lineConnections(line: CompositeLine, children: ChildLayout[]): C
   );
 }
 
+/** A structural glyph placed on a line: a `SymbolRegistry` key + a placement. */
+export interface LineGlyph {
+  /** `SymbolRegistry` key, e.g. `external:transformer` / `external:demand`. */
+  key: string;
+  /** Centre of the glyph box, in world coordinates. */
+  at: Point;
+  /** Orientation of the local segment the glyph sits on, in degrees. */
+  angleDeg: number;
+}
+
 export interface CompositeLineLayout {
   line: CompositeLine;
   /**
@@ -217,6 +261,26 @@ export interface CompositeLineLayout {
    * dropped; a line with fewer than two resolvable vertices is omitted entirely.
    */
   points: Point[];
+  /** Functional type, mirrored from the line for renderers/exporters. */
+  kind: CompositeLineKind;
+  /** Structural default dash pattern for the kind (`cable` → dashed); else undefined. */
+  dashArray?: string;
+  /**
+   * The transformer glyph (two circles) at the polyline's arc-length midpoint —
+   * present only for `kind === 'transformer'`.
+   */
+  glyph?: LineGlyph;
+  /**
+   * The demand triangle at the line's free (non-anchored) end, pointing outward —
+   * present only for `kind === 'demand'` with a resolvable free end.
+   */
+  terminus?: LineGlyph;
+}
+
+/** Point at the polyline's arc-length midpoint, plus the angle of the segment it lies on. */
+function polylineMidpoint(points: Point[]): LineGlyph | null {
+  const mid = arcMidpoint(points);
+  return mid ? { key: TRANSFORMER_SYMBOL, at: mid.at, angleDeg: mid.angleDeg } : null;
 }
 
 /** An external connection tip in world coordinates — snap/convert targets for the UI. */
@@ -235,6 +299,12 @@ export interface CompositeLayout {
   bounds: Rect;
 }
 
+/** A resolved floating-line endpoint: a floating port (anchored) or a free point. */
+type BoxEnd = { port: Port; point?: undefined } | { port?: undefined; point: Point } | null;
+
+/** The world point a resolved floating endpoint attaches at (port attach point or free point). */
+const floatingEndPoint = (e: NonNullable<BoxEnd>): Point => (e.port ? e.port.point : e.point);
+
 /**
  * Lays out a composite by reusing the existing single-diagram `LayoutEngine`
  * per child, unchanged: each resolved child is laid out in its own local
@@ -242,39 +312,339 @@ export interface CompositeLayout {
  * composite merely wraps that geometry in the instance's `Transform2D`.
  */
 export class CompositeLayoutEngine {
-  constructor(private childEngine: LayoutEngine = new LayoutEngine()) {}
+  private boxChildEngine: LayoutEngine;
+  /** Detail-view child layouts with swapped directions, keyed by `(libraryId, dir signature)`. */
+  private detailLayoutCache = new Map<string, DiagramLayout>();
+
+  constructor(
+    private childEngine: LayoutEngine = new LayoutEngine(),
+    boxChildEngine?: LayoutEngine,
+    /** Floating-connector router used for the box view's `orthogonal`/auto lines. */
+    private readonly router: OrthogonalRouter = new OrthogonalRouter()
+  ) {
+    this.boxChildEngine = boxChildEngine ?? new LayoutEngine(BOX_CHILD_LAYOUT);
+  }
 
   layout(doc: CompositeDocument): CompositeLayout {
-    const children: ChildLayout[] = [];
+    const boxMode = doc.meta.boxMode ?? false;
+    const defaultRouting = doc.meta.defaultRouting;
+    // Box mode lays children out compactly so the box hugs its connection tips.
+    const engine = boxMode ? this.boxChildEngine : this.childEngine;
+    let children = doc.allChildren().map((instance) =>
+      this.makeChildLayout(instance, instance.resolved ? engine.layout(instance.resolved) : null)
+    );
 
-    for (const instance of doc.allChildren()) {
-      const resolved = instance.resolved;
-      const layout = resolved ? this.childEngine.layout(resolved) : null;
-      const frame: Rect = layout
-        ? { x: 0, y: 0, width: layout.size.width, height: layout.size.height }
-        : { x: 0, y: 0, width: PLACEHOLDER_FRAME.width, height: PLACEHOLDER_FRAME.height };
-      const pivot: Point = { x: frame.width / 2, y: frame.height / 2 };
-      const transform = new Transform2D(instance.x, instance.y, instance.angleDeg, pivot);
-      children.push({
-        instance,
-        layout,
-        transform,
-        frame,
-        worldBounds: transform.boundsOf(frame),
-        worldCorners: transform.applyRect(frame),
-        labelAngleDeg: labelFlipDeg(instance.angleDeg),
-        name: resolved?.meta.name || instance.libraryId,
-        nameLabel: resolveNameLabelLayout(frame, instance.labelAnchor, instance.labelDirection, instance.angleDeg)
-      });
+    // The floating-connector model (attach-per-view, node-relative leads,
+    // orthogonal auto-routing) runs whenever the composite shows boxes OR uses
+    // orthogonal routing — the box epic. `boxMode` then only selects perimeter
+    // (box) vs SLD-tip (detail) attach, so a box composite stays consistent
+    // across the box↔detail toggle. Plain composites (straight routing, no box
+    // mode) keep the legacy fixed-connector path untouched.
+    const floating = boxMode || defaultRouting === 'orthogonal';
+    if (floating) {
+      const autoFacing = doc.meta.autoFacing ?? false;
+      const peerCenterOf = autoFacing ? this.buildPeerCenters(doc, children) : undefined;
+      // Detail view renders real child geometry, so a feeder whose effective
+      // direction differs from its authored one needs the child *re-laid-out* with
+      // that endpoint swapped — physically moving the arrow tip. Box view keeps
+      // the rectangle and only re-picks the perimeter side, so it is untouched.
+      if (!boxMode) children = this.applyEffectiveDirections(doc, children, engine, autoFacing, peerCenterOf);
+      return this.layoutFloating(doc, children, boxMode, defaultRouting, autoFacing, peerCenterOf);
     }
 
-    const lines = this.resolveLines(doc.allLines(), children);
+    const lines = this.resolveLines(doc.allLines(), children, defaultRouting);
     // A manual line for a shared id takes precedence: suppress its auto-link.
     const claimed = new Set<string>();
     for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
-    const links = this.detectLinks(children, claimed);
+    const links = this.detectLinks(children, claimed, defaultRouting);
     const bounds = this.unionBounds(children, links, lines);
     return { children, links, lines, bounds };
+  }
+
+  /** Wrap a child's (possibly null) diagram layout in its instance transform + frame. */
+  private makeChildLayout(instance: DiagramInstance, layout: DiagramLayout | null): ChildLayout {
+    const frame: Rect = layout
+      ? { x: 0, y: 0, width: layout.size.width, height: layout.size.height }
+      : { x: 0, y: 0, width: PLACEHOLDER_FRAME.width, height: PLACEHOLDER_FRAME.height };
+    const pivot: Point = { x: frame.width / 2, y: frame.height / 2 };
+    const transform = new Transform2D(instance.x, instance.y, instance.angleDeg, pivot);
+    return {
+      instance,
+      layout,
+      transform,
+      frame,
+      worldBounds: transform.boundsOf(frame),
+      worldCorners: transform.applyRect(frame),
+      labelAngleDeg: labelFlipDeg(instance.angleDeg),
+      name: instance.resolved?.meta.name || instance.libraryId,
+      nameLabel: resolveNameLabelLayout(frame, instance.labelAnchor, instance.labelDirection, instance.angleDeg)
+    };
+  }
+
+  /**
+   * Detail-view effective directions: for each child whose feeders' effective
+   * exit directions differ from what the child authored, re-lay-out the child
+   * from a clone with those endpoint `direction`s swapped — physically moving the
+   * arrow tips so the SLD matches the composition (a pin, or the auto-facing
+   * side). Children with no effective change keep their original layout (shared,
+   * zero cost); the swapped ones are memoised per `(libraryId, direction
+   * signature)` so repeated identical instances and repeated drag frames reuse
+   * one child layout.
+   */
+  private applyEffectiveDirections(
+    doc: CompositeDocument,
+    children: ChildLayout[],
+    engine: LayoutEngine,
+    autoFacing: boolean,
+    peerCenterOf: Map<string, Point> | undefined
+  ): ChildLayout[] {
+    return children.map((child) => {
+      const { instance, layout, worldBounds } = child;
+      if (!layout || !instance.resolved) return child;
+
+      const childCenter = { x: worldBounds.x + worldBounds.width / 2, y: worldBounds.y + worldBounds.height / 2 };
+      const overrides = new Map<string, ExternalDirection>();
+      for (const conn of instance.resolved.connections()) {
+        if (!(conn instanceof Connection)) continue;
+        if (conn.from.kind !== 'external' && conn.to.kind !== 'external') continue;
+        const peerCenter = peerCenterOf?.get(feederKey(instance.id, conn.id)) ?? null;
+        const facing = autoFacing && peerCenter ? rotateSide(facingSide(childCenter, peerCenter), -instance.angleDeg) : null;
+        const effective = instance.effectiveDirection(conn.id, { facing });
+        if (effective && effective !== instance.authoredDirection(conn.id)) overrides.set(conn.id, effective);
+      }
+      if (overrides.size === 0) return child; // no effective change → share the cached layout
+
+      return this.makeChildLayout(instance, this.relaidChildLayout(instance.libraryId, instance.resolved, engine, overrides));
+    });
+  }
+
+  /** Lay out a child with swapped endpoint directions, memoised by `(libraryId, dir signature)`. */
+  private relaidChildLayout(
+    libraryId: string,
+    resolved: SldDocument,
+    engine: LayoutEngine,
+    overrides: Map<string, ExternalDirection>
+  ): DiagramLayout {
+    const signature = [...overrides.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([id, dir]) => `${id}=${dir}`).join(',');
+    const key = `${libraryId} ${signature}`;
+    const cached = this.detailLayoutCache.get(key);
+    if (cached) return cached;
+
+    const clone = Serializer.fromJSON(Serializer.toJSON(resolved));
+    for (const conn of clone.connections()) {
+      const dir = overrides.get(conn.id);
+      if (!dir) continue;
+      const ext = conn.from.kind === 'external' ? conn.from : conn.to.kind === 'external' ? conn.to : null;
+      if (ext) ext.direction = dir;
+    }
+    const relaid = engine.layout(clone);
+    this.detailLayoutCache.set(key, relaid);
+    return relaid;
+  }
+
+  /**
+   * Floating-connector layout (the box epic, both views): resolve every line/link
+   * endpoint to a floating {@link Port} on the active view's frame — box perimeter
+   * when `boxMode`, else the SLD arrow tip — and route the bends orthogonally, so
+   * the same document lays out cleanly in both views with no stored pixel
+   * geometry. `straight`/`curved` lines still draw their resolved points as-is.
+   */
+  private layoutFloating(
+    doc: CompositeDocument,
+    children: ChildLayout[],
+    boxMode: boolean,
+    defaultRouting: LineRouting | undefined,
+    autoFacing: boolean,
+    peerCenterOf: Map<string, Point> | undefined
+  ): CompositeLayout {
+    const resolver = new PortResolver(children, boxMode, { autoFacing, peerCenterOf });
+    const routingDefault = defaultRouting ?? 'straight';
+
+    const lines: CompositeLineLayout[] = [];
+    for (const line of doc.allLines()) {
+      const routed = this.routeFloatingLine(line, resolver, line.routing ?? routingDefault);
+      if (routed) lines.push(routed);
+    }
+
+    // A manual line for a shared id takes precedence: suppress its auto-link,
+    // then route the remaining auto-links through the same floating router.
+    const claimed = new Set<string>();
+    for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
+    const links = this.detectFloatingLinks(children, resolver, claimed, routingDefault);
+
+    return { children, links, lines, bounds: this.unionBounds(children, links, lines) };
+  }
+
+  /**
+   * For auto-facing: map each anchored feeder to its peer child's world centre —
+   * the other end of its line, or the far side of its auto-link. Feeders with no
+   * peer (a demand's lead, an unresolved end) are absent, so they fall back to
+   * their authored direction. Rebuilt every layout from live centres, so a drag
+   * re-derives facing for free.
+   */
+  private buildPeerCenters(doc: CompositeDocument, children: ChildLayout[]): Map<string, Point> {
+    const centerOf = new Map<string, Point>();
+    for (const c of children) {
+      const b = c.worldBounds;
+      centerOf.set(c.instance.id, { x: b.x + b.width / 2, y: b.y + b.height / 2 });
+    }
+
+    const out = new Map<string, Point>();
+    const pair = (ia: string, ca: string, ib: string, cb: string) => {
+      const pa = centerOf.get(ia);
+      const pb = centerOf.get(ib);
+      if (!pa || !pb || ia === ib) return;
+      out.set(feederKey(ia, ca), pb);
+      out.set(feederKey(ib, cb), pa);
+    };
+
+    // Explicit lines: the two ends the router joins are the first and last anchor.
+    for (const line of doc.allLines()) {
+      const anchors = line.vertices.filter((v): v is Extract<LineVertexJson, { kind: 'anchor' }> => v.kind === 'anchor');
+      if (anchors.length < 2) continue;
+      const a = anchors[0];
+      const b = anchors[anchors.length - 1];
+      pair(a.instanceId, a.connectionId, b.instanceId, b.connectionId);
+    }
+
+    // Auto-links: the same shared external id on two children (unclaimed by a line).
+    const claimed = new Set<string>();
+    for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
+    const byConn = new Map<string, string[]>();
+    for (const child of children) {
+      const { layout, instance } = child;
+      if (!layout || !instance.resolved) continue;
+      for (const conn of instance.resolved.connections()) {
+        if (claimed.has(conn.id)) continue;
+        const isExternal = conn.from.kind === 'external' || conn.to.kind === 'external';
+        if (!isExternal) continue;
+        if (!this.externalTip(child, conn.id)) continue;
+        const arr = byConn.get(conn.id) ?? [];
+        arr.push(instance.id);
+        byConn.set(conn.id, arr);
+      }
+    }
+    for (const [connectionId, insts] of byConn) {
+      if (insts.length >= 2) pair(insts[0], connectionId, insts[1], connectionId);
+    }
+    return out;
+  }
+
+  /** Resolve one line's endpoints to floating ports and route its polyline. */
+  private routeFloatingLine(line: CompositeLine, resolver: PortResolver, routing: LineRouting): CompositeLineLayout | null {
+    const ends = line.vertices.map((v) => this.resolveFloatingEnd(v, resolver));
+    const first = ends[0];
+    const last = ends[ends.length - 1];
+
+    // A demand's free end is a node-relative lead: recomputed off its feeder's
+    // port every layout, so it stays attached and vertical in both views — it is
+    // never the stored coordinate (that's the view-specific hack this replaces).
+    if (line.kind === 'demand') {
+      const anchored = first?.port ? first : last?.port ? last : null;
+      if (!anchored?.port) return null;
+      return this.decorateFloatingLine(line, this.router.lead(anchored.port, DEMAND_LEAD_LENGTH));
+    }
+
+    // Non-orthogonal styles draw every resolved vertex as-is (ports at their
+    // attach point), preserving intermediate free `point` bends. The auto router
+    // is used only for `orthogonal`, where it ignores intermediate bends and
+    // routes between the two floating ends (perpendicular stubs + L/Z join).
+    if (routing !== 'orthogonal') {
+      const pts = ends.flatMap((e) => (e ? [floatingEndPoint(e)] : []));
+      return pts.length >= 2 ? this.decorateFloatingLine(line, simplify(pts)) : null;
+    }
+
+    let points: Point[] | null = null;
+    if (first?.port && last?.port) {
+      points = this.router.route(first.port, last.port);
+    } else if (first?.port && last?.point) {
+      points = this.router.toPoint(first.port, last.point);
+    } else if (first?.point && last?.port) {
+      points = this.router.toPoint(last.port, first.point);
+    } else {
+      // No floating end: draw the resolved free points straight (manual polyline).
+      const raw = ends.flatMap((e) => (e?.point ? [e.point] : []));
+      points = raw.length >= 2 ? simplify(raw) : null;
+    }
+
+    return points ? this.decorateFloatingLine(line, points) : null;
+  }
+
+  private resolveFloatingEnd(v: CompositeLine['vertices'][number], resolver: PortResolver): BoxEnd {
+    if (v.kind === 'anchor') {
+      const port = resolver.resolve(v.instanceId, v.connectionId);
+      return port ? { port } : null;
+    }
+    if (v.kind === 'point') return { point: { x: v.x, y: v.y } };
+    return null; // `rel` bends aren't used by the auto router (phase 1)
+  }
+
+  /** Attach the kind's stroke/glyph presentation to a routed floating-line polyline. */
+  private decorateFloatingLine(line: CompositeLine, points: Point[]): CompositeLineLayout {
+    const layout: CompositeLineLayout = { line, points, kind: line.kind };
+
+    if (line.kind === 'cable') layout.dashArray = CABLE_DASH_ARRAY;
+
+    if (line.kind === 'transformer') {
+      const mid = arcMidpoint(points);
+      if (mid) layout.glyph = { key: TRANSFORMER_SYMBOL, at: mid.at, angleDeg: mid.angleDeg };
+    }
+
+    // The lead always emits `[feeder, freeEnd]`, so the triangle sits on the last
+    // point outward — independent of vertex order.
+    if (line.kind === 'demand' && points.length >= 2) {
+      const b = points[points.length - 1];
+      const a = points[points.length - 2];
+      layout.terminus = { key: DEMAND_SYMBOL, at: b, angleDeg: segmentAngleDeg(a, b) };
+    }
+
+    return layout;
+  }
+
+  /**
+   * Floating auto-links: same shared-id detection as {@link detectLinks}, but
+   * each end resolves to a floating {@link Port} and the tie routes through the
+   * orthogonal router (matching the floating lines) when the default routing is
+   * `orthogonal`, instead of a straight tip chord.
+   */
+  private detectFloatingLinks(
+    children: ChildLayout[],
+    resolver: PortResolver,
+    suppressed: Set<string>,
+    routingDefault: LineRouting
+  ): CompositeLink[] {
+    const index = new Map<string, string[]>();
+    for (const child of children) {
+      const { layout, instance } = child;
+      if (!layout || !instance.resolved) continue;
+      for (const conn of instance.resolved.connections()) {
+        if (suppressed.has(conn.id)) continue;
+        const isExternal = conn.from.kind === 'external' || conn.to.kind === 'external';
+        if (!isExternal) continue;
+        if (!resolver.resolve(instance.id, conn.id)) continue;
+        const ends = index.get(conn.id) ?? [];
+        ends.push(instance.id);
+        index.set(conn.id, ends);
+      }
+    }
+
+    const orthogonal = routingDefault === 'orthogonal';
+    const links: CompositeLink[] = [];
+    for (const [connectionId, ends] of index) {
+      if (ends.length < 2) continue;
+      const [firstId, secondId] = ends;
+      const pa = resolver.resolve(firstId, connectionId);
+      const pb = resolver.resolve(secondId, connectionId);
+      if (!pa || !pb) continue;
+      const points = orthogonal ? this.router.route(pa, pb) : simplify([pa.point, pb.point]);
+      links.push({
+        connectionId,
+        a: { instanceId: firstId, point: pa.point },
+        b: { instanceId: secondId, point: pb.point },
+        points
+      });
+    }
+    return links;
   }
 
   /**
@@ -296,7 +666,11 @@ export class CompositeLayoutEngine {
   }
 
   /** Resolve every manual line's vertices to a world polyline (see `CompositeLineLayout`). */
-  private resolveLines(lines: CompositeLine[], children: ChildLayout[]): CompositeLineLayout[] {
+  private resolveLines(
+    lines: CompositeLine[],
+    children: ChildLayout[],
+    defaultRouting: LineRouting | undefined
+  ): CompositeLineLayout[] {
     const byId = new Map(children.map((c) => [c.instance.id, c]));
     const out: CompositeLineLayout[] = [];
     for (const line of lines) {
@@ -332,9 +706,47 @@ export class CompositeLayoutEngine {
           if (tip) points.push(tip);
         }
       });
-      if (points.length >= 2) out.push({ line, points });
+      if (points.length >= 2) {
+        // Apply the drawing style (per-line, else the composite default) to the
+        // resolved world path before decorating, so glyphs sit on the drawn line.
+        const routing = line.routing ?? defaultRouting ?? 'straight';
+        out.push(this.decorateLine(line, routePolyline(points, routing)));
+      }
     }
     return out;
+  }
+
+  /**
+   * Attach the kind-driven presentation to a resolved polyline: the cable dash
+   * default, the transformer glyph at the arc-length midpoint, and the demand
+   * triangle at the line's free (non-anchored) end pointing outward.
+   */
+  private decorateLine(line: CompositeLine, points: Point[]): CompositeLineLayout {
+    const layout: CompositeLineLayout = { line, points, kind: line.kind };
+
+    if (line.kind === 'cable') layout.dashArray = CABLE_DASH_ARRAY;
+
+    if (line.kind === 'transformer') {
+      const glyph = polylineMidpoint(points);
+      if (glyph) layout.glyph = glyph;
+    }
+
+    if (line.kind === 'demand') {
+      const n = line.vertices.length;
+      const lastFree = n > 0 && line.vertices[n - 1].kind !== 'anchor';
+      const firstFree = n > 0 && line.vertices[0].kind !== 'anchor';
+      if (lastFree) {
+        const b = points[points.length - 1];
+        const a = points[points.length - 2];
+        layout.terminus = { key: DEMAND_SYMBOL, at: b, angleDeg: segmentAngleDeg(a, b) };
+      } else if (firstFree) {
+        const b = points[0];
+        const a = points[1];
+        layout.terminus = { key: DEMAND_SYMBOL, at: b, angleDeg: segmentAngleDeg(a, b) };
+      }
+    }
+
+    return layout;
   }
 
   /** Every child's external connection tips in world coordinates (UI snap/convert targets). */
@@ -354,6 +766,15 @@ export class CompositeLayoutEngine {
   }
 
   /**
+   * Box-view feeder attach points on each child's frame perimeter — the draw
+   * mode's snap targets in box mode. The box counterpart to
+   * {@link externalConnectionTips} (which returns the detail-view SLD tips).
+   */
+  perimeterTips(layout: CompositeLayout): ExternalConnectionTip[] {
+    return new PortResolver(layout.children, true).tips();
+  }
+
+  /**
    * Two external connections in different children that carry the same id are
    * the same physical asset — link them. Only external endpoints participate;
    * each child contributes at most one endpoint per id (the serializer rejects
@@ -361,7 +782,11 @@ export class CompositeLayoutEngine {
    * instances. When more than two children share an id, the first two (in
    * insertion order) link, the rest are skipped (documented v1 limitation).
    */
-  private detectLinks(children: ChildLayout[], suppressed: Set<string> = new Set()): CompositeLink[] {
+  private detectLinks(
+    children: ChildLayout[],
+    suppressed: Set<string> = new Set(),
+    defaultRouting?: LineRouting
+  ): CompositeLink[] {
     const index = new Map<string, { instanceId: string; tip: Point }[]>();
 
     for (const child of children) {
@@ -383,11 +808,13 @@ export class CompositeLayoutEngine {
     for (const [connectionId, ends] of index) {
       if (ends.length < 2) continue;
       const [first, second] = ends;
+      // Auto-links have no per-line override, so they follow the composite default.
+      const points = routePolyline([first.tip, second.tip], defaultRouting ?? 'straight');
       links.push({
         connectionId,
         a: { instanceId: first.instanceId, point: first.tip },
         b: { instanceId: second.instanceId, point: second.tip },
-        points: [first.tip, second.tip]
+        points
       });
     }
     return links;

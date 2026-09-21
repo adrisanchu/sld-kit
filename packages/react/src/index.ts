@@ -38,6 +38,8 @@ export {
 export { CompositeToolbar, type CompositeToolbarProps } from './composite/CompositeToolbar';
 export { ChildDiagramView, type ChildDiagramViewProps } from './composite/ChildDiagramView';
 export { SelectionFrame, type SelectionFrameProps } from './composite/SelectionFrame';
+export { SymbolGlyph, type SymbolGlyphProps } from './composite/SymbolGlyph';
+export { orthogonalizePolyline } from './composite/routing';
 
 // ── Flow overlay (generic animated lines; domain-agnostic) ────────────────
 export { FlowOverlay, type FlowOverlayProps } from './flow/FlowOverlay';

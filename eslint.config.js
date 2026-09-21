@@ -38,7 +38,7 @@ export default tseslint.config(
     // React adapter + its example: the rules-of-hooks checks the rest of the
     // repo has no use for. The React package leans on `useSyncExternalStore`
     // and `useImperativeHandle`, where a mis-ordered hook is a silent bug.
-    files: ['packages/react/**/*.{ts,tsx}', 'examples/react/**/*.{ts,tsx}'],
+    files: ['packages/react/**/*.{ts,tsx}', 'examples/react/**/*.{ts,tsx}', 'examples/react-box/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: {
       'react-hooks/rules-of-hooks': 'error',

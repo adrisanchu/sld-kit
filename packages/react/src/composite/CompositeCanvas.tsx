@@ -1,14 +1,19 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, type ReactNode } from 'react';
 import {
   SLD_LAYOUT,
+  connectionPath,
   firstFormat,
   linkConnections,
   lineConnections,
+  rotateSide,
   type CompositeLayout,
   type ChildLayout,
   type CompositeLineLayout,
+  type LineGlyph,
   type ExternalConnectionTip,
-  type Point
+  type ExternalDirection,
+  type Point,
+  type Rect
 } from '@sld-kit/core';
 import { createPanZoom, type ContentBounds } from '../panzoom';
 import { useStore } from '../useStore';
@@ -17,6 +22,14 @@ import type { FormatResolver } from '../format';
 import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
 import { ChildDiagramView } from './ChildDiagramView';
 import { SelectionFrame } from './SelectionFrame';
+import { SymbolGlyph } from './SymbolGlyph';
+import { orthogonalizePolyline } from './routing';
+
+/** Centre a glyph box of `symbolSize` on a line adornment's anchor point. */
+function glyphBox(g: LineGlyph): Rect {
+  const s = SLD_LAYOUT.symbolSize;
+  return { x: g.at.x - s / 2, y: g.at.y - s / 2, width: s, height: s };
+}
 
 export interface CompositeCanvasProps {
   layout: CompositeLayout;
@@ -42,6 +55,19 @@ export interface CompositeCanvasProps {
   snapTargets?: ExternalConnectionTip[];
   /** In-progress polyline being drawn, in composite coordinates. */
   draftPoints?: Point[];
+  /**
+   * Constrain drawing to axis-aligned (Manhattan) segments — the box-diagram
+   * rule. The in-progress draft is rendered elbowed; the consumer applies the
+   * same `orthogonalizePolyline` on commit so screen and stored line agree.
+   */
+  orthogonal?: boolean;
+  /**
+   * Box (grid-level) mode: render every child as a single box instead of its
+   * internals. Forwarded to each `ChildDiagramView`.
+   */
+  boxMode?: boolean;
+  /** Secondary line under each box name (e.g. an integer bus ID). Box mode only. */
+  boxSubLabel?: (child: ChildLayout) => string | null;
   /** CSS class per position type; the consumer's stylesheet supplies the colors. */
   tokens?: PositionTokens;
   /** Per-child color class override (e.g. a voltage bucket). */
@@ -82,6 +108,13 @@ export interface CompositeCanvasProps {
   onLineSegmentDown?: (detail: { id: string; index: number; point: Point; event: React.PointerEvent }) => void;
   onCanvasPoint?: (detail: { point: Point; snap: { instanceId: string; connectionId: string } | null }) => void;
   onDrawCommit?: () => void;
+  /**
+   * Box mode: the user clicked a feeder handle on the selected child to override
+   * its exit side. `side` is the next side in a clockwise cycle (a child-local
+   * {@link ExternalDirection}). Headless — the consumer runs the pin command
+   * (e.g. `SetPortDirectionCommand`); undo clears it back to auto/authored.
+   */
+  onPortDirection?: (detail: { instanceId: string; connectionId: string; side: ExternalDirection }) => void;
 }
 
 /** Imperative API, obtained with a `ref` — the analogue of Svelte's `bind:this`. */
@@ -116,6 +149,9 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     drawMode = false,
     snapTargets = [],
     draftPoints = [],
+    orthogonal = false,
+    boxMode = false,
+    boxSubLabel,
     tokens = DEFAULT_POSITION_TOKENS,
     childColorClass = () => null,
     childConnectionColorClass,
@@ -139,7 +175,8 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     onLineVertexDelete,
     onLineSegmentDown,
     onCanvasPoint,
-    onDrawCommit
+    onDrawCommit,
+    onPortDirection
   },
   ref
 ) {
@@ -253,6 +290,30 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     onLineSegmentDown?.({ id, index, point, event: e });
   };
 
+  // Clockwise successor of each box side — the pin cycle a feeder click walks.
+  const NEXT_SIDE = { up: 'right', right: 'down', down: 'left', left: 'up' } as const;
+
+  /**
+   * Click a feeder handle to override its exit side: derive the tip's current
+   * world side (its offset from the child centre), advance it one turn clockwise,
+   * un-rotate into the child's own frame, and emit it as a pin. Purely headless —
+   * the consumer decides how to persist it.
+   */
+  const handlePortDirection = (tip: ExternalConnectionTip, child: ChildLayout, e: React.PointerEvent) => {
+    if (!interactive) return;
+    e.stopPropagation();
+    e.preventDefault();
+    suppressNextClick.current = true;
+    const cx = child.worldBounds.x + child.worldBounds.width / 2;
+    const cy = child.worldBounds.y + child.worldBounds.height / 2;
+    const dx = tip.point.x - cx;
+    const dy = tip.point.y - cy;
+    const current: ExternalDirection = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'down' : 'up';
+    // The handle shows a world side; the pin is child-local, so un-rotate it.
+    const side = rotateSide(NEXT_SIDE[current], -child.instance.angleDeg);
+    onPortDirection?.({ instanceId: tip.instanceId, connectionId: tip.connectionId, side });
+  };
+
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<SVGSVGElement>) => {
       // In draw mode a tap/click places a point, so only pinch/space/middle pan.
@@ -330,7 +391,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
               points={pts}
               fill="none"
               className="stroke-primary/70"
-              strokeWidth={lf?.strokeWidth ?? cs.linkStrokeWidth}
+              strokeWidth={lf?.strokeWidth ?? (boxMode ? cs.boxLineStrokeWidth : cs.linkStrokeWidth)}
               strokeDasharray={lf?.dashArray ?? cs.linkDashArray}
             />
             {link.points.map((p, i) => (
@@ -349,23 +410,33 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         );
       })}
 
-      {/* Manual lines (solid), underneath the children — matches the SVG export. */}
+      {/* Manual lines, underneath the children — matches the SVG export. The kind
+          drives the stroke (cable → dashed) and any glyph (transformer circles,
+          demand triangle); rounded orthogonal corners via `connectionPath`. */}
       {layout.lines.map((ln) => {
         const cls = lineColorClass(ln);
         const lf = firstFormat(lineConnections(ln.line, layout.children), fmt);
+        const dash = lf?.dashArray ?? ln.dashArray;
         return (
-          <polyline
+          <g
             key={ln.line.id}
-            points={ln.points.map((p) => `${p.x},${p.y}`).join(' ')}
-            fill="none"
-            stroke={cls ? 'currentColor' : undefined}
-            className={cls ?? 'stroke-primary'}
+            className={cls ?? 'text-primary'}
             style={cls ? { color: 'var(--sld-pos)' } : undefined}
-            strokeWidth={
-              ln.line.id === selectedLineId ? cs.lineSelectedStrokeWidth : (lf?.strokeWidth ?? cs.lineStrokeWidth)
-            }
-            strokeDasharray={lf?.dashArray ?? undefined}
-          />
+          >
+            <path
+              d={connectionPath(ln.points, undefined, SLD_LAYOUT.hopRadius)}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={
+                ln.line.id === selectedLineId
+                  ? cs.lineSelectedStrokeWidth
+                  : (lf?.strokeWidth ?? (boxMode ? cs.boxLineStrokeWidth : cs.lineStrokeWidth))
+              }
+              strokeDasharray={dash ?? undefined}
+            />
+            {ln.glyph && <SymbolGlyph symbolKey={ln.glyph.key} box={glyphBox(ln.glyph)} style={style} />}
+            {ln.terminus && <SymbolGlyph symbolKey={ln.terminus.key} box={glyphBox(ln.terminus)} style={style} />}
+          </g>
         );
       })}
 
@@ -374,7 +445,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         <ChildDiagramView
           key={child.instance.id}
           child={child}
-          interactive={interactive}
+          interactive={interactive && !drawMode}
           explore={explore}
           focused={explore && child.instance.id === focusedId}
           dimmed={explore && focusedId !== null && child.instance.id !== focusedId}
@@ -387,6 +458,8 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
           showBusBarLabels={showBusBarLabels}
           showConnectionLabels={showConnectionLabels}
           showChildNames={showChildNames}
+          boxMode={boxMode}
+          boxSubLabel={boxSubLabel}
           notFoundLabel={notFoundLabel}
           onChildDown={onChildDown}
           onChildFocus={onChildFocus}
@@ -462,6 +535,30 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         </>
       )}
 
+      {/* Box-mode feeder handles on the selected child: click one to override its
+          exit side (cycles clockwise). Only shown for the selected box so the
+          canvas stays uncluttered; auto-facing needs no handle (it's derived). */}
+      {boxMode &&
+        interactive &&
+        !drawMode &&
+        selectedChild &&
+        onPortDirection &&
+        snapTargets
+          .filter((t) => t.instanceId === selectedChild.instance.id)
+          .map((t) => (
+            <circle
+              key={`pin:${t.connectionId}`}
+              cx={t.point.x}
+              cy={t.point.y}
+              r={cs.snapHandleRadius}
+              className="fill-background stroke-primary pointer-events-auto cursor-pointer"
+              strokeWidth={cs.handleStrokeWidth}
+              onPointerDown={(e) => handlePortDirection(t, selectedChild, e)}
+            >
+              <title>Click to rotate this feeder's exit side</title>
+            </circle>
+          ))}
+
       {/* Draw-mode overlay: snap targets + in-progress polyline. */}
       {drawMode && interactive && (
         <>
@@ -478,8 +575,12 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
           {draftPoints.length > 0 && (
             <>
               {draftPoints.length > 1 && (
-                <polyline
-                  points={draftPoints.map((p) => `${p.x},${p.y}`).join(' ')}
+                <path
+                  d={connectionPath(
+                    orthogonal ? orthogonalizePolyline(draftPoints) : draftPoints,
+                    undefined,
+                    SLD_LAYOUT.hopRadius
+                  )}
                   fill="none"
                   className="stroke-primary"
                   strokeWidth={cs.draftStrokeWidth}

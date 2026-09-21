@@ -85,11 +85,37 @@ export {
   type LabelAnchor,
   type LabelPlacement
 } from './composite/DiagramInstance';
-export { CompositeLine, type CompositeLineJson, type LineVertexJson } from './composite/CompositeLine';
+export {
+  CompositeLine,
+  DEFAULT_LINE_KIND,
+  type CompositeLineKind,
+  type CompositeLineJson,
+  type LineVertexJson
+} from './composite/CompositeLine';
+export {
+  orthogonalizePolyline,
+  routePolyline,
+  DEFAULT_LINE_ROUTING,
+  type LineRouting
+} from './composite/routing';
 export { chordFrame, type ChordFrame, type RelCoord } from './composite/lineFrame';
+// Floating-connector box router (promoted from the react-box example).
+export { Port, SIDE_VECTORS, sideAxis, sideFromAngle, rotateSide, facingSide, type BoxSide } from './composite/ports';
+export { OrthogonalRouter } from './composite/OrthogonalRouter';
+export { PortResolver, feederKey, type PortResolverOptions } from './composite/PortResolver';
+export { segmentAngleDeg, simplify, arcMidpoint } from './composite/polyline';
+export {
+  STUB_LENGTH,
+  ALIGN_TOLERANCE,
+  DEMAND_LEAD_LENGTH,
+  CABLE_DASH_ARRAY,
+  TRANSFORMER_SYMBOL,
+  DEMAND_SYMBOL
+} from './composite/layout-constants';
 export { CompositeDocument, type CompositeMeta, type CompositeChange } from './composite/CompositeDocument';
 export {
   CompositeLayoutEngine,
+  BOX_CHILD_LAYOUT,
   labelFlipDeg,
   linkConnections,
   lineConnections,
@@ -101,6 +127,7 @@ export {
   type NameLabelLayout,
   type CompositeLink,
   type CompositeLineLayout,
+  type LineGlyph,
   type ExternalConnectionTip,
   type CompositeLayout
 } from './composite/CompositeLayoutEngine';
@@ -117,5 +144,9 @@ export {
   SetChildLabelCommand,
   AddLineCommand,
   RemoveLineCommand,
-  UpdateLineCommand
+  UpdateLineCommand,
+  UpdateLineKindCommand,
+  SetBoxModeCommand,
+  SetPortDirectionCommand,
+  SetAutoFacingCommand
 } from './composite/commands';

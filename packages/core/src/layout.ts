@@ -42,6 +42,12 @@ export const SLD_LAYOUT = {
   barTapOffset: 16,
   /** Square box size for external asset glyphs (transformer, renewable…). */
   symbolSize: 22,
+  /**
+   * Horizontal room reserved beyond a side (left/right) external exit for its
+   * label text, in px. The compact box-view config drops this to ~0 since box
+   * mode hides feeder labels, so the frame hugs the connection tips.
+   */
+  externalLabelRoom: 80,
   /** Semicircular arc radius drawn where a horizontal run hops over a vertical one. */
   hopRadius: 6,
   fontFamily: 'Arial, Helvetica, sans-serif',

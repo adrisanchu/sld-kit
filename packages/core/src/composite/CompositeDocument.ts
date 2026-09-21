@@ -1,5 +1,7 @@
 import { newId } from '../ids';
-import { CompositeLine, type LineVertexJson } from './CompositeLine';
+import type { ExternalDirection } from '../types';
+import { CompositeLine, type CompositeLineKind, type LineVertexJson } from './CompositeLine';
+import type { LineRouting } from './routing';
 import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
 import type { DocumentResolver } from './DocumentResolver';
 
@@ -8,6 +10,25 @@ export interface CompositeMeta {
   name: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Persisted default render mode. `true` draws every child as a simplified
+   * box (name + id, coloured by voltage) instead of its full internals — the
+   * grid-level "box" view. Absent/false renders the detailed diagrams.
+   */
+  boxMode?: boolean;
+  /**
+   * Default drawing style for lines (and auto-links) that don't set their own
+   * `routing`. Absent → `straight`. The box view sets this to `orthogonal`.
+   */
+  defaultRouting?: LineRouting;
+  /**
+   * Auto-facing policy. When `true`, a feeder with a peer derives its exit side
+   * from the live box positions (the side that faces the peer) — a presentation
+   * policy recomputed every layout, so it re-derives during a drag for free.
+   * Absent/`false` → strict: feeders keep their authored (physical) direction.
+   * A manual pin (`DiagramInstance.portDirections`) still overrides it.
+   */
+  autoFacing?: boolean;
 }
 
 export type CompositeChange =
@@ -109,6 +130,20 @@ export class CompositeDocument {
     this.emit({ type: 'children', ids: [id] });
   }
 
+  /**
+   * Pin (or clear, with `undefined`) a feeder's exit-direction override on a
+   * child. A composition-owned presentation choice, mirroring `setChildLabel` —
+   * the highest-precedence input to the effective-direction `COALESCE`.
+   */
+  setPortDirection(instanceId: string, connectionId: string, dir: ExternalDirection | undefined): void {
+    const child = this.children.get(instanceId);
+    if (!child) return;
+    child.portDirections = dir
+      ? { ...child.portDirections, [connectionId]: dir }
+      : Object.fromEntries(Object.entries(child.portDirections).filter(([id]) => id !== connectionId));
+    this.emit({ type: 'children', ids: [instanceId] });
+  }
+
   addLine(line: CompositeLine): void {
     this.lines.set(line.id, line);
     this.emit({ type: 'lines', ids: [line.id] });
@@ -126,6 +161,20 @@ export class CompositeDocument {
     const line = this.lines.get(id);
     if (!line) return;
     line.vertices = vertices;
+    this.emit({ type: 'lines', ids: [id] });
+  }
+
+  setLineKind(id: string, kind: CompositeLineKind): void {
+    const line = this.lines.get(id);
+    if (!line) return;
+    line.kind = kind;
+    this.emit({ type: 'lines', ids: [id] });
+  }
+
+  setLineRouting(id: string, routing: LineRouting | undefined): void {
+    const line = this.lines.get(id);
+    if (!line) return;
+    line.routing = routing;
     this.emit({ type: 'lines', ids: [id] });
   }
 

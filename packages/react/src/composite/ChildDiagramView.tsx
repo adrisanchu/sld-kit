@@ -41,6 +41,15 @@ export interface ChildDiagramViewProps {
   showConnectionLabels?: boolean;
   /** The always-on diagram name at the child's top-left (issue #17); on by default. */
   showChildNames?: boolean;
+  /**
+   * Box (grid-level) mode: render the child as a single colour-filled box with
+   * its name centred instead of its full internals — the simplified SLD view.
+   * A `focused` child (explore fly-in) still renders detailed, so zooming into a
+   * box reveals the diagram underneath.
+   */
+  boxMode?: boolean;
+  /** Secondary line under the box name (e.g. an integer bus ID). Box mode only. */
+  boxSubLabel?: (child: ChildLayout) => string | null;
   /** Fallback text when a child diagram can't be resolved. */
   notFoundLabel?: string;
   onChildDown?: (detail: { id: string; event: React.PointerEvent }) => void;
@@ -71,6 +80,8 @@ export function ChildDiagramView({
   showBusBarLabels = true,
   showConnectionLabels = true,
   showChildNames = true,
+  boxMode = false,
+  boxSubLabel,
   notFoundLabel = DEFAULT_CHILD_NOT_FOUND,
   onChildDown,
   onChildFocus,
@@ -80,6 +91,15 @@ export function ChildDiagramView({
 
   const { instance, layout, labelAngleDeg } = child;
   const resolved = instance.resolved;
+  // Box mode collapses the child to a single box — but a focused (flown-into)
+  // child always renders detailed, so a box reveals its diagram on zoom-in.
+  const boxDisplay = boxMode && !!resolved && !!layout && !(explore && focused);
+  const box = {
+    strokeWidth: style.composite.boxStrokeWidth,
+    fillOpacity: style.composite.boxFillOpacity,
+    nameFontSize: style.composite.boxNameFontSize,
+    idFontSize: style.composite.boxIdFontSize
+  };
   // Connections fall back to the child's colorClass unless explicitly overridden.
   const connColor = connectionColorClass === undefined ? colorClass : connectionColorClass;
 
@@ -126,7 +146,58 @@ export function ChildDiagramView({
 
   return (
     <g transform={child.transform.toSvgTransform()} opacity={dimmed ? 0.3 : 1} className="sld-child">
-      {resolved && layout ? (
+      {boxDisplay ? (
+        // Grid-level box: a saturated, colour-filled rounded rect with the name
+        // and bus id centred in the voltage colour — big and bold so the grid
+        // reads from afar (the reference look).
+        (() => {
+          const cx = child.frame.x + child.frame.width / 2;
+          const cy = child.frame.y + child.frame.height / 2;
+          const sub = boxSubLabel?.(child) ?? null;
+          const textFill = colorClass ? 'var(--sld-pos)' : undefined;
+          const textClass = colorClass ? 'font-bold' : 'fill-foreground font-bold';
+          return (
+            <g className={colorClass ?? undefined}>
+              <rect
+                x={child.frame.x}
+                y={child.frame.y}
+                width={child.frame.width}
+                height={child.frame.height}
+                rx={8}
+                fill={colorClass ? 'var(--sld-pos)' : undefined}
+                fillOpacity={colorClass ? box.fillOpacity : undefined}
+                stroke={colorClass ? 'var(--sld-pos)' : undefined}
+                strokeWidth={box.strokeWidth}
+                className={colorClass ? undefined : 'fill-muted stroke-border'}
+              />
+              <g transform={labelAngleDeg ? `rotate(${labelAngleDeg} ${cx} ${cy})` : undefined}>
+                <text
+                  x={cx}
+                  y={cy + (sub ? -3 : box.nameFontSize * 0.35)}
+                  textAnchor="middle"
+                  fontSize={box.nameFontSize}
+                  fill={textFill}
+                  className={`pointer-events-none select-none ${textClass}`}
+                >
+                  {child.name}
+                </text>
+                {sub && (
+                  <text
+                    x={cx}
+                    y={cy + box.idFontSize + 2}
+                    textAnchor="middle"
+                    fontSize={box.idFontSize}
+                    fill={textFill}
+                    className={`pointer-events-none select-none ${textClass}`}
+                  >
+                    {sub}
+                  </text>
+                )}
+              </g>
+            </g>
+          );
+        })()
+      ) : resolved && layout ? (
         <>
           {connectionItems.map(({ el, geo }) => (
             <ConnectionView
@@ -208,8 +279,9 @@ export function ChildDiagramView({
       {/* Always-on diagram name at its chosen slot, larger + bold so it stands
           apart from element labels. Rides with the child's orientation plus the
           label's own rotation. Independent of the label-visibility toggles
-          (issue #17); pointer-transparent so clicking it just selects the diagram. */}
-      {showChildNames && (
+          (issue #17); pointer-transparent so clicking it just selects the diagram.
+          Suppressed in box mode, where the name is drawn centred inside the box. */}
+      {showChildNames && !boxDisplay && (
         <text
           x={child.nameLabel.x}
           y={child.nameLabel.y}
