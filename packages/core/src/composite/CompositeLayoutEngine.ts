@@ -8,6 +8,11 @@ import { CompositeLine, type CompositeLineKind } from './CompositeLine';
 import { routePolyline, type LineRouting } from './routing';
 import { chordFrame } from './lineFrame';
 import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
+import { OrthogonalRouter } from './OrthogonalRouter';
+import { PortResolver } from './PortResolver';
+import type { Port } from './ports';
+import { CABLE_DASH_ARRAY, DEMAND_LEAD_LENGTH, DEMAND_SYMBOL, TRANSFORMER_SYMBOL } from './layout-constants';
+import { arcMidpoint, segmentAngleDeg, simplify } from './polyline';
 
 /** Fixed frame for an unresolved child, so it stays selectable and movable. */
 export const PLACEHOLDER_FRAME = { width: 360, height: 240 } as const;
@@ -269,31 +274,10 @@ export interface CompositeLineLayout {
   terminus?: LineGlyph;
 }
 
-/** Dashed stroke for cables; other kinds use their solid default. */
-const CABLE_DASH_ARRAY = '6 4';
-
-const segmentAngleDeg = (a: Point, b: Point): number => (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
-
 /** Point at the polyline's arc-length midpoint, plus the angle of the segment it lies on. */
 function polylineMidpoint(points: Point[]): LineGlyph | null {
-  if (points.length < 2) return null;
-  let total = 0;
-  for (let i = 1; i < points.length; i++) total += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
-  let target = total / 2;
-  for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1];
-    const b = points[i];
-    const len = Math.hypot(b.x - a.x, b.y - a.y);
-    if (len === 0) continue;
-    if (target <= len) {
-      const t = target / len;
-      return { key: 'external:transformer', at: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, angleDeg: segmentAngleDeg(a, b) };
-    }
-    target -= len;
-  }
-  const a = points[points.length - 2];
-  const b = points[points.length - 1];
-  return { key: 'external:transformer', at: { x: b.x, y: b.y }, angleDeg: segmentAngleDeg(a, b) };
+  const mid = arcMidpoint(points);
+  return mid ? { key: TRANSFORMER_SYMBOL, at: mid.at, angleDeg: mid.angleDeg } : null;
 }
 
 /** An external connection tip in world coordinates — snap/convert targets for the UI. */
@@ -312,6 +296,9 @@ export interface CompositeLayout {
   bounds: Rect;
 }
 
+/** A resolved box-view line endpoint: a floating port (anchored) or a free point. */
+type BoxEnd = { port: Port; point?: undefined } | { port?: undefined; point: Point } | null;
+
 /**
  * Lays out a composite by reusing the existing single-diagram `LayoutEngine`
  * per child, unchanged: each resolved child is laid out in its own local
@@ -323,7 +310,9 @@ export class CompositeLayoutEngine {
 
   constructor(
     private childEngine: LayoutEngine = new LayoutEngine(),
-    boxChildEngine?: LayoutEngine
+    boxChildEngine?: LayoutEngine,
+    /** Floating-connector router used for the box view's `orthogonal`/auto lines. */
+    private readonly router: OrthogonalRouter = new OrthogonalRouter()
   ) {
     this.boxChildEngine = boxChildEngine ?? new LayoutEngine(BOX_CHILD_LAYOUT);
   }
@@ -356,6 +345,11 @@ export class CompositeLayoutEngine {
       });
     }
 
+    // Box mode routes with floating connectors (attach per view + computed
+    // bends); the detail path keeps the fixed-connector tip resolution. Gating on
+    // box mode leaves non-box composites — even `orthogonal` ones — untouched.
+    if (boxMode) return this.layoutBox(doc, children, defaultRouting);
+
     const lines = this.resolveLines(doc.allLines(), children, defaultRouting);
     // A manual line for a shared id takes precedence: suppress its auto-link.
     const claimed = new Set<string>();
@@ -363,6 +357,144 @@ export class CompositeLayoutEngine {
     const links = this.detectLinks(children, claimed, defaultRouting);
     const bounds = this.unionBounds(children, links, lines);
     return { children, links, lines, bounds };
+  }
+
+  /**
+   * Box-view layout: resolve every line/link endpoint to a floating {@link Port}
+   * on the active view's frame (box perimeter) and route the bends orthogonally,
+   * so the same document lays out cleanly in both views with no stored pixel
+   * geometry. `straight` lines still draw their resolved points as-is.
+   */
+  private layoutBox(
+    doc: CompositeDocument,
+    children: ChildLayout[],
+    defaultRouting: LineRouting | undefined
+  ): CompositeLayout {
+    const resolver = new PortResolver(children, true);
+    const routingDefault = defaultRouting ?? 'straight';
+
+    const lines: CompositeLineLayout[] = [];
+    for (const line of doc.allLines()) {
+      const routed = this.routeBoxLine(line, resolver, line.routing ?? routingDefault);
+      if (routed) lines.push(routed);
+    }
+
+    // A manual line for a shared id takes precedence: suppress its auto-link,
+    // then route the remaining auto-links through the same floating router.
+    const claimed = new Set<string>();
+    for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
+    const links = this.detectBoxLinks(children, resolver, claimed, routingDefault);
+
+    return { children, links, lines, bounds: this.unionBounds(children, links, lines) };
+  }
+
+  /** Resolve one line's endpoints to floating ports and route its polyline. */
+  private routeBoxLine(line: CompositeLine, resolver: PortResolver, routing: LineRouting): CompositeLineLayout | null {
+    const ends = line.vertices.map((v) => this.resolveBoxEnd(v, resolver));
+    const first = ends[0];
+    const last = ends[ends.length - 1];
+
+    // A demand's free end is a node-relative lead: recomputed off its feeder's
+    // port every layout, so it stays attached and vertical in both views — it is
+    // never the stored coordinate (that's the view-specific hack this replaces).
+    if (line.kind === 'demand') {
+      const anchored = first?.port ? first : last?.port ? last : null;
+      if (!anchored?.port) return null;
+      return this.decorateBoxLine(line, this.router.lead(anchored.port, DEMAND_LEAD_LENGTH));
+    }
+
+    const orthogonal = routing === 'orthogonal';
+    let points: Point[] | null = null;
+
+    if (first?.port && last?.port) {
+      points = orthogonal ? this.router.route(first.port, last.port) : simplify([first.port.point, last.port.point]);
+    } else if (first?.port && last?.point) {
+      points = orthogonal ? this.router.toPoint(first.port, last.point) : simplify([first.port.point, last.point]);
+    } else if (first?.point && last?.port) {
+      points = orthogonal ? this.router.toPoint(last.port, first.point) : simplify([last.port.point, first.point]);
+    } else {
+      // No floating end: draw the resolved free points straight (manual polyline).
+      const raw = ends.flatMap((e) => (e?.point ? [e.point] : []));
+      points = raw.length >= 2 ? simplify(raw) : null;
+    }
+
+    return points ? this.decorateBoxLine(line, points) : null;
+  }
+
+  private resolveBoxEnd(v: CompositeLine['vertices'][number], resolver: PortResolver): BoxEnd {
+    if (v.kind === 'anchor') {
+      const port = resolver.resolve(v.instanceId, v.connectionId);
+      return port ? { port } : null;
+    }
+    if (v.kind === 'point') return { point: { x: v.x, y: v.y } };
+    return null; // `rel` bends aren't used by the auto router (phase 1)
+  }
+
+  /** Attach the kind's stroke/glyph presentation to a routed box-view polyline. */
+  private decorateBoxLine(line: CompositeLine, points: Point[]): CompositeLineLayout {
+    const layout: CompositeLineLayout = { line, points, kind: line.kind };
+
+    if (line.kind === 'cable') layout.dashArray = CABLE_DASH_ARRAY;
+
+    if (line.kind === 'transformer') {
+      const mid = arcMidpoint(points);
+      if (mid) layout.glyph = { key: TRANSFORMER_SYMBOL, at: mid.at, angleDeg: mid.angleDeg };
+    }
+
+    // The lead always emits `[feeder, freeEnd]`, so the triangle sits on the last
+    // point outward — independent of vertex order.
+    if (line.kind === 'demand' && points.length >= 2) {
+      const b = points[points.length - 1];
+      const a = points[points.length - 2];
+      layout.terminus = { key: DEMAND_SYMBOL, at: b, angleDeg: segmentAngleDeg(a, b) };
+    }
+
+    return layout;
+  }
+
+  /**
+   * Box-view auto-links: same shared-id detection as {@link detectLinks}, but
+   * each end resolves to a floating {@link Port} and the tie routes through the
+   * orthogonal router (matching the box lines), instead of a straight tip chord.
+   */
+  private detectBoxLinks(
+    children: ChildLayout[],
+    resolver: PortResolver,
+    suppressed: Set<string>,
+    routingDefault: LineRouting
+  ): CompositeLink[] {
+    const index = new Map<string, string[]>();
+    for (const child of children) {
+      const { layout, instance } = child;
+      if (!layout || !instance.resolved) continue;
+      for (const conn of instance.resolved.connections()) {
+        if (suppressed.has(conn.id)) continue;
+        const isExternal = conn.from.kind === 'external' || conn.to.kind === 'external';
+        if (!isExternal) continue;
+        if (!resolver.resolve(instance.id, conn.id)) continue;
+        const ends = index.get(conn.id) ?? [];
+        ends.push(instance.id);
+        index.set(conn.id, ends);
+      }
+    }
+
+    const orthogonal = routingDefault === 'orthogonal';
+    const links: CompositeLink[] = [];
+    for (const [connectionId, ends] of index) {
+      if (ends.length < 2) continue;
+      const [firstId, secondId] = ends;
+      const pa = resolver.resolve(firstId, connectionId);
+      const pb = resolver.resolve(secondId, connectionId);
+      if (!pa || !pb) continue;
+      const points = orthogonal ? this.router.route(pa, pb) : simplify([pa.point, pb.point]);
+      links.push({
+        connectionId,
+        a: { instanceId: firstId, point: pa.point },
+        b: { instanceId: secondId, point: pb.point },
+        points
+      });
+    }
+    return links;
   }
 
   /**
@@ -456,11 +588,11 @@ export class CompositeLayoutEngine {
       if (lastFree) {
         const b = points[points.length - 1];
         const a = points[points.length - 2];
-        layout.terminus = { key: 'external:demand', at: b, angleDeg: segmentAngleDeg(a, b) };
+        layout.terminus = { key: DEMAND_SYMBOL, at: b, angleDeg: segmentAngleDeg(a, b) };
       } else if (firstFree) {
         const b = points[0];
         const a = points[1];
-        layout.terminus = { key: 'external:demand', at: b, angleDeg: segmentAngleDeg(a, b) };
+        layout.terminus = { key: DEMAND_SYMBOL, at: b, angleDeg: segmentAngleDeg(a, b) };
       }
     }
 
@@ -481,6 +613,15 @@ export class CompositeLayoutEngine {
       }
     }
     return tips;
+  }
+
+  /**
+   * Box-view feeder attach points on each child's frame perimeter — the draw
+   * mode's snap targets in box mode. The box counterpart to
+   * {@link externalConnectionTips} (which returns the detail-view SLD tips).
+   */
+  perimeterTips(layout: CompositeLayout): ExternalConnectionTip[] {
+    return new PortResolver(layout.children, true).tips();
   }
 
   /**

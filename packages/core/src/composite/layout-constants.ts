@@ -1,7 +1,8 @@
 /**
- * Tunable geometry for the floating-connector box router. Every magic number the
- * router leans on lives here, so the box view can be re-proportioned in one place
- * (mirroring how `@sld-kit/core` keeps its layout knobs in `SLD_LAYOUT`).
+ * Tunable geometry for the floating-connector box router, plus the shared line
+ * presentation constants. Every magic number the box router leans on lives here,
+ * so the box view can be re-proportioned in one place (mirroring how the
+ * single-diagram engine keeps its layout knobs in `SLD_LAYOUT`).
  */
 
 /** How far a line leaves a port perpendicular to its edge before it may turn. */
@@ -18,7 +19,7 @@ export const ALIGN_TOLERANCE = 8;
 /** How far a demand's dangling lead hangs off its feeder, node-relative. */
 export const DEMAND_LEAD_LENGTH = 64;
 
-/** Dashed stroke for `cable` lines — matches the core exporter's cable dash. */
+/** Dashed stroke for `cable` lines — shared by the exporter and both routers. */
 export const CABLE_DASH_ARRAY = '6 4';
 
 /** `SymbolRegistry` keys the line adornments render through. */

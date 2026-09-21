@@ -1,6 +1,8 @@
-import { Connection, type ChildLayout, type ConnectionGeometry, type ExternalConnectionTip, type Point } from '@sld-kit/core';
-import { Port } from './Port';
-import { sideAxis, sideFromAngle, type BoxSide } from './side';
+import { Connection } from '../elements/Connection';
+import type { ConnectionGeometry } from '../layout/LayoutEngine';
+import type { Point } from '../layout/geometry';
+import type { ChildLayout, ExternalConnectionTip } from './CompositeLayoutEngine';
+import { Port, sideAxis, sideFromAngle, type BoxSide } from './ports';
 
 /** One external feeder of a child, pre-resolved from its child-local layout. */
 interface Feeder {

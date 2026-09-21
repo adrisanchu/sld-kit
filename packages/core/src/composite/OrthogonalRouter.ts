@@ -1,6 +1,6 @@
-import type { Point } from '@sld-kit/core';
-import { ALIGN_TOLERANCE, STUB_LENGTH } from './constants';
-import { Port } from './Port';
+import type { Point } from '../layout/geometry';
+import { ALIGN_TOLERANCE, STUB_LENGTH } from './layout-constants';
+import { Port } from './ports';
 import { simplify } from './polyline';
 
 /**

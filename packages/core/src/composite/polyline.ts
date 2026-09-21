@@ -1,4 +1,4 @@
-import type { Point } from '@sld-kit/core';
+import type { Point } from '../layout/geometry';
 
 /** Angle of the directed segment `a → b`, in degrees (0 = +x, 90 = down). */
 export function segmentAngleDeg(a: Point, b: Point): number {
