@@ -29,7 +29,9 @@ import {
   lineConnections,
   CompositeDocument,
   type SldElement,
-  type SldDocumentJson
+  type SldDocumentJson,
+  type CompositeLayout,
+  type Point
 } from '../src';
 import {
   buildSouth400,
@@ -158,9 +160,7 @@ describe('CompositeLayoutEngine — manual lines', () => {
     // point the auto-link would use (both go through externalTip). Comparing
     // within one composite keeps this independent of the fixture's transforms.
     const tipOf = (instanceId: string) =>
-      engine
-        .externalConnectionTips(layout.children)
-        .find((t) => t.instanceId === instanceId && t.connectionId === SHARED_LINK_ID)!.point;
+      layout.snapTips.find((t) => t.instanceId === instanceId && t.connectionId === SHARED_LINK_ID)!.point;
     expect(line.points[0]).toEqual(tipOf(HV_INSTANCE_ID));
     expect(line.points[2]).toEqual(tipOf(MV_INSTANCE_ID));
   });
@@ -273,10 +273,8 @@ describe('CompositeLayoutEngine — manual lines', () => {
   it('exposes external connection tips for snap/convert targets', () => {
     const doc = buildSouthComposite();
     doc.resolveChildren(resolver());
-    const engine = new CompositeLayoutEngine();
-    const layout = engine.layout(doc);
-    const tips = engine.externalConnectionTips(layout.children);
-    expect(tips.some((t) => t.connectionId === SHARED_LINK_ID)).toBe(true);
+    const layout = new CompositeLayoutEngine().layout(doc);
+    expect(layout.snapTips.some((t) => t.connectionId === SHARED_LINK_ID)).toBe(true);
   });
 });
 
@@ -1077,6 +1075,51 @@ describe('Auto-facing policy', () => {
       const detail = alphaSide(twoBoxDoc(bravoX, { boxMode: false }));
       expect(detail).toBe(box);
     }
+  });
+
+  // Draw-mode snap targets (#62): each must sit on the line end it would create,
+  // i.e. follow the active view and the effective side, not the authored one.
+  const snapOf = (layout: CompositeLayout, instanceId: string, connectionId: string) =>
+    layout.snapTips.find((t) => t.instanceId === instanceId && t.connectionId === connectionId)!.point;
+  const alphaEdge = (layout: CompositeLayout, p: Point): ExternalDirection | null => {
+    const b = layout.children.find((c) => c.instance.id === 'al')!.worldBounds;
+    if (p.x === b.x) return 'left';
+    if (p.x === b.x + b.width) return 'right';
+    if (p.y === b.y) return 'up';
+    if (p.y === b.y + b.height) return 'down';
+    return null;
+  };
+
+  it('box-view snap tips follow auto-facing and match the line end', () => {
+    const layout = new CompositeLayoutEngine().layout(twoBoxDoc(-500));
+    const tip = snapOf(layout, 'al', 'a-b');
+    expect(alphaEdge(layout, tip)).toBe('left'); // authored 'right', faces BRAVO on the left
+    expect(tip).toEqual(layout.lines[0].points[0]);
+  });
+
+  it('detail-view snap tips are the moved SLD arrow tips, not perimeter points', () => {
+    const layout = new CompositeLayoutEngine().layout(twoBoxDoc(-500, { boxMode: false }));
+    const tip = snapOf(layout, 'al', 'a-b');
+    expect(tip).toEqual(layout.lines[0].points[0]);
+    expect(alphaEdge(layout, tip)).toBeNull();
+  });
+
+  it('box-view snap tips follow a pin and stay authored in strict mode', () => {
+    const pinned = new CompositeLayoutEngine().layout(twoBoxDoc(500, { pinAlpha: 'up' }));
+    expect(alphaEdge(pinned, snapOf(pinned, 'al', 'a-b'))).toBe('up');
+    const strict = new CompositeLayoutEngine().layout(twoBoxDoc(-500, { autoFacing: false }));
+    expect(alphaEdge(strict, snapOf(strict, 'al', 'a-b'))).toBe('right');
+  });
+
+  it('every anchored line end coincides with its snap tip (both views, both policies)', () => {
+    for (const boxMode of [true, false])
+      for (const autoFacing of [true, false])
+        for (const bravoX of [500, -500]) {
+          const layout = new CompositeLayoutEngine().layout(twoBoxDoc(bravoX, { boxMode, autoFacing }));
+          const pts = layout.lines[0].points;
+          expect(pts[0]).toEqual(snapOf(layout, 'al', 'a-b'));
+          expect(pts[pts.length - 1]).toEqual(snapOf(layout, 'br', 'b-a'));
+        }
   });
 
   it('SetAutoFacingCommand toggles the policy with undo', () => {

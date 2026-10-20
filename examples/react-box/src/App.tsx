@@ -64,7 +64,6 @@ export default function App() {
   // `version` is the load-bearing dep: `composite` mutates in place.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const layout = useMemo(() => engine.layout(composite), [engine, composite, version]);
-  const snapTargets = useMemo(() => engine.perimeterTips(layout), [engine, layout]);
 
   const canvasRef = useRef<CompositeCanvasHandle>(null);
 
@@ -272,7 +271,7 @@ export default function App() {
           boxSubLabel={busLabel}
           drawMode={tool === 'draw'}
           orthogonal
-          snapTargets={snapTargets}
+          snapTargets={layout.snapTips}
           draftPoints={draft.map((d) => d.point)}
           selectedId={selectedChildId}
           selectedLineId={selectedLineId}

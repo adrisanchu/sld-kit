@@ -77,9 +77,12 @@ of `vertices`, each either a free `point` (fixed in composite coordinates) or an
   fewer than two points is simply not drawn (the model still keeps it), mirroring
   how dangling `libraryId`s render as placeholders.
 
-`CompositeLayoutEngine.externalConnectionTips(children)` lists every child's
-external connection dots in world coordinates — the snap/convert targets an
-editor uses to draw an anchored end or turn an existing auto-link into a line.
+`CompositeLayout.snapTips` lists every child's external connection dots in world
+coordinates — the snap/convert targets an editor uses to draw an anchored end or
+turn an existing auto-link into a line. Each tip sits exactly where a line
+anchored to that feeder attaches: in box mode a perimeter point on the feeder's
+effective side (`pin ?? auto-facing ?? authored`), in detail mode the SLD arrow
+tip, so snap rings never drift from the lines they create.
 
 ## `Transform2D`
 

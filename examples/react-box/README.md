@@ -27,7 +27,7 @@ pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
   boxes coloured by voltage via `childColorClass`; the detail toggle swaps them
   for their internals.
 - **Line kinds** — `CompositeLine.kind` drives the stroke and glyph; lines stay
-  anchored to box terminals (`externalConnectionTips`) so they follow a moved box.
+  anchored to box terminals (`layout.snapTips`) so they follow a moved box.
 - **Orthogonal drawing** — the draw tool constrains new lines to horizontal /
   vertical segments via `orthogonalizePolyline`.
 - **Office-safe export** — `CompositeSvgExporter` with `boxMode`, `boxFill` and

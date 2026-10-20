@@ -43,7 +43,7 @@
    * accumulates the points and commits a line; a double-click emits `drawcommit`.
    */
   export let drawMode: boolean = false;
-  /** Connection dots a drawn end can snap to (from `engine.externalConnectionTips`). */
+  /** Connection dots a drawn end can snap to (from `layout.snapTips`). */
   export let snapTargets: ExternalConnectionTip[] = [];
   /** In-progress polyline being drawn, in composite coordinates. */
   export let draftPoints: Point[] = [];
