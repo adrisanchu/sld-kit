@@ -141,7 +141,7 @@ and in the Office-safe export (plain `<text>`, presentation attributes only).
 ## Serialization
 
 `CompositeSerializer` is a sibling of `Serializer` with its own version
-(currently **3**) and `kind: 'composite'`, reusing `SldParseError`. Older
+(currently **2**) and `kind: 'composite'`, reusing `SldParseError`. Older
 documents upgrade transparently: v1 → v2 (before manual lines) adds an empty
 line list; v2 → v3 adds per-child name-label placement, defaulting each child to
 `labelAnchor: 'top-left'` / `labelDirection: 0`. Dangling `libraryId`s (and
