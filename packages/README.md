@@ -128,6 +128,7 @@ Try it: [live demo](https://adrisanchu.github.io/sld-kit/box/) (React, from
 | Floating-connector router (`layout.snapTips`)    | core `CompositeLayoutEngine`; `snapTargets` prop            |    ⬜    |  ✅   |
 | Port-direction override (`onPortDirection`)      | `CompositeCanvas` feeder handle → `SetPortDirectionCommand` |    ⬜    |  ✅   |
 | Auto-facing policy (`meta.autoFacing`)           | core-derived; `SetAutoFacingCommand` (no adapter surface)   |    ⬜    |  ✅   |
+| Uniform box size (`boxSize`, default `BOX_SIZE`) | core `CompositeLayoutEngine` option (no adapter surface)    |    ⬜    |  ✅   |
 
 ### Flow overlays (generic, domain-agnostic)
 

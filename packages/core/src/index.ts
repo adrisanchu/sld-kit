@@ -107,6 +107,7 @@ export { segmentAngleDeg, simplify, arcMidpoint } from './composite/polyline';
 export {
   STUB_LENGTH,
   ALIGN_TOLERANCE,
+  BOX_SIZE,
   DEMAND_LEAD_LENGTH,
   CABLE_DASH_ARRAY,
   TRANSFORMER_SYMBOL,
@@ -124,6 +125,7 @@ export {
   NAME_LABEL_PAD,
   NAME_LABEL_FONT_SIZE,
   type ChildLayout,
+  type CompositeLayoutOptions,
   type NameLabelLayout,
   type CompositeLink,
   type CompositeLineLayout,

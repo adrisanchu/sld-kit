@@ -50,6 +50,16 @@ const layout = new CompositeLayoutEngine().layout(composite);
    220 kV level connect through a shared autotransformer without any manual
    wiring.
 
+In **box mode** (`meta.boxMode`) every resolved child is drawn as a box with one
+uniform frame, `BOX_SIZE` by default, no matter how many feeders it has. That way,
+grid-aligned boxes produce exactly straight ties. Feeders are spread along the box
+perimeter, ordered by their compact SLD tips. To go back to content-derived boxes
+(each one sized from its child's compact `BOX_CHILD_LAYOUT`), pass
+`new CompositeLayoutEngine(undefined, undefined, undefined, { boxSize: null })`. The
+floating router still snaps near-aligned ports within `ALIGN_TOLERANCE`, as a
+fallback for unequal slot counts. `new OrthogonalRouter(STUB_LENGTH, 0)` disables
+that snap.
+
 ## Manual lines
 
 Auto-links are convenient but always straight and dashed — they can't express a

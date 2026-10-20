@@ -5,6 +5,8 @@ import {
   COMPOSITE_SCHEMA_VERSION,
   CompositeLayoutEngine,
   CompositeSvgExporter,
+  OrthogonalRouter,
+  BOX_SIZE,
   CompositeLine,
   chordFrame,
   CommandStack,
@@ -804,6 +806,60 @@ describe('Box view — box mode', () => {
     expect(svg).toContain('stroke-dasharray="6 4"'); // the cable
     expect(svg).not.toContain('<marker');
     expect(svg).not.toContain('class=');
+  });
+});
+
+describe('Box view — uniform box size', () => {
+  // TOP has two bays (feeders down + right), BOTTOM one bay (feeder up): their
+  // content-derived frames differ in width, the uniform frames don't.
+  const columnDoc = () => {
+    const sub = (id: string, feeders: { id: string; dir: ExternalDirection }[]) =>
+      buildDocument({
+        meta: { id, name: id.toUpperCase(), substation: id, voltageKv: 220 },
+        busbars: [{ label: 'BB', row: 0 }],
+        bays: feeders.map((f, i) => ({
+          col: i,
+          positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: f.id, direction: f.dir, id: f.id } }]
+        }))
+      });
+    const res = new MapResolver(
+      new Map([
+        ['top', Serializer.toJSON(sub('top', [{ id: 't-b', dir: 'down' }, { id: 't-x', dir: 'right' }]))],
+        ['bot', Serializer.toJSON(sub('bot', [{ id: 'b-t', dir: 'up' }]))]
+      ])
+    );
+    const doc = new CompositeDocument({ id: 'c', name: 'c', boxMode: true, defaultRouting: 'orthogonal' });
+    doc.addChild(DiagramInstance.of({ id: 'top', libraryId: 'top', x: 0, y: 0 }));
+    doc.addChild(DiagramInstance.of({ id: 'bot', libraryId: 'bot', x: 0, y: 400 }));
+    doc.addLine(new CompositeLine('tie', [{ kind: 'anchor', instanceId: 'top', connectionId: 't-b' }, { kind: 'anchor', instanceId: 'bot', connectionId: 'b-t' }]));
+    doc.resolveChildren(res);
+    return doc;
+  };
+  const frames = (layout: CompositeLayout) => layout.children.map((c) => c.frame);
+
+  it('gives every box-mode child the same BOX_SIZE frame', () => {
+    const [top, bot] = frames(new CompositeLayoutEngine().layout(columnDoc()));
+    expect(top).toEqual({ x: 0, y: 0, width: BOX_SIZE.width, height: BOX_SIZE.height });
+    expect(bot).toEqual(top);
+  });
+
+  it('draws an exactly vertical tie between aligned boxes with the snap disabled', () => {
+    const engine = new CompositeLayoutEngine(undefined, undefined, new OrthogonalRouter(undefined, 0));
+    const tie = engine.layout(columnDoc()).lines[0].points;
+    expect(tie.length).toBe(2);
+    expect(tie[0].x).toBe(tie[1].x);
+  });
+
+  it('boxSize: null keeps the content-derived compact frames', () => {
+    const [top, bot] = frames(new CompositeLayoutEngine(undefined, undefined, undefined, { boxSize: null }).layout(columnDoc()));
+    expect(top.width).not.toBe(bot.width);
+  });
+
+  it('detail view ignores boxSize', () => {
+    const doc = columnDoc();
+    doc.updateMeta({ boxMode: false });
+    const [top] = frames(new CompositeLayoutEngine().layout(doc));
+    expect(top.width).not.toBe(BOX_SIZE.width);
   });
 });
 

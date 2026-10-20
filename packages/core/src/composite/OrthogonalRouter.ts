@@ -12,7 +12,11 @@ import { simplify } from './polyline';
  * reference; richer routing (multi-bend, avoidance, curves) layers on later.
  */
 export class OrthogonalRouter {
-  constructor(private readonly stub = STUB_LENGTH) {}
+  constructor(
+    private readonly stub = STUB_LENGTH,
+    /** Near-alignment snap distance; `0` disables the snap (exact geometry only). */
+    private readonly alignTolerance = ALIGN_TOLERANCE
+  ) {}
 
   /** Route between two floating ports, entering/leaving along each port's side. */
   route(a: Port, b: Port): Point[] {
@@ -24,14 +28,14 @@ export class OrthogonalRouter {
 
   /**
    * Nudge `b` onto `a`'s trunk line when the two share an axis and are within
-   * {@link ALIGN_TOLERANCE}, so a near-aligned pair draws as one straight run
+   * the align tolerance (default {@link ALIGN_TOLERANCE}), so a near-aligned pair draws as one straight run
    * instead of a tiny mid-line jog. The shift is sub-tolerance, so `b` stays on
    * its box perimeter.
    */
   private snapAligned(a: Port, b: Port): Port {
     if (a.axis !== b.axis) return b;
-    if (a.axis === 'v' && Math.abs(a.point.x - b.point.x) <= ALIGN_TOLERANCE) return new Port({ x: a.point.x, y: b.point.y }, b.side);
-    if (a.axis === 'h' && Math.abs(a.point.y - b.point.y) <= ALIGN_TOLERANCE) return new Port({ x: b.point.x, y: a.point.y }, b.side);
+    if (a.axis === 'v' && Math.abs(a.point.x - b.point.x) <= this.alignTolerance) return new Port({ x: a.point.x, y: b.point.y }, b.side);
+    if (a.axis === 'h' && Math.abs(a.point.y - b.point.y) <= this.alignTolerance) return new Port({ x: b.point.x, y: a.point.y }, b.side);
     return b;
   }
 

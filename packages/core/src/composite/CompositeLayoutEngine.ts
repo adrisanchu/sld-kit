@@ -14,7 +14,7 @@ import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './Diagr
 import { OrthogonalRouter } from './OrthogonalRouter';
 import { PortResolver, feederKey } from './PortResolver';
 import { facingSide, rotateSide, type Port } from './ports';
-import { CABLE_DASH_ARRAY, DEMAND_LEAD_LENGTH, DEMAND_SYMBOL, TRANSFORMER_SYMBOL } from './layout-constants';
+import { BOX_SIZE, CABLE_DASH_ARRAY, DEMAND_LEAD_LENGTH, DEMAND_SYMBOL, TRANSFORMER_SYMBOL } from './layout-constants';
 import { arcMidpoint, segmentAngleDeg, simplify } from './polyline';
 
 /** Fixed frame for an unresolved child, so it stays selectable and movable. */
@@ -318,8 +318,17 @@ const floatingEndPoint = (e: NonNullable<BoxEnd>): Point => (e.port ? e.port.poi
  * coordinate space exactly as the single-diagram editor would, and the
  * composite merely wraps that geometry in the instance's `Transform2D`.
  */
+export interface CompositeLayoutOptions {
+  /**
+   * Box-view frame size. Defaults to {@link BOX_SIZE} so every box is uniform;
+   * `null` keeps the content-derived compact frame (the child's own layout size).
+   */
+  boxSize?: { width: number; height: number } | null;
+}
+
 export class CompositeLayoutEngine {
   private boxChildEngine: LayoutEngine;
+  private readonly boxSize: { width: number; height: number } | null;
   /** Detail-view child layouts with swapped directions, keyed by `(libraryId, dir signature)`. */
   private detailLayoutCache = new Map<string, DiagramLayout>();
 
@@ -327,9 +336,11 @@ export class CompositeLayoutEngine {
     private childEngine: LayoutEngine = new LayoutEngine(),
     boxChildEngine?: LayoutEngine,
     /** Floating-connector router used for the box view's `orthogonal`/auto lines. */
-    private readonly router: OrthogonalRouter = new OrthogonalRouter()
+    private readonly router: OrthogonalRouter = new OrthogonalRouter(),
+    options: CompositeLayoutOptions = {}
   ) {
     this.boxChildEngine = boxChildEngine ?? new LayoutEngine(BOX_CHILD_LAYOUT);
+    this.boxSize = options.boxSize === undefined ? BOX_SIZE : options.boxSize;
   }
 
   layout(doc: CompositeDocument): CompositeLayout {
@@ -338,7 +349,7 @@ export class CompositeLayoutEngine {
     // Box mode lays children out compactly so the box hugs its connection tips.
     const engine = boxMode ? this.boxChildEngine : this.childEngine;
     let children = doc.allChildren().map((instance) =>
-      this.makeChildLayout(instance, instance.resolved ? engine.layout(instance.resolved) : null)
+      this.makeChildLayout(instance, instance.resolved ? engine.layout(instance.resolved) : null, boxMode)
     );
 
     // The floating-connector model (attach-per-view, node-relative leads,
@@ -368,11 +379,15 @@ export class CompositeLayoutEngine {
     return { children, links, lines, bounds, snapTips: this.externalConnectionTips(children) };
   }
 
-  /** Wrap a child's (possibly null) diagram layout in its instance transform + frame. */
-  private makeChildLayout(instance: DiagramInstance, layout: DiagramLayout | null): ChildLayout {
-    const frame: Rect = layout
-      ? { x: 0, y: 0, width: layout.size.width, height: layout.size.height }
-      : { x: 0, y: 0, width: PLACEHOLDER_FRAME.width, height: PLACEHOLDER_FRAME.height };
+  /**
+   * Wrap a child's (possibly null) diagram layout in its instance transform +
+   * frame. In box mode a resolved child gets the uniform `boxSize` frame (when
+   * set); its compact layout is still kept, since the port resolver reads the
+   * feeder tips from it to order same-side slots along the box edge.
+   */
+  private makeChildLayout(instance: DiagramInstance, layout: DiagramLayout | null, boxMode = false): ChildLayout {
+    const size = !layout ? PLACEHOLDER_FRAME : boxMode && this.boxSize ? this.boxSize : layout.size;
+    const frame: Rect = { x: 0, y: 0, width: size.width, height: size.height };
     const pivot: Point = { x: frame.width / 2, y: frame.height / 2 };
     const transform = new Transform2D(instance.x, instance.y, instance.angleDeg, pivot);
     return {

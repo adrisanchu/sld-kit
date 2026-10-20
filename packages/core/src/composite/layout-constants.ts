@@ -16,6 +16,14 @@ export const STUB_LENGTH = 24;
  */
 export const ALIGN_TOLERANCE = 8;
 
+/**
+ * Uniform box-view frame. Every box in box mode gets this size regardless of how
+ * many feeders its child has, so grid-aligned boxes produce exactly straight
+ * ties (matching the reference drawings). Pass `boxSize: null` to the
+ * `CompositeLayoutEngine` to fall back to the content-derived compact frame.
+ */
+export const BOX_SIZE = { width: 200, height: 72 } as const;
+
 /** How far a demand's dangling lead hangs off its feeder, node-relative. */
 export const DEMAND_LEAD_LENGTH = 64;
 
