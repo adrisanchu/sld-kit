@@ -11,6 +11,7 @@
   import { GITHUB_URL } from '$lib/components/layout/navItems';
   import InstallBox from '$lib/components/landing/InstallBox.svelte';
   import OpenInCodePen from '$lib/components/landing/OpenInCodePen.svelte';
+  import AdapterBus from '$lib/components/landing/AdapterBus.svelte';
   import CodeBlock from '$lib/components/showcase/CodeBlock.svelte';
   // Single-sourced from the runnable Node example so the two never drift.
   import quickstart from '../../../node/index.ts?raw';
@@ -34,7 +35,7 @@
     {
       k: '04',
       title: 'Headless & framework-agnostic',
-      body: 'A zero-dependency core engine; framework adapters (Svelte first) wrap it with native views. Theming and localization stay yours.'
+      body: 'A zero-dependency core engine; React and Svelte adapters wrap it with native views. Theming and localization stay yours.'
     }
   ];
 </script>
@@ -54,7 +55,9 @@
         <p class="mt-6 max-w-xl text-pretty text-base leading-relaxed text-muted-foreground sm:text-lg">
           <span class="font-mono text-foreground">@sld-kit</span> is a toolkit for building single-line
           (electrical) diagrams: a headless document model, layout engine, undo/redo, JSON serialization
-          and office-safe SVG export — with a Svelte adapter for live editing.
+          and office-safe SVG export — with
+          <span class="text-foreground">React</span> and <span class="text-foreground">Svelte</span> adapters for live
+          editing.
         </p>
         <div class="mt-8 flex flex-wrap items-center gap-3">
           <a
@@ -172,6 +175,15 @@
         </div>
       </div>
     </div>
+  </section>
+
+  <!-- Adapters: the core as a bus bar, each framework a bay -->
+  <section class="mx-auto max-w-6xl px-6 pb-16 pt-8">
+    <div class="mb-6 flex flex-wrap items-end justify-between gap-2">
+      <p class="font-mono text-xs uppercase tracking-[0.25em] text-muted-foreground">Adapters</p>
+      <p class="text-sm text-muted-foreground">One engine, native views. Same layout, same export — pick your framework.</p>
+    </div>
+    <AdapterBus />
   </section>
 
   <!-- Examples -->

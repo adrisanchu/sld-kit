@@ -79,7 +79,7 @@ Elements reference each other **only by id** (stable UUIDs via `newId()`), never
 
 ### Serialization & versioning
 
-`Serializer` (single) / `CompositeSerializer` (composite) are static-only classes doing hand-rolled structural validation with **zero deps** and a migration registry keyed by _from_ version. Single-diagram schema is **version 2** (v1 upgrades transparently); composite is **version 1**. Bad input throws `SldParseError` with English, user-presentable messages — localization is the consumer's job at its import boundary.
+`Serializer` (single) / `CompositeSerializer` (composite) are static-only classes doing hand-rolled structural validation with **zero deps** and a migration registry keyed by _from_ version. Single-diagram schema is **version 2** (v1 upgrades transparently); composite is **version 2**. Bad input throws `SldParseError` with English, user-presentable messages — localization is the consumer's job at its import boundary.
 
 ### Open types & the opaque `data` channel
 

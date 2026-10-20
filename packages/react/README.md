@@ -20,9 +20,12 @@ The components are deliberately **headless and unopinionated**:
   …). The consumer's stylesheet provides the actual values, so dark mode and
   re-theming are entirely app-side.
 
-> **Port status:** the canvas and element views are complete; the toolbar,
-> flyouts, composite and flow components are still being ported. See the
-> [component parity table](../README.md#component-status).
+> **Port status:** at full parity with `@sld-kit/svelte`: canvas and element
+> views, editor chrome (toolbar, flyouts, popovers, lane chip), composite
+> ("diagram of diagrams") primitives and flow overlays. It also ships the
+> grid-level **box view** (`boxMode`, line kinds, `SymbolGlyph`, orthogonal
+> routing, port-direction override), which the Svelte adapter doesn't have yet.
+> See the [component parity table](../README.md#component-status).
 
 ## Install
 
