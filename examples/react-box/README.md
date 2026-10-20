@@ -6,6 +6,8 @@ single-line diagram where each substation/bus is a voltage-coloured **box**
 lines carrying a _kind_ — overhead (solid), cable (dashed), transformer
 (two-circle glyph) or demand (triangle terminus).
 
+**[▶ Live demo](https://adrisanchu.github.io/sld-kit/box/)**
+
 It is built entirely on `@sld-kit/core` + `@sld-kit/react` by **extending the
 composite** ("diagram of diagrams"): each box is a real child `SldDocument`
 rendered in box mode; toggling box/detail (or an explorer fly-in) reveals the
@@ -31,30 +33,22 @@ pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
 - **Office-safe export** — `CompositeSvgExporter` with `boxMode`, `boxFill` and
   `boxSubLabel` produces a PowerPoint-pasteable SVG.
 
-## Floating-connector router (`src/box/`)
+## Floating-connector routing (in core)
 
-The box/detail toggle used to break: line geometry was stored per-view (fixed
-connectors, a fixture alignment pass, an absolute demand point), so a path valid
-in one view stranded the demand or dived into a box in the other. `src/box/` is a
-self-contained, OOP **floating-connector router** — an example-local prototype of
-`docs/requirements/simplified-sld-box/floating-connectors-plan.md`, kept out of
-the published packages for now:
+Line geometry isn't stored per view. `CompositeLayoutEngine` resolves each
+endpoint to the **active view's frame** at layout time — a box-perimeter point in
+box mode, the SLD arrow tip in detail mode — so the same document lays out
+cleanly in both. The pieces live in `@sld-kit/core` (`packages/core/src/composite/`):
 
-- **`PortResolver`** turns a `(instanceId, connectionId)` reference into a
-  floating `Port` (`{ point, side }`) resolved to the **active view's frame** — a
-  box-perimeter point (spread across same-side feeders by slot) in box mode, the
-  **SLD arrow tip** in detail mode. Nothing is stored; ports recompute per layout.
-- **`OrthogonalRouter`** stubs out of each port perpendicular to its side, then
-  joins with a Manhattan L/Z (near-aligned facing ports snap to a straight
-  trunk). A demand is a node-relative **lead** — a stub off its feeder, never an
-  absolute point.
-- **`BoxLayoutEngine` extends `CompositeLayoutEngine`**, reusing the child layout
-  but overriding line resolution with the router. Because it subclasses the core
-  engine, `new CompositeSvgExporter(boxEngine)` exports the *same* routed geometry
-  — screen and export stay in lock-step.
+- **`PortResolver`** turns an `(instanceId, connectionId)` reference into a
+  floating `Port` (`{ point, side }`), spread across same-side feeders by slot.
+- **`OrthogonalRouter`** stubs out of each port perpendicular to its side and
+  joins them with a Manhattan L/Z. A demand is a node-relative lead off its feeder.
+- A feeder's exit side follows a `COALESCE`: per-instance pin, then
+  `meta.autoFacing`, then the child's authored direction.
 
-The result: the same document lays out cleanly in **both** views with no stored
-per-view geometry (the fixture's `alignVertical` + demand-point hacks are gone).
+Because routing happens in the layout engine, `CompositeSvgExporter` exports the
+same geometry the canvas draws.
 
 Everything the app decides — voltage colours, the bus-id label, the active line
 kind, dialogs — lives here, not in the package: the components only emit semantic

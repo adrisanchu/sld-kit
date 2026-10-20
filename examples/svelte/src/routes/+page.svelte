@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Landing page — explains the project and routes to the two examples.
+  // Landing page — explains the project and routes to the examples.
   // Aesthetic: engineering blueprint — schematic grid, monospace labels, an
   // animated single-line diagram motif, staggered load reveals.
   import { base } from '$app/paths';
@@ -7,11 +7,13 @@
   import Code from 'lucide-svelte/icons/code-xml';
   import PencilRuler from 'lucide-svelte/icons/pencil-ruler';
   import Zap from 'lucide-svelte/icons/zap';
+  import Boxes from 'lucide-svelte/icons/boxes';
   import Github from 'lucide-svelte/icons/github';
   import { GITHUB_URL } from '$lib/components/layout/navItems';
   import InstallBox from '$lib/components/landing/InstallBox.svelte';
   import OpenInCodePen from '$lib/components/landing/OpenInCodePen.svelte';
   import AdapterBus from '$lib/components/landing/AdapterBus.svelte';
+  import { FRAMEWORK_ICONS } from '$lib/components/landing/frameworkIcons';
   import CodeBlock from '$lib/components/showcase/CodeBlock.svelte';
   // Single-sourced from the runnable Node example so the two never drift.
   import quickstart from '../../../node/index.ts?raw';
@@ -189,7 +191,7 @@
   <!-- Examples -->
   <section class="mx-auto max-w-6xl px-6 pb-8">
     <p class="mb-4 font-mono text-xs uppercase tracking-[0.25em] text-muted-foreground">Examples</p>
-    <div class="grid gap-4 md:grid-cols-3">
+    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       <a
         href="{base}/showcase"
         class="reveal group relative flex flex-col rounded-xl border bg-card p-6 transition-all hover:-translate-y-1 hover:border-primary/50 hover:shadow-md"
@@ -229,6 +231,32 @@
         <p class="mt-2 flex-1 text-sm text-muted-foreground">
           Operate a read-only grid: fly into a substation, open/close line switches, and watch the flow
           animate and re-route — generic interaction + animation primitives driven by the opaque data channel.
+        </p>
+        <span class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary">
+          Open <ArrowRight class="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+        </span>
+      </a>
+
+      <!-- A separate React build merged under /box/ by deploy-pages.yml, so it
+           needs a full page load. Becomes a native route once #54 lands. -->
+      <a
+        href="{base}/box/"
+        data-sveltekit-reload
+        class="reveal reveal-4 group relative flex flex-col rounded-xl border bg-card p-6 transition-all hover:-translate-y-1 hover:border-primary/50 hover:shadow-md"
+      >
+        <div class="mb-4 flex items-center justify-between">
+          <Boxes class="h-6 w-6 text-primary" />
+          <span class="inline-flex items-center gap-1.5 rounded border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+            <svg viewBox="0 0 24 24" class="h-3 w-3" style="fill:#61DAFB" aria-hidden="true">
+              <path d={FRAMEWORK_ICONS.react} />
+            </svg>
+            React
+          </span>
+        </div>
+        <h3 class="text-lg font-semibold">Box view</h3>
+        <p class="mt-2 flex-1 text-sm text-muted-foreground">
+          A grid-level SLD: substations as voltage-coloured boxes, lines by kind. Toggle box ↔ detail, drag,
+          draw and export. Best on desktop.
         </p>
         <span class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary">
           Open <ArrowRight class="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
@@ -319,6 +347,9 @@
   }
   .reveal-3 {
     animation-delay: 0.2s;
+  }
+  .reveal-4 {
+    animation-delay: 0.3s;
   }
   @keyframes rise {
     from {

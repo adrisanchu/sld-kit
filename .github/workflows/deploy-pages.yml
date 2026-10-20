@@ -5,6 +5,11 @@ name: Deploy example to GitHub Pages
 # (https://adrisanchu.github.io/sld-kit/), so the example is built with
 # BASE_PATH=/sld-kit — otherwise the _app/ asset URLs 404.
 #
+# examples/react-box (the grid-level box view, React-only until #54 ports it to
+# Svelte) is built separately and copied into the same artifact under /box/.
+# Pages serves that real directory before the SPA fallback. Once a native
+# SvelteKit /box route exists, drop the two react-box steps; the URL stays.
+#
 # One-time setup: Settings → Pages → Build and deployment → Source = "GitHub
 # Actions". Without it the deploy job fails.
 
@@ -50,6 +55,15 @@ jobs:
         run: pnpm run build:example
         env:
           BASE_PATH: /sld-kit
+
+      # The box view, served from /sld-kit/box/ (Vite needs the trailing slash).
+      - name: Build box example
+        run: pnpm run build:example:react-box
+        env:
+          BASE_PATH: /sld-kit/box/
+
+      - name: Merge box example into the site
+        run: cp -r examples/react-box/dist examples/svelte/build/box
 
       - uses: actions/configure-pages@v5
 

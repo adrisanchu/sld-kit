@@ -40,6 +40,7 @@
     {#each NAV_ITEMS as item (item.href)}
       <a
         href="{base}{item.href}"
+        data-sveltekit-reload={item.external || undefined}
         on:click={onNavigate}
         title={collapsed ? item.label : undefined}
         aria-current={item.match(rel) ? 'page' : undefined}

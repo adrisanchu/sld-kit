@@ -31,8 +31,8 @@ npm install @sld-kit/core @sld-kit/svelte lucide-svelte   # Svelte 4
 ## Try it
 
 **[▶ Live demo](https://adrisanchu.github.io/sld-kit/)** — the Svelte example app running in your browser
-(landing, API showcase, editor, power flow). The React examples run locally
-(`pnpm run dev:example:react`, `pnpm run dev:example:react-box`).
+(landing, API showcase, editor, power flow), plus the React **[box view](https://adrisanchu.github.io/sld-kit/box/)**
+(grid-level SLD). The React editor runs locally (`pnpm run dev:example:react`).
 
 A full example editor (SvelteKit + shadcn-svelte, localStorage-backed) lives in
 [`examples/svelte`](examples/svelte), and its React twin (Vite + Tailwind v4) in

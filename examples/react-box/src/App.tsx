@@ -29,7 +29,7 @@ import {
   useSldDocument,
   type CompositeCanvasHandle
 } from '@sld-kit/react';
-import { Boxes, Layers, Magnet, Maximize, PenLine, MousePointer2, Redo2, Trash2, Undo2 } from 'lucide-react';
+import { ArrowLeft, Boxes, Layers, Magnet, Maximize, PenLine, MousePointer2, Redo2, Trash2, Undo2 } from 'lucide-react';
 import { buildBoxComposite, voltageClass, voltageFill } from './fixture';
 
 const LINE_KINDS: { kind: CompositeLineKind; label: string }[] = [
@@ -157,7 +157,12 @@ export default function App() {
       const handle = canvasRef.current;
       if (!d || !handle) return;
       const p = handle.clientToSvg(e.clientX, e.clientY);
-      composite.setChildTransform(d.id, d.before.x + (p.x - d.startPtr.x), d.before.y + (p.y - d.startPtr.y), d.before.angleDeg);
+      composite.setChildTransform(
+        d.id,
+        d.before.x + (p.x - d.startPtr.x),
+        d.before.y + (p.y - d.startPtr.y),
+        d.before.angleDeg
+      );
     };
     const up = () => {
       const d = dragRef.current;
@@ -233,6 +238,16 @@ export default function App() {
   return (
     <div className="flex h-dvh flex-col bg-background text-foreground">
       <header className="flex items-center gap-2 border-b border-border px-4 py-2">
+        {/* Deployed under the landing site (/sld-kit/box/): link back up to it. */}
+        {import.meta.env.BASE_URL !== '/' && (
+          <a
+            href={`${import.meta.env.BASE_URL}../`}
+            className="mr-2 inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 font-mono text-xs text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            sld-kit
+          </a>
+        )}
         <div className="mr-auto">
           <h1 className="text-sm font-semibold">{composite.meta.name}</h1>
           <p className="text-xs text-muted-foreground">
@@ -292,7 +307,9 @@ export default function App() {
                   type="button"
                   onClick={() => setLineKind(k.kind)}
                   className={`rounded px-2 py-0.5 transition-colors ${
-                    lineKind === k.kind ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                    lineKind === k.kind
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   {k.label}
