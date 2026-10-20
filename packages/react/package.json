@@ -1,6 +1,6 @@
 {
   "name": "@sld-kit/react",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "React components for single-line (electrical) diagrams: a headless pan/zoom canvas, element views, and event-dispatching editor chrome built on @sld-kit/core.",
   "type": "module",
   "sideEffects": false,

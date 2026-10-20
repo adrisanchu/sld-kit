@@ -1,25 +1,28 @@
 # sld-kit
 
-A toolkit for **single-line (electrical) diagrams** — a headless engine plus
-(planned) framework adapters. This is a pnpm monorepo; one repository publishes
-several npm packages under the `@sld-kit` scope.
+A toolkit for **single-line (electrical) diagrams**: a headless engine plus
+**React** and **Svelte** adapters. This is a pnpm monorepo; one repository
+publishes several npm packages under the `@sld-kit` scope.
 
 ## Packages
 
-| Package                              | npm                        | Status                                                                             |
-| ------------------------------------ | -------------------------- | ---------------------------------------------------------------------------------- |
-| [`packages/core`](packages/core)     | `@sld-kit/core`            | ✅ document model, layout, commands, serialization, SVG export                     |
-| [`packages/svelte`](packages/svelte) | `@sld-kit/svelte`          | ✅ headless Svelte 4 views + event-dispatching editor chrome                       |
-| [`packages/react`](packages/react)   | `@sld-kit/react`           | ✅ React 18/19 adapter — full parity with Svelte (canvas, chrome, composite, flow) |
-| [`examples/svelte`](examples/svelte) | _(private, not published)_ | ✅ SvelteKit + shadcn-svelte demo editor using both packages                       |
-| [`examples/react`](examples/react)   | _(private, not published)_ | ✅ Vite + React + Tailwind v4 demo editor                                          |
+| Package                                    | npm                        | Status                                                                                  |
+| ------------------------------------------ | -------------------------- | --------------------------------------------------------------------------------------- |
+| [`packages/core`](packages/core)           | `@sld-kit/core`            | ✅ document model, layout, commands, serialization, SVG export, composite + box view    |
+| [`packages/svelte`](packages/svelte)       | `@sld-kit/svelte`          | ✅ Svelte 4: canvas, editor chrome, composite, flow overlays (box view pending, #54)    |
+| [`packages/react`](packages/react)         | `@sld-kit/react`           | ✅ React 18/19: full parity with Svelte, plus the grid-level box view                   |
+| [`examples/node`](examples/node)           | _(private, not published)_ | ✅ plain Node script: build a diagram, export an SVG                                    |
+| [`examples/svelte`](examples/svelte)       | _(private, not published)_ | ✅ SvelteKit + shadcn-svelte: landing, API showcase, editor, power flow (the live demo) |
+| [`examples/react`](examples/react)         | _(private, not published)_ | ✅ Vite + React + Tailwind v4 demo editor                                               |
+| [`examples/react-box`](examples/react-box) | _(private, not published)_ | ✅ Vite + React grid-level box view (box ↔ detail, floating connectors)                 |
 
 The core is framework-agnostic and has zero runtime dependencies. Adapters wrap
 it with framework-native views and declare `@sld-kit/core` as a peer dependency,
 so consumers install both:
 
 ```bash
-npm install @sld-kit/core @sld-kit/svelte   # or @sld-kit/react
+npm install @sld-kit/core @sld-kit/react lucide-react     # React 18/19
+npm install @sld-kit/core @sld-kit/svelte lucide-svelte   # Svelte 4
 ```
 
 [`packages/README.md`](packages/README.md) holds the **component parity table**
@@ -27,11 +30,14 @@ npm install @sld-kit/core @sld-kit/svelte   # or @sld-kit/react
 
 ## Try it
 
-**[▶ Live demo](https://adrisanchu.github.io/sld-kit/)** — the example editor running in your browser.
+**[▶ Live demo](https://adrisanchu.github.io/sld-kit/)** — the Svelte example app running in your browser
+(landing, API showcase, editor, power flow). The React examples run locally
+(`pnpm run dev:example:react`, `pnpm run dev:example:react-box`).
 
 A full example editor (SvelteKit + shadcn-svelte, localStorage-backed) lives in
-[`examples/svelte`](examples/svelte). It is the best way to see both packages
-working together:
+[`examples/svelte`](examples/svelte), and its React twin (Vite + Tailwind v4) in
+[`examples/react`](examples/react). Either is the best way to see the core and an
+adapter working together:
 
 ```bash
 pnpm install
@@ -71,6 +77,7 @@ pnpm run dev:example         # SvelteKit dev server
 pnpm run build:example       # adapter-static SPA → examples/svelte/build
 pnpm run dev:example:react   # Vite dev server (React)
 pnpm run build:example:react # static SPA → examples/react/dist
+pnpm run dev:example:react-box   # Vite dev server (React box view, port 5176)
 ```
 
 ## Docs
@@ -79,6 +86,9 @@ pnpm run build:example:react # static SPA → examples/react/dist
   per-component implementation status across frameworks.
 - [`packages/core/README.md`](packages/core/README.md) — quickstart, theming,
   metadata, composites.
+- [`packages/react/README.md`](packages/react/README.md) /
+  [`packages/svelte/README.md`](packages/svelte/README.md) — adapter quickstarts,
+  theming tokens, Tailwind setup.
 - [`docs/architecture.md`](docs/architecture.md) — how the engine is put
   together.
 - [`docs/composite.md`](docs/composite.md) — the "diagram of diagrams" model.
