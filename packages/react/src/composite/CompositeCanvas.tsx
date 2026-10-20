@@ -51,7 +51,7 @@ export interface CompositeCanvasProps {
    * accumulates the points and commits a line; a double-click fires `onDrawCommit`.
    */
   drawMode?: boolean;
-  /** Connection dots a drawn end can snap to (from `engine.externalConnectionTips`). */
+  /** Connection dots a drawn end can snap to (from `layout.snapTips`). */
   snapTargets?: ExternalConnectionTip[];
   /** In-progress polyline being drawn, in composite coordinates. */
   draftPoints?: Point[];

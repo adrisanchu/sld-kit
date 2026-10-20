@@ -297,6 +297,13 @@ export interface CompositeLayout {
   lines: CompositeLineLayout[];
   /** Union of every child's worldBounds, every link point and every line point. */
   bounds: Rect;
+  /**
+   * The active view's draw-mode snap targets — one per resolvable external
+   * feeder. Each sits exactly where a line anchored to that feeder attaches: a
+   * box-perimeter point in box mode, the SLD arrow tip in detail mode, on the
+   * feeder's effective side (`pin ?? facing ?? authored`). Rebuilt every layout.
+   */
+  snapTips: ExternalConnectionTip[];
 }
 
 /** A resolved floating-line endpoint: a floating port (anchored) or a free point. */
@@ -358,7 +365,7 @@ export class CompositeLayoutEngine {
     for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
     const links = this.detectLinks(children, claimed, defaultRouting);
     const bounds = this.unionBounds(children, links, lines);
-    return { children, links, lines, bounds };
+    return { children, links, lines, bounds, snapTips: this.externalConnectionTips(children) };
   }
 
   /** Wrap a child's (possibly null) diagram layout in its instance transform + frame. */
@@ -472,7 +479,9 @@ export class CompositeLayoutEngine {
     for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
     const links = this.detectFloatingLinks(children, resolver, claimed, routingDefault);
 
-    return { children, links, lines, bounds: this.unionBounds(children, links, lines) };
+    // Snap targets come from the same resolver that attached the lines, so a
+    // ring always sits on the line end it would create (view + effective side).
+    return { children, links, lines, bounds: this.unionBounds(children, links, lines), snapTips: resolver.tips() };
   }
 
   /**
@@ -749,8 +758,8 @@ export class CompositeLayoutEngine {
     return layout;
   }
 
-  /** Every child's external connection tips in world coordinates (UI snap/convert targets). */
-  externalConnectionTips(children: ChildLayout[]): ExternalConnectionTip[] {
+  /** Every child's external connection tips in world coordinates — the legacy (fixed-connector) snap targets. */
+  private externalConnectionTips(children: ChildLayout[]): ExternalConnectionTip[] {
     const tips: ExternalConnectionTip[] = [];
     for (const child of children) {
       const { layout, instance } = child;
@@ -763,15 +772,6 @@ export class CompositeLayoutEngine {
       }
     }
     return tips;
-  }
-
-  /**
-   * Box-view feeder attach points on each child's frame perimeter — the draw
-   * mode's snap targets in box mode. The box counterpart to
-   * {@link externalConnectionTips} (which returns the detail-view SLD tips).
-   */
-  perimeterTips(layout: CompositeLayout): ExternalConnectionTip[] {
-    return new PortResolver(layout.children, true).tips();
   }
 
   /**

@@ -125,7 +125,7 @@ Try it: [live demo](https://adrisanchu.github.io/sld-kit/box/) (React, from
 | `boxMode` / `boxSubLabel`                        | `CompositeCanvas`, `ChildDiagramView`, `CompositeExplorer`  |    ⬜    |  ✅   |
 | Line kinds + glyphs                              | `CompositeCanvas` (core `CompositeLine.kind` + layout)      |    ⬜    |  ✅   |
 | `orthogonal` draw + `orthogonalizePolyline`      | `CompositeCanvas` + `routing`                               |    ⬜    |  ✅   |
-| Floating-connector router (`perimeterTips` snap) | core `CompositeLayoutEngine`; `snapTargets` prop            |    ⬜    |  ✅   |
+| Floating-connector router (`layout.snapTips`)    | core `CompositeLayoutEngine`; `snapTargets` prop            |    ⬜    |  ✅   |
 | Port-direction override (`onPortDirection`)      | `CompositeCanvas` feeder handle → `SetPortDirectionCommand` |    ⬜    |  ✅   |
 | Auto-facing policy (`meta.autoFacing`)           | core-derived; `SetAutoFacingCommand` (no adapter surface)   |    ⬜    |  ✅   |
 

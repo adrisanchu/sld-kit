@@ -312,6 +312,9 @@ const layout = new CompositeLayoutEngine().layout(composite);
 const svg = new CompositeSvgExporter().export(composite);
 ```
 
+`layout.snapTips` holds the draw-mode snap targets: one point per external
+feeder, exactly where a line anchored to it attaches in the active view.
+
 ## Serialization & compatibility
 
 `Serializer` validates and (if needed) migrates unknown input, throwing an

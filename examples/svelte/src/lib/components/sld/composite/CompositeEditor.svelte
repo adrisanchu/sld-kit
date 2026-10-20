@@ -94,7 +94,7 @@
   let draftVertices: LineVertexJson[] = [];
   let draftPoints: Point[] = [];
   // Connection dots a drawn/converted end can snap to (only computed while drawing).
-  $: snapTargets = drawActive ? engine.externalConnectionTips(layout.children) : [];
+  $: snapTargets = drawActive ? layout.snapTips : [];
 
   let canUndo = false;
   let canRedo = false;
