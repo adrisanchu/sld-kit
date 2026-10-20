@@ -15,7 +15,6 @@ import {
   MapResolver,
   Serializer,
   buildDocument,
-  newId,
   type ExternalDirection,
   type LineVertexJson,
   type SldDocument
@@ -96,6 +95,79 @@ const demandLead = (instanceId: string, connectionId: string): LineVertexJson[] 
   { kind: 'point', x: 0, y: 0 }
 ];
 
+// ── Line ratings (numeric labels) ────────────────────────────────────────────
+/**
+ * A rating reading for one composite line, mimicking a feed from the consumer's
+ * electrical model (like the power-flow example's `POWER_FLOW_READINGS`). All
+ * values FICTIONAL. Transformers carry an `mva` rating instead of a capacity.
+ * Lines with no reading show no label — "exceptions are the norm".
+ */
+export interface LineRating {
+  /** The `CompositeLine` id the reading addresses. */
+  id: string;
+  /**
+   * Seasonal capacity (MW): always four slots in season order, any of which may
+   * be empty. In practice either 2 values (winter + summer) or all 4.
+   */
+  capacity?: SeasonalCapacity;
+  mva?: number;
+}
+
+/**
+ * Four ordered seasonal slots. An empty slot is `undefined` (or `null` once the
+ * document has been through JSON, which can't hold `undefined` in arrays).
+ */
+export type SeasonalCapacity = [
+  winter: number | null | undefined,
+  spring: number | null | undefined,
+  summer: number | null | undefined,
+  autumn: number | null | undefined
+];
+
+/** Shape folded into `CompositeLine.data` (core never reads it). */
+export interface LineRatingData {
+  ratings: Omit<LineRating, 'id'>;
+}
+
+export const LINE_RATINGS: LineRating[] = [
+  { id: 'l-alpha-bravo', capacity: [1500, 1200, 1100, 1300] },
+  { id: 'l-alpha-charlie', mva: 600 },
+  { id: 'l-charlie-delta', capacity: [575, 510, 370, 455] },
+  { id: 'l-delta-echo', capacity: [150, undefined, 100, undefined] } // winter/summer only
+  // l-echo-foxtrot and the demand: deliberately unlabelled.
+];
+
+/** Fold rating readings into each addressed line's `data` (build-time, before any command stack). */
+export function applyLineRatings(composite: CompositeDocument, readings: LineRating[]): void {
+  for (const { id, ...ratings } of readings) {
+    const line = composite.getLine(id);
+    if (line) composite.setLineData(id, { ...(line.data as object | undefined), ratings } satisfies LineRatingData);
+  }
+}
+
+/**
+ * Format a seasonal capacity as label rows, like the reference drawings: all
+ * four seasons give two rows, `winter/spring` over `summer/autumn`; winter +
+ * summer only give one row, `winter/summer`. Empty slots are skipped.
+ */
+export function formatCapacity([winter, spring, summer, autumn]: SeasonalCapacity): string[] {
+  const join = (...vals: (number | null | undefined)[]) => vals.filter((v) => v != null).join('/');
+  const seasonal = spring != null || autumn != null;
+  const rows = seasonal ? [join(winter, spring), join(summer, autumn)] : [join(winter, summer)];
+  return rows.filter((r) => r.length > 0);
+}
+
+/**
+ * The layout's `lineLabels` resolver: format a line's ratings into label rows
+ * (`1200/1500`, `600 MVA`). This is where the consumer decides what a label says.
+ */
+export function ratingLabels(line: CompositeLine): string[] | null {
+  const r = (line.data as LineRatingData | undefined)?.ratings;
+  if (!r) return null;
+  if (r.mva != null) return [`${r.mva} MVA`];
+  return r.capacity ? formatCapacity(r.capacity) : null;
+}
+
 /** Build the box composite: the six boxes plus lines of every kind between them. */
 export function buildBoxComposite(): CompositeDocument {
   const resolver = new MapResolver(new Map(SUBS.map((s) => [s.id, Serializer.toJSON(buildSub(s.id, s.name, s.bus, s.kv, s.feeders))])));
@@ -120,16 +192,19 @@ export function buildBoxComposite(): CompositeDocument {
   for (const s of SUBS) composite.addChild(DiagramInstance.of({ id: s.id, libraryId: s.id, x: s.x, y: s.y }));
 
   // Overhead lines (solid), a transformer (circles) and a cable (dashed).
-  composite.addLine(new CompositeLine(newId(), [anchor('lib-alpha', 'alpha-bravo'), anchor('lib-bravo', 'bravo-alpha')], 'line'));
-  composite.addLine(new CompositeLine(newId(), [anchor('lib-alpha', 'alpha-charlie'), anchor('lib-charlie', 'charlie-alpha')], 'transformer'));
-  composite.addLine(new CompositeLine(newId(), [anchor('lib-charlie', 'charlie-delta'), anchor('lib-delta', 'delta-charlie')], 'line'));
-  composite.addLine(new CompositeLine(newId(), [anchor('lib-delta', 'delta-echo'), anchor('lib-echo', 'echo-delta')], 'cable'));
-  composite.addLine(new CompositeLine(newId(), [anchor('lib-echo', 'echo-foxtrot'), anchor('lib-foxtrot', 'foxtrot-echo')], 'line'));
+  // Stable ids so the rating readings can address each line.
+  composite.addLine(new CompositeLine('l-alpha-bravo', [anchor('lib-alpha', 'alpha-bravo'), anchor('lib-bravo', 'bravo-alpha')], 'line'));
+  composite.addLine(new CompositeLine('l-alpha-charlie', [anchor('lib-alpha', 'alpha-charlie'), anchor('lib-charlie', 'charlie-alpha')], 'transformer'));
+  composite.addLine(new CompositeLine('l-charlie-delta', [anchor('lib-charlie', 'charlie-delta'), anchor('lib-delta', 'delta-charlie')], 'line'));
+  composite.addLine(new CompositeLine('l-delta-echo', [anchor('lib-delta', 'delta-echo'), anchor('lib-echo', 'echo-delta')], 'cable'));
+  composite.addLine(new CompositeLine('l-echo-foxtrot', [anchor('lib-echo', 'echo-foxtrot'), anchor('lib-foxtrot', 'foxtrot-echo')], 'line'));
 
   // The demand hangs off FOXTROT's 'down' feeder as a node-relative lead — the
   // router keeps it attached and vertical in both views (no alignment pass, no
   // absolute point).
-  composite.addLine(new CompositeLine(newId(), demandLead('lib-foxtrot', 'foxtrot-dem'), 'demand'));
+  composite.addLine(new CompositeLine('l-foxtrot-dem', demandLead('lib-foxtrot', 'foxtrot-dem'), 'demand'));
+
+  applyLineRatings(composite, LINE_RATINGS);
 
   composite.resolveChildren(resolver);
 

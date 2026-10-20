@@ -108,6 +108,8 @@ export {
   STUB_LENGTH,
   ALIGN_TOLERANCE,
   BOX_SIZE,
+  LINE_LABEL_FONT_SIZE,
+  LINE_LABEL_LINE_HEIGHT,
   DEMAND_LEAD_LENGTH,
   CABLE_DASH_ARRAY,
   TRANSFORMER_SYMBOL,
@@ -129,6 +131,9 @@ export {
   type NameLabelLayout,
   type CompositeLink,
   type CompositeLineLayout,
+  type LineLabelLayout,
+  type LineLabelResolver,
+  placeLineLabel,
   type LineGlyph,
   type ExternalConnectionTip,
   type CompositeLayout
@@ -148,6 +153,7 @@ export {
   RemoveLineCommand,
   UpdateLineCommand,
   UpdateLineKindCommand,
+  SetLineDataCommand,
   SetBoxModeCommand,
   SetPortDirectionCommand,
   SetAutoFacingCommand

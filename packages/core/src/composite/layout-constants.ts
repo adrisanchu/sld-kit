@@ -33,3 +33,16 @@ export const CABLE_DASH_ARRAY = '6 4';
 /** `SymbolRegistry` keys the line adornments render through. */
 export const TRANSFORMER_SYMBOL = 'external:transformer';
 export const DEMAND_SYMBOL = 'external:demand';
+
+/** Numeric line labels (`lineLabels` resolver): font size and row pitch, world units. */
+export const LINE_LABEL_FONT_SIZE = 16;
+export const LINE_LABEL_LINE_HEIGHT = 19;
+
+/** Gap between a line and the edge of its label block. */
+export const LINE_LABEL_OFFSET = 8;
+
+/** Extra gap on `transformer` lines so the label clears the two-circle glyph. */
+export const LINE_LABEL_GLYPH_CLEARANCE = 14;
+
+/** Padding of the label's backing box around its text. */
+export const LINE_LABEL_PAD = 3;

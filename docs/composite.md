@@ -83,6 +83,14 @@ of `vertices`, each either a free `point` (fixed in composite coordinates) or an
 - **Export.** `CompositeSvgExporter` renders each line as a plain solid `<path>`
   (via the shared `connectionPath`), under the same Office-safe constraints —
   presentation attributes only, no markers/classes/`<style>`.
+- **Labels.** A line can carry an opaque `data` channel, which is roundtripped
+  but never read, like `SldElement.data`. To label lines, pass a
+  `lineLabels: (line) => string[] | null` resolver in the engine options. The
+  layout places the rows beside the line's arc-length midpoint (`ln.label`:
+  rows, anchor and backing box). They sit right of a vertical run, centred above
+  a horizontal one, and clear of a transformer glyph. The canvas and the
+  exporter draw the same placement, so labels follow dragged boxes and both
+  views. `SetLineDataCommand` keeps `data` edits undoable.
 - Unresolvable anchors (missing child/connection) are dropped; a line left with
   fewer than two points is simply not drawn (the model still keeps it), mirroring
   how dangling `libraryId`s render as placeholders.

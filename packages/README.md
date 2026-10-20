@@ -129,6 +129,7 @@ Try it: [live demo](https://adrisanchu.github.io/sld-kit/box/) (React, from
 | Port-direction override (`onPortDirection`)      | `CompositeCanvas` feeder handle → `SetPortDirectionCommand` |    ⬜    |  ✅   |
 | Auto-facing policy (`meta.autoFacing`)           | core-derived; `SetAutoFacingCommand` (no adapter surface)   |    ⬜    |  ✅   |
 | Uniform box size (`boxSize`, default `BOX_SIZE`) | core `CompositeLayoutEngine` option (no adapter surface)    |    ⬜    |  ✅   |
+| Line labels (`CompositeLine.data` + `lineLabels`) | core layout places `ln.label`; `CompositeCanvas` draws it   |    ⬜    |  ✅   |
 
 ### Flow overlays (generic, domain-agnostic)
 

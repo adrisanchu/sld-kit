@@ -171,6 +171,14 @@ export class CompositeDocument {
     this.emit({ type: 'lines', ids: [id] });
   }
 
+  /** Replace a line's opaque `data` (deep-copied; `undefined` clears it). */
+  setLineData(id: string, data: unknown): void {
+    const line = this.lines.get(id);
+    if (!line) return;
+    line.data = data === undefined ? undefined : structuredClone(data);
+    this.emit({ type: 'lines', ids: [id] });
+  }
+
   setLineRouting(id: string, routing: LineRouting | undefined): void {
     const line = this.lines.get(id);
     if (!line) return;

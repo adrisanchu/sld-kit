@@ -30,6 +30,15 @@ pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
   anchored to box terminals (`layout.snapTips`) so they follow a moved box.
 - **Orthogonal drawing** — the draw tool constrains new lines to horizontal /
   vertical segments via `orthogonalizePolyline`.
+- **Uniform boxes** — every box shares the core `BOX_SIZE` frame, so grid-aligned
+  boxes give exactly straight ties.
+- **Numeric line labels** — `LINE_RATINGS` readings are folded into each
+  `CompositeLine.data`, like the power-flow example's readings. They hold
+  fictional seasonal capacities (`[winter, spring, summer, autumn]`, either all
+  four filled or winter + summer only) and transformer MVA ratings. The engine's
+  `lineLabels` resolver (`ratingLabels`) formats them into rows: `winter/spring`
+  over `summer/autumn`, or a single `winter/summer` row. The core layout places
+  them. Lines without a reading have no label.
 - **Office-safe export** — `CompositeSvgExporter` with `boxMode`, `boxFill` and
   `boxSubLabel` produces a PowerPoint-pasteable SVG.
 

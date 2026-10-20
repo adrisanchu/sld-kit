@@ -13,7 +13,8 @@ import {
   lineConnections,
   type ChildLayout,
   type CompositeLineLayout,
-  type LineGlyph
+  type LineGlyph,
+  type LineLabelLayout
 } from './CompositeLayoutEngine';
 
 export interface CompositeSvgExportOptions {
@@ -125,6 +126,9 @@ export class CompositeSvgExporter {
       b.close();
     }
 
+    // Line labels last, so a label beside a line is never hidden under a box.
+    for (const line of layout.lines) if (line.label) this.renderLineLabel(b, line.label, theme);
+
     b.close();
     return b.toString();
   }
@@ -154,6 +158,31 @@ export class CompositeSvgExporter {
     b.open('g', { transform: `rotate(${rotation} ${x} ${y})` });
     b.textElement('text', attrs, child.name);
     b.close();
+  }
+
+  /**
+   * A line's stacked label rows over an opaque backing box (masks anything
+   * passing beneath). Office-safe: plain `<rect>` + `<text>`, presentation
+   * attributes only.
+   */
+  private renderLineLabel(b: SvgBuilder, label: LineLabelLayout, theme: SldTheme): void {
+    const { box } = label;
+    b.element('rect', { x: box.x, y: box.y, width: box.width, height: box.height, rx: 2, fill: theme.structure.background });
+    for (const row of label.rows) {
+      b.textElement(
+        'text',
+        {
+          x: row.x,
+          y: row.y,
+          'text-anchor': label.textAnchor,
+          'font-family': this.cfg.fontFamily,
+          'font-size': label.fontSize,
+          'font-weight': 700,
+          fill: theme.structure.connection
+        },
+        row.text
+      );
+    }
   }
 
   /** Draw the kind glyphs a decorated line carries (transformer / demand). */

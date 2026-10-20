@@ -14,6 +14,7 @@ import {
   SetChildLabelCommand,
   AddLineCommand,
   UpdateLineKindCommand,
+  SetLineDataCommand,
   SetBoxModeCommand,
   SetPortDirectionCommand,
   SetAutoFacingCommand,
@@ -860,6 +861,105 @@ describe('Box view — uniform box size', () => {
     doc.updateMeta({ boxMode: false });
     const [top] = frames(new CompositeLayoutEngine().layout(doc));
     expect(top.width).not.toBe(BOX_SIZE.width);
+  });
+});
+
+describe('Box view — line labels', () => {
+  // NORTH above SOUTH (vertical tie), WEST left of NORTH (horizontal tie).
+  const gridDoc = (opts: { boxMode?: boolean; kind?: string } = {}) => {
+    const sub = (id: string, feeders: { id: string; dir: ExternalDirection }[]) =>
+      buildDocument({
+        meta: { id, name: id.toUpperCase(), substation: id, voltageKv: 220 },
+        busbars: [{ label: 'BB', row: 0 }],
+        bays: feeders.map((f, i) => ({
+          col: i,
+          positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: f.id, direction: f.dir, id: f.id } }]
+        }))
+      });
+    const res = new MapResolver(
+      new Map([
+        ['n', Serializer.toJSON(sub('n', [{ id: 'n-s', dir: 'down' }, { id: 'n-w', dir: 'left' }]))],
+        ['s', Serializer.toJSON(sub('s', [{ id: 's-n', dir: 'up' }]))],
+        ['w', Serializer.toJSON(sub('w', [{ id: 'w-n', dir: 'right' }]))]
+      ])
+    );
+    const doc = new CompositeDocument({ id: 'c', name: 'c', boxMode: opts.boxMode ?? true, defaultRouting: 'orthogonal' });
+    doc.addChild(DiagramInstance.of({ id: 'n', libraryId: 'n', x: 600, y: 0 }));
+    doc.addChild(DiagramInstance.of({ id: 's', libraryId: 's', x: 600, y: 400 }));
+    doc.addChild(DiagramInstance.of({ id: 'w', libraryId: 'w', x: 0, y: 0 }));
+    const anchor = (instanceId: string, connectionId: string) => ({ kind: 'anchor' as const, instanceId, connectionId });
+    doc.addLine(new CompositeLine('ns', [anchor('n', 'n-s'), anchor('s', 's-n')], opts.kind ?? 'line', undefined, { rows: ['1200/1500', '1100/1300'] }));
+    doc.addLine(new CompositeLine('wn', [anchor('w', 'w-n'), anchor('n', 'n-w')], 'line', undefined, { rows: ['80/80'] }));
+    doc.addLine(new CompositeLine('bare', [anchor('n', 'n-s'), { kind: 'point', x: 0, y: 900 }]));
+    doc.resolveChildren(res);
+    return doc;
+  };
+  const rowsOf = (line: CompositeLine) => (line.data as { rows?: string[] } | undefined)?.rows;
+  const engine = () => new CompositeLayoutEngine(undefined, undefined, undefined, { lineLabels: rowsOf });
+  const lineById = (layout: CompositeLayout, id: string) => layout.lines.find((l) => l.line.id === id)!;
+
+  it('roundtrips line.data (deep-copied) and omits it when unset', () => {
+    const doc = gridDoc();
+    const json = CompositeSerializer.toJSON(doc);
+    expect(json.lines.find((l) => l.id === 'ns')!.data).toEqual({ rows: ['1200/1500', '1100/1300'] });
+    expect('data' in json.lines.find((l) => l.id === 'bare')!).toBe(false);
+    const back = CompositeSerializer.fromJSON(cycle(json));
+    expect(back.getLine('ns')!.data).toEqual({ rows: ['1200/1500', '1100/1300'] });
+    expect(back.getLine('ns')!.data).not.toBe(doc.getLine('ns')!.data);
+    expect(CompositeSerializer.toJSON(back)).toEqual(json);
+  });
+
+  it('SetLineDataCommand do/undo replaces the data', () => {
+    const doc = gridDoc();
+    const stack = new CommandStack<CompositeDocument>();
+    const before = doc.getLine('wn')!.data;
+    stack.execute(new SetLineDataCommand('wn', before, { rows: ['90/90'] }), doc);
+    expect(rowsOf(doc.getLine('wn')!)).toEqual(['90/90']);
+    stack.undo(doc);
+    expect(rowsOf(doc.getLine('wn')!)).toEqual(['80/80']);
+  });
+
+  it('places stacked rows to the right of a vertical line', () => {
+    const layout = engine().layout(gridDoc());
+    const ns = lineById(layout, 'ns');
+    const x = ns.points[0].x;
+    expect(ns.label!.rows.map((r) => r.text)).toEqual(['1200/1500', '1100/1300']);
+    expect(ns.label!.textAnchor).toBe('start');
+    expect(ns.label!.box.x).toBeGreaterThan(x);
+    expect(ns.label!.rows[1].y).toBeGreaterThan(ns.label!.rows[0].y);
+  });
+
+  it('centres the label above a horizontal line', () => {
+    const wn = lineById(engine().layout(gridDoc()), 'wn');
+    const y = wn.points[0].y;
+    expect(wn.label!.textAnchor).toBe('middle');
+    expect(wn.label!.box.y + wn.label!.box.height).toBeLessThan(y);
+  });
+
+  it('pushes the label further out on a transformer line (clears the glyph)', () => {
+    const plain = lineById(engine().layout(gridDoc()), 'ns').label!.box.x;
+    const tx = lineById(engine().layout(gridDoc({ kind: 'transformer' })), 'ns').label!.box.x;
+    expect(tx).toBeGreaterThan(plain);
+  });
+
+  it('omits labels when the resolver returns nothing, or without a resolver', () => {
+    expect(lineById(engine().layout(gridDoc()), 'bare').label).toBeUndefined();
+    expect(lineById(new CompositeLayoutEngine().layout(gridDoc()), 'ns').label).toBeUndefined();
+  });
+
+  it('labels follow the line in detail view too', () => {
+    const ns = lineById(engine().layout(gridDoc({ boxMode: false })), 'ns');
+    expect(ns.label!.rows[0].text).toBe('1200/1500');
+  });
+
+  it('exports labels as office-safe text', () => {
+    const svg = new CompositeSvgExporter(engine()).export(gridDoc());
+    expect(svg).toContain('>1200/1500<');
+    expect(svg).toContain('>1100/1300<');
+    expect(svg).toContain('>80/80<');
+    expect(svg).not.toContain('class=');
+    expect(svg).not.toContain('<style');
+    expect(svg).not.toContain('currentColor');
   });
 });
 

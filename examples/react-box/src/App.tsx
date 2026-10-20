@@ -30,7 +30,7 @@ import {
   type CompositeCanvasHandle
 } from '@sld-kit/react';
 import { ArrowLeft, Boxes, Layers, Magnet, Maximize, PenLine, MousePointer2, Redo2, Trash2, Undo2 } from 'lucide-react';
-import { buildBoxComposite, voltageClass, voltageFill } from './fixture';
+import { buildBoxComposite, ratingLabels, voltageClass, voltageFill } from './fixture';
 
 const LINE_KINDS: { kind: CompositeLineKind; label: string }[] = [
   { kind: 'line', label: 'Overhead' },
@@ -59,8 +59,10 @@ export default function App() {
 
   // The core engine's box mode resolves line endpoints to the active view's
   // frame (box perimeter vs SLD tip) and routes the bends via floating
-  // connectors, so box↔detail never strands or bends a line into a box.
-  const engine = useMemo(() => new CompositeLayoutEngine(), []);
+  // connectors, so box↔detail never strands or bends a line into a box. The
+  // `lineLabels` resolver formats each line's ratings (folded into `line.data`
+  // by the fixture) — placed by the core layout, so screen and export agree.
+  const engine = useMemo(() => new CompositeLayoutEngine(undefined, undefined, undefined, { lineLabels: ratingLabels }), []);
   // `version` is the load-bearing dep: `composite` mutates in place.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const layout = useMemo(() => engine.layout(composite), [engine, composite, version]);

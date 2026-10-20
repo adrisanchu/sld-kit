@@ -2,7 +2,8 @@
  * Headless smoke test for the box view: render the built @sld-kit/react
  * CompositeCanvas in box mode to a string and assert it paints boxes (name +
  * sub-label, voltage class), a cable dash, and a transformer glyph. Also checks
- * the office-safe SVG export. Run with: node ssr-smoke.mjs
+ * the office-safe SVG export, and numeric line labels (data + `lineLabels`
+ * resolver) on screen and in the export. Run with: node ssr-smoke.mjs
  */
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -47,11 +48,25 @@ const composite = new CompositeDocument({ id: 'ov', name: 'Box smoke', boxMode: 
 composite.addChild(DiagramInstance.of({ id: 'a', libraryId: 'a', x: 0, y: 0 }));
 composite.addChild(DiagramInstance.of({ id: 'b', libraryId: 'b', x: 900, y: 0 }));
 composite.addChild(DiagramInstance.of({ id: 'c', libraryId: 'c', x: 0, y: 700 }));
-composite.addLine(new CompositeLine(newId(), [{ kind: 'anchor', instanceId: 'a', connectionId: 'a-b' }, { kind: 'anchor', instanceId: 'b', connectionId: 'b-a' }], 'cable'));
+composite.addLine(
+  new CompositeLine(newId(), [{ kind: 'anchor', instanceId: 'a', connectionId: 'a-b' }, { kind: 'anchor', instanceId: 'b', connectionId: 'b-a' }], 'cable', undefined, {
+    capacity: [1500, 1200, 1100, 1300] // winter, spring, summer, autumn
+  })
+);
 composite.addLine(new CompositeLine(newId(), [{ kind: 'anchor', instanceId: 'a', connectionId: 'a-c' }, { kind: 'anchor', instanceId: 'c', connectionId: 'c-a' }], 'transformer'));
 composite.resolveChildren(resolver);
 
-const layout = new CompositeLayoutEngine().layout(composite);
+// Consumer-side label resolver: format `line.data` into rows (core never reads it).
+// Seasonal capacity [winter, spring, summer, autumn]: 4 values → `w/sp` over
+// `su/au`; winter + summer only → one `w/su` row (mirrors the app's formatCapacity).
+const formatCapacity = ([w, sp, su, au]) => {
+  const join = (...v) => v.filter((x) => x != null).join('/');
+  const rows = sp != null || au != null ? [join(w, sp), join(su, au)] : [join(w, su)];
+  return rows.filter((r) => r.length > 0);
+};
+const lineLabels = (line) => (line.data?.capacity ? formatCapacity(line.data.capacity) : null);
+const engine = new CompositeLayoutEngine(undefined, undefined, undefined, { lineLabels });
+const layout = engine.layout(composite);
 const html = renderToStaticMarkup(
   h(CompositeCanvas, {
     layout,
@@ -61,7 +76,7 @@ const html = renderToStaticMarkup(
   })
 );
 
-const svg = new CompositeSvgExporter().export(composite, {
+const svg = new CompositeSvgExporter(engine).export(composite, {
   boxMode: true,
   boxFill: () => '#dcfce7',
   boxSubLabel: (child) => String(child.instance.resolved?.meta.data?.busId ?? '')
@@ -92,6 +107,9 @@ const checks = [
   ['draws a transformer glyph backing', html.includes('fill-background')],
   ['export is office-safe (no class/style/marker)', !svg.includes('class=') && !svg.includes('<style') && !svg.includes('<marker')],
   ['export renders boxes', svg.includes('ALPHA') && svg.includes('#dcfce7')],
+  ['draws stacked line labels', html.includes('>1200/1500<') && html.includes('>1100/1300<')],
+  ['formats a winter/summer-only capacity as one row', formatCapacity([150, undefined, 100, undefined]).join('|') === '150/100'],
+  ['exports stacked line labels', svg.includes('>1200/1500<') && svg.includes('>1100/1300<')],
   ['auto-facing derives the exit side from live positions', facingRight === 'right' && facingLeft === 'left']
 ];
 

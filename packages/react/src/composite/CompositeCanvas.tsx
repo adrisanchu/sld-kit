@@ -467,6 +467,28 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         />
       ))}
 
+      {/* Line labels above the children (as in the export), tinted like their
+          line. Placement is computed by the core layout — rows + backing box. */}
+      {layout.lines.map((ln) => {
+        if (!ln.label) return null;
+        const cls = lineColorClass(ln);
+        const { box, rows, textAnchor, fontSize } = ln.label;
+        return (
+          <g
+            key={`label:${ln.line.id}`}
+            className={`pointer-events-none ${cls ?? 'text-primary'}`}
+            style={cls ? { color: 'var(--sld-pos)' } : undefined}
+          >
+            <rect x={box.x} y={box.y} width={box.width} height={box.height} rx={2} className="fill-background" fillOpacity={0.9} />
+            {rows.map((r, i) => (
+              <text key={i} x={r.x} y={r.y} textAnchor={textAnchor} fontSize={fontSize} fontWeight={700} fill="currentColor">
+                {r.text}
+              </text>
+            ))}
+          </g>
+        );
+      })}
+
       {/* Selection + rotation chrome on top. */}
       {selectedChild && (
         <SelectionFrame child={selectedChild} interactive={interactive} onRotateStart={onRotateStart} />

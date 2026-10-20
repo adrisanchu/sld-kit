@@ -173,6 +173,28 @@ export class UpdateLineKindCommand implements Command<CompositeDocument> {
 }
 
 /**
+ * Replace a line's opaque `data` via before/after snapshots (e.g. updated
+ * ratings from the consumer's model). `undefined` clears it. Undoable.
+ */
+export class SetLineDataCommand implements Command<CompositeDocument> {
+  readonly label = 'Update line data';
+
+  constructor(
+    private id: string,
+    private before: unknown,
+    private after: unknown
+  ) {}
+
+  do(doc: CompositeDocument): void {
+    doc.setLineData(this.id, this.after);
+  }
+
+  undo(doc: CompositeDocument): void {
+    doc.setLineData(this.id, this.before);
+  }
+}
+
+/**
  * Pin (or clear) a feeder's exit direction on a child, via before/after
  * snapshots — a deliberate per-instance override that beats the auto-facing
  * policy and the child's authored direction. `undefined` clears the pin (back to

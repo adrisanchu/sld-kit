@@ -14,7 +14,18 @@ import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './Diagr
 import { OrthogonalRouter } from './OrthogonalRouter';
 import { PortResolver, feederKey } from './PortResolver';
 import { facingSide, rotateSide, type Port } from './ports';
-import { BOX_SIZE, CABLE_DASH_ARRAY, DEMAND_LEAD_LENGTH, DEMAND_SYMBOL, TRANSFORMER_SYMBOL } from './layout-constants';
+import {
+  BOX_SIZE,
+  CABLE_DASH_ARRAY,
+  DEMAND_LEAD_LENGTH,
+  DEMAND_SYMBOL,
+  LINE_LABEL_FONT_SIZE,
+  LINE_LABEL_GLYPH_CLEARANCE,
+  LINE_LABEL_LINE_HEIGHT,
+  LINE_LABEL_OFFSET,
+  LINE_LABEL_PAD,
+  TRANSFORMER_SYMBOL
+} from './layout-constants';
 import { arcMidpoint, segmentAngleDeg, simplify } from './polyline';
 
 /** Fixed frame for an unresolved child, so it stays selectable and movable. */
@@ -275,6 +286,54 @@ export interface CompositeLineLayout {
    * present only for `kind === 'demand'` with a resolvable free end.
    */
   terminus?: LineGlyph;
+  /** Stacked text label beside the line — present only when the `lineLabels` resolver returns rows. */
+  label?: LineLabelLayout;
+}
+
+/**
+ * A line's resolved text label: rows of horizontal text (never rotated, like
+ * the reference drawings) beside the line's arc-length midpoint — to the right
+ * of a vertical run, centred above a horizontal one — plus a backing box.
+ * Renderers draw `box` then each row at its baseline; nothing to compute.
+ */
+export interface LineLabelLayout {
+  rows: { text: string; x: number; y: number }[];
+  textAnchor: 'start' | 'middle';
+  fontSize: number;
+  /** Backing box (world), sized from an estimated text width. */
+  box: Rect;
+}
+
+/**
+ * Consumer hook turning a line into label rows (e.g. `['510/575', '455/370']`
+ * formatted from `line.data`). Core never interprets the values — `null`,
+ * `undefined` or `[]` means no label ("exceptions are the norm").
+ */
+export type LineLabelResolver = (line: CompositeLine) => readonly string[] | null | undefined;
+
+/** Place label rows beside a polyline's arc-length midpoint (see {@link LineLabelLayout}). */
+export function placeLineLabel(points: Point[], rows: readonly string[], clearance = 0): LineLabelLayout | null {
+  const mid = arcMidpoint(points);
+  if (!mid || rows.length === 0) return null;
+  const rad = (mid.angleDeg * Math.PI) / 180;
+  const horizontal = Math.abs(Math.cos(rad)) >= Math.abs(Math.sin(rad));
+  const fontSize = LINE_LABEL_FONT_SIZE;
+  const lh = LINE_LABEL_LINE_HEIGHT;
+  const width = Math.max(...rows.map((r) => r.length)) * fontSize * 0.6;
+  const height = rows.length * lh;
+  const gap = LINE_LABEL_OFFSET + LINE_LABEL_PAD + clearance;
+  // Block top-left (text area, before padding).
+  const left = horizontal ? mid.at.x - width / 2 : mid.at.x + gap;
+  const top = horizontal ? mid.at.y - gap - height : mid.at.y - height / 2;
+  const x = horizontal ? mid.at.x : left;
+  // Baseline of row i: centred in its row pitch (≈0.35em below the row centre).
+  const baseline = (i: number) => top + i * lh + lh / 2 + fontSize * 0.35;
+  return {
+    rows: rows.map((text, i) => ({ text, x, y: baseline(i) })),
+    textAnchor: horizontal ? 'middle' : 'start',
+    fontSize,
+    box: { x: left - LINE_LABEL_PAD, y: top - LINE_LABEL_PAD, width: width + 2 * LINE_LABEL_PAD, height: height + 2 * LINE_LABEL_PAD }
+  };
 }
 
 /** Point at the polyline's arc-length midpoint, plus the angle of the segment it lies on. */
@@ -324,11 +383,14 @@ export interface CompositeLayoutOptions {
    * `null` keeps the content-derived compact frame (the child's own layout size).
    */
   boxSize?: { width: number; height: number } | null;
+  /** Numeric/text labels per line (see {@link LineLabelResolver}); placed by the layout so screen and export agree. */
+  lineLabels?: LineLabelResolver;
 }
 
 export class CompositeLayoutEngine {
   private boxChildEngine: LayoutEngine;
   private readonly boxSize: { width: number; height: number } | null;
+  private readonly lineLabels?: LineLabelResolver;
   /** Detail-view child layouts with swapped directions, keyed by `(libraryId, dir signature)`. */
   private detailLayoutCache = new Map<string, DiagramLayout>();
 
@@ -341,6 +403,7 @@ export class CompositeLayoutEngine {
   ) {
     this.boxChildEngine = boxChildEngine ?? new LayoutEngine(BOX_CHILD_LAYOUT);
     this.boxSize = options.boxSize === undefined ? BOX_SIZE : options.boxSize;
+    this.lineLabels = options.lineLabels;
   }
 
   layout(doc: CompositeDocument): CompositeLayout {
@@ -622,6 +685,15 @@ export class CompositeLayoutEngine {
       layout.terminus = { key: DEMAND_SYMBOL, at: b, angleDeg: segmentAngleDeg(a, b) };
     }
 
+    return this.withLabel(layout);
+  }
+
+  /** Attach the consumer's label rows (if any), clearing the transformer glyph. */
+  private withLabel(layout: CompositeLineLayout): CompositeLineLayout {
+    const rows = this.lineLabels?.(layout.line);
+    if (!rows?.length) return layout;
+    const label = placeLineLabel(layout.points, rows, layout.glyph ? LINE_LABEL_GLYPH_CLEARANCE : 0);
+    if (label) layout.label = label;
     return layout;
   }
 
@@ -770,7 +842,7 @@ export class CompositeLayoutEngine {
       }
     }
 
-    return layout;
+    return this.withLabel(layout);
   }
 
   /** Every child's external connection tips in world coordinates — the legacy (fixed-connector) snap targets. */
@@ -852,7 +924,14 @@ export class CompositeLayoutEngine {
       extend({ x: b.x + b.width, y: b.y + b.height });
     }
     for (const link of links) for (const p of link.points) extend(p);
-    for (const line of lines) for (const p of line.points) extend(p);
+    for (const line of lines) {
+      for (const p of line.points) extend(p);
+      if (line.label) {
+        const b = line.label.box;
+        extend({ x: b.x, y: b.y });
+        extend({ x: b.x + b.width, y: b.y + b.height });
+      }
+    }
 
     if (!Number.isFinite(minX)) return { x: 0, y: 0, width: 0, height: 0 };
     return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
