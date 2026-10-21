@@ -166,6 +166,22 @@ value (e.g. a bus number). A position between two bars wires to both, which is
 how you express a double bus with a coupler. Anything the spec can't express
 stays reachable through the explicit element/command API.
 
+Start without ids or data (ids are generated) and add them as you enrich the
+model. Explicit ids must be unique, and core catches clashes where they happen:
+
+- `buildDocument` checks the whole spec first. It throws one `DuplicateIdError`
+  listing every clash and where it is (e.g.
+  `duplicate id "p" (position col 0 row 1, feeder "F3")`) before building
+  anything.
+- At runtime, `SldDocument.addElement` and `CompositeDocument.addChild` /
+  `addLine` reject an id that is already taken. The document is left
+  unchanged, and a failed command never enters undo history.
+
+`DuplicateIdError` extends `SldParseError` and carries the clashing `ids`, so a
+Node script or an editor can catch it and point at the offending element.
+`data` passed to `buildDocument` is deep-copied, so elements never share an
+object.
+
 ## Theming
 
 The core is headless: all export colors come from an injected `SldTheme`, and

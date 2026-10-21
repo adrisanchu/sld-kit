@@ -5,7 +5,7 @@ import { BusBar } from './elements/BusBar';
 import { Position } from './elements/Position';
 import { Connection } from './elements/Connection';
 import { elementFromJson } from './elements/factory';
-import { parseDocument, SLD_SCHEMA_VERSION, type SldParseError } from './serialization/validate';
+import { DuplicateIdError, parseDocument, SLD_SCHEMA_VERSION, type SldParseError } from './serialization/validate';
 
 /**
  * Root aggregate of a diagram: meta + grid dimensions + element map.
@@ -86,7 +86,13 @@ export class SldDocument {
 
   // ── Mutations (called by commands) ─────────────────────────────────────────
 
+  /**
+   * Add an element. Throws {@link DuplicateIdError} if its id is already taken,
+   * leaving the document unchanged (a failed `AddElementCommand` therefore never
+   * enters undo history). To change an existing element, use `replaceElement`.
+   */
   addElement(el: SldElement): void {
+    if (this.elements.has(el.id)) throw new DuplicateIdError([el.id], `Duplicate element id: ${el.id}`);
     this.elements.set(el.id, el);
     this.emit({ type: 'elements', ids: [el.id] });
   }

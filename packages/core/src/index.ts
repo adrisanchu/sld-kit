@@ -68,7 +68,7 @@ export {
   type LaneKind
 } from './commands/commands';
 
-export { Serializer, SldParseError, SLD_SCHEMA_VERSION } from './serialization/Serializer';
+export { Serializer, SldParseError, DuplicateIdError, SLD_SCHEMA_VERSION } from './serialization/Serializer';
 
 export { SymbolRegistry, type SymbolDef, type SymbolShape } from './symbols/SymbolRegistry';
 export { registerDefaultSymbols, createDefaultSymbolRegistry } from './symbols/defaults';
