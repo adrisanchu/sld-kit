@@ -6,7 +6,9 @@ import {
   CompositeLine,
   CompositeSerializer,
   CompositeSvgExporter,
+  LayoutEngine,
   RemoveLineCommand,
+  SLD_LAYOUT,
   SetAutoFacingCommand,
   SetBoxModeCommand,
   SetPortDirectionCommand,
@@ -31,6 +33,7 @@ import {
 } from '@sld-kit/react';
 import { ArrowLeft, Boxes, Layers, Magnet, Maximize, PenLine, MousePointer2, Redo2, Trash2, Undo2 } from 'lucide-react';
 import { buildBoxComposite, ratingLabels, voltageClass, voltageFill } from './fixture';
+import { barBusIdLabel, busLabelOf, busSections } from './switching';
 
 const LINE_KINDS: { kind: CompositeLineKind; label: string }[] = [
   { kind: 'line', label: 'Overhead' },
@@ -39,10 +42,14 @@ const LINE_KINDS: { kind: CompositeLineKind; label: string }[] = [
   { kind: 'demand', label: 'Demand' }
 ];
 
-/** The integer bus id a box shows under its name (from the child's opaque meta.data). */
+/**
+ * The bus id(s) a box shows under its name, derived from the child's topology:
+ * each bar carries its own id, and bars joined through closed switches (e.g. a
+ * double bus with the coupler closed) share one box — `39770 / 39771`.
+ */
 function busLabel(child: ChildLayout): string | null {
-  const id = (child.instance.resolved?.meta.data as { busId?: number } | undefined)?.busId;
-  return id != null ? String(id) : null;
+  const doc = child.instance.resolved;
+  return doc ? busLabelOf(busSections(doc)) : null;
 }
 
 type Tool = 'select' | 'draw';
@@ -62,7 +69,18 @@ export default function App() {
   // connectors, so box↔detail never strands or bends a line into a box. The
   // `lineLabels` resolver formats each line's ratings (folded into `line.data`
   // by the fixture) — placed by the core layout, so screen and export agree.
-  const engine = useMemo(() => new CompositeLayoutEngine(undefined, undefined, undefined, { lineLabels: ratingLabels }), []);
+  // The detail-view child engine labels each bar with its bus id, placed left of
+  // the bar so a long label never runs into a bay's stem.
+  const engine = useMemo(
+    () =>
+      new CompositeLayoutEngine(
+        new LayoutEngine({ ...SLD_LAYOUT, busBarLabelAnchor: 'center-left' }, { busBarLabel: barBusIdLabel }),
+        undefined,
+        undefined,
+        { lineLabels: ratingLabels }
+      ),
+    []
+  );
   // `version` is the load-bearing dep: `composite` mutates in place.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const layout = useMemo(() => engine.layout(composite), [engine, composite, version]);

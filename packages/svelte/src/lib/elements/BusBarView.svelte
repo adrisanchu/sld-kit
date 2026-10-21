@@ -76,18 +76,18 @@
     stroke-width={fmt?.strokeWidth}
     stroke-dasharray={fmt?.dashArray ?? undefined}
   />
-  {#if showLabel && bar.label}
+  {#if showLabel && geo.label}
     <g transform={labelAngleDeg ? `rotate(${labelAngleDeg} ${geo.labelAt.x} ${geo.labelAt.y})` : undefined}>
       <text
         x={geo.labelAt.x}
         y={geo.labelAt.y}
-        text-anchor="start"
+        text-anchor={geo.textAnchor}
         font-size={SLD_LAYOUT.busLabelFontSize}
         font-weight="600"
         fill="currentColor"
         class="select-none"
       >
-        {bar.label}
+        {geo.label}
       </text>
     </g>
   {/if}
