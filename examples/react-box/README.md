@@ -39,6 +39,15 @@ pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
   `lineLabels` resolver (`ratingLabels`) formats them into rows: `winter/spring`
   over `summer/autumn`, or a single `winter/summer` row. The core layout places
   them. Lines without a reading have no label.
+- **Double bus + coupler** — CHARLIE has two bars, each carrying its own bus id
+  in `data`. Every bay and the coupler carry switch state in `data.switch`.
+  `src/switching.ts` (example-local, not core) walks the topology: closed
+  positions join what they touch, open ones conduct nothing. Bars joined that
+  way form one **bus section**. With the coupler closed, CHARLIE is one section,
+  so its box reads `39770 / 39771`. In the detail view each bar is labelled
+  with its bus id instead of `BB1`/`BB2`. The child `LayoutEngine` gets a
+  `busBarLabel` resolver and `busBarLabelAnchor: 'center-left'`, so the id sits
+  beside the bar and never runs into a stem.
 - **Office-safe export** — `CompositeSvgExporter` with `boxMode`, `boxFill` and
   `boxSubLabel` produces a PowerPoint-pasteable SVG.
 

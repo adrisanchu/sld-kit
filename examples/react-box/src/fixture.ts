@@ -3,10 +3,17 @@
  * substation names and integer bus ids; no real network data belongs in this
  * repo. (The reference images are Baleares; nothing here is.)
  *
- * Each box is a real child diagram: a minimal one-bus SLD whose external feeders
- * carry stable ids, so the composite's box-lines anchor to them and stay live
- * when a box moves. Zoomed out the child renders as a voltage-coloured box; the
+ * Each box is a real child diagram: a minimal SLD whose external feeders carry
+ * stable ids, so the composite's box-lines anchor to them and stay live when a
+ * box moves. Zoomed out the child renders as a voltage-coloured box; the
  * box/detail toggle (or an explorer fly-in) reveals the SLD underneath.
+ *
+ * Most subs are single bus. CHARLIE is a **double bus with a coupler**: feeders
+ * hang above BB1 or below BB2 (each on one fixed bar) and a coupler position
+ * sits between the bars. Each bar carries its own integer bus id in `data`, and
+ * every bay plus the coupler carries switch state in `data.switch` (see
+ * `switching.ts`). With the coupler closed both bars form one electrical node,
+ * so the box view shows one box labelled with both ids (`39770 / 39771`).
  */
 import {
   CompositeDocument,
@@ -17,66 +24,129 @@ import {
   buildDocument,
   type ExternalDirection,
   type LineVertexJson,
+  type BaySpec,
+  type PositionType,
   type SldDocument
 } from '@sld-kit/core';
+import type { SwitchData } from './switching';
 
 interface Feeder {
   id: string;
   label: string;
   direction: ExternalDirection;
+  /** Position type of the bay (default `line`). */
+  type?: PositionType;
+  /** Which bar a double-bus bay hangs off (1 = above BB1, 2 = below BB2). Ignored on single bus. */
+  bar?: 1 | 2;
 }
 
-/** A minimal one-bus substation whose feeders are the box's connection terminals. */
-function buildSub(id: string, name: string, busId: number, voltageKv: number, feeders: Feeder[]): SldDocument {
+interface Sub {
+  id: string;
+  name: string;
+  /** One bus id per bar: one entry = single bus, two = double bus with a coupler. */
+  buses: number[];
+  kv: number;
+  x: number;
+  y: number;
+  feeders: Feeder[];
+}
+
+/** Every bay (and the coupler) is a switchable position; all closed by default. */
+const closed = (): { switch: SwitchData } => ({ switch: { operable: true, state: 'closed' } });
+
+/** Stable position id for the bay feeding `feederId` (feeder ids are unique in the fixture). */
+export const bayId = (feederId: string) => `pos-${feederId}`;
+
+/** Stable id of a double-bus sub's coupler position. */
+export const COUPLER_ID = 'coupler';
+
+/**
+ * A substation whose feeders are the box's connection terminals. Single bus:
+ * one bar (row 0) with a bay per feeder below it. Double bus: BB1 (row 1) and
+ * BB2 (row 3) with the coupler between them (row 2); bar-1 bays sit above BB1
+ * (row 0), bar-2 bays below BB2 (row 4), so each bay wires to exactly one bar.
+ */
+function buildSub(sub: Sub): SldDocument {
+  const meta = { id: sub.id, name: sub.name, substation: sub.name, voltageKv: sub.kv };
+  const bay = (f: Feeder, col: number, row: number): BaySpec => ({
+    col,
+    positions: [
+      {
+        id: bayId(f.id),
+        type: f.type ?? 'line',
+        label: f.label,
+        row,
+        data: closed(),
+        feeder: { asset: f.type === 'demand' ? 'demand' : 'line', label: f.label, direction: f.direction, id: f.id }
+      }
+    ]
+  });
+
+  if (sub.buses.length === 1) {
+    return buildDocument({
+      meta,
+      busbars: [{ id: 'bb', label: 'BB', row: 0, data: { busId: sub.buses[0] } }],
+      bays: sub.feeders.map((f, i) => bay(f, i, 1))
+    });
+  }
+
+  const top = sub.feeders.filter((f) => (f.bar ?? 1) === 1);
+  const bottom = sub.feeders.filter((f) => f.bar === 2);
   return buildDocument({
-    meta: { id, name, substation: name, voltageKv, data: { busId } },
-    busbars: [{ label: 'BB', row: 0 }],
-    bays: feeders.map((f, i) => ({
-      col: i,
-      positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: f.label, direction: f.direction, id: f.id } }]
-    }))
+    meta,
+    busbars: [
+      { id: 'bb-1', label: 'BB1', row: 1, data: { busId: sub.buses[0] } },
+      { id: 'bb-2', label: 'BB2', row: 3, data: { busId: sub.buses[1] } }
+    ],
+    bays: [
+      ...top.map((f, i) => bay(f, i, 0)),
+      { col: top.length, positions: [{ id: COUPLER_ID, type: 'central', label: 'BC', row: 2, data: closed() }] },
+      ...bottom.map((f, i) => bay(f, top.length + 1 + i, 4))
+    ]
   });
 }
 
-// ── The six fictional buses ──────────────────────────────────────────────────
-const SUBS: { id: string; name: string; bus: number; kv: number; x: number; y: number; feeders: Feeder[] }[] = [
+// ── The six fictional substations ────────────────────────────────────────────
+const SUBS: Sub[] = [
   {
-    id: 'lib-alpha', name: 'ALPHA', bus: 29925, kv: 400, x: 0, y: 0,
+    id: 'lib-alpha', name: 'ALPHA', buses: [29925], kv: 400, x: 0, y: 0,
     feeders: [
       { id: 'alpha-bravo', label: 'L1', direction: 'right' },
       { id: 'alpha-charlie', label: 'T1', direction: 'down' }
     ]
   },
   {
-    id: 'lib-bravo', name: 'BRAVO', bus: 29915, kv: 400, x: 560, y: 0,
+    id: 'lib-bravo', name: 'BRAVO', buses: [29915], kv: 400, x: 560, y: 0,
     feeders: [{ id: 'bravo-alpha', label: 'L1', direction: 'left' }]
   },
   {
-    id: 'lib-charlie', name: 'CHARLIE', bus: 39770, kv: 220, x: 0, y: 430,
+    // Double bus: T1 (to ALPHA) on BB1; L2 (to DELTA) and a demand on BB2.
+    id: 'lib-charlie', name: 'CHARLIE', buses: [39770, 39771], kv: 220, x: 0, y: 430,
     feeders: [
-      { id: 'charlie-alpha', label: 'T1', direction: 'up' },
-      { id: 'charlie-delta', label: 'L2', direction: 'right' }
+      { id: 'charlie-alpha', label: 'T1', direction: 'up', bar: 1 },
+      { id: 'charlie-delta', label: 'L2', direction: 'right', bar: 2 },
+      { id: 'charlie-dem', label: 'D2', direction: 'down', type: 'demand', bar: 2 }
     ]
   },
   {
-    id: 'lib-delta', name: 'DELTA', bus: 39910, kv: 220, x: 560, y: 430,
+    id: 'lib-delta', name: 'DELTA', buses: [39910], kv: 220, x: 560, y: 430,
     feeders: [
       { id: 'delta-charlie', label: 'L2', direction: 'left' },
       { id: 'delta-echo', label: 'C1', direction: 'right' }
     ]
   },
   {
-    id: 'lib-echo', name: 'ECHO', bus: 39775, kv: 220, x: 1120, y: 430,
+    id: 'lib-echo', name: 'ECHO', buses: [39775], kv: 220, x: 1120, y: 430,
     feeders: [
       { id: 'echo-delta', label: 'C1', direction: 'left' },
       { id: 'echo-foxtrot', label: 'L3', direction: 'down' }
     ]
   },
   {
-    id: 'lib-foxtrot', name: 'FOXTROT', bus: 39831, kv: 220, x: 1120, y: 860,
+    id: 'lib-foxtrot', name: 'FOXTROT', buses: [39831], kv: 220, x: 1120, y: 860,
     feeders: [
       { id: 'foxtrot-echo', label: 'L3', direction: 'up' },
-      { id: 'foxtrot-dem', label: 'D1', direction: 'down' }
+      { id: 'foxtrot-dem', label: 'D1', direction: 'down', type: 'demand' }
     ]
   }
 ];
@@ -170,7 +240,7 @@ export function ratingLabels(line: CompositeLine): string[] | null {
 
 /** Build the box composite: the six boxes plus lines of every kind between them. */
 export function buildBoxComposite(): CompositeDocument {
-  const resolver = new MapResolver(new Map(SUBS.map((s) => [s.id, Serializer.toJSON(buildSub(s.id, s.name, s.bus, s.kv, s.feeders))])));
+  const resolver = new MapResolver(new Map(SUBS.map((s) => [s.id, Serializer.toJSON(buildSub(s))])));
 
   // `defaultRouting: 'orthogonal'` selects the floating-connector auto router
   // (attach per view + computed bends), so lines stay orthogonal and attached
@@ -199,10 +269,10 @@ export function buildBoxComposite(): CompositeDocument {
   composite.addLine(new CompositeLine('l-delta-echo', [anchor('lib-delta', 'delta-echo'), anchor('lib-echo', 'echo-delta')], 'cable'));
   composite.addLine(new CompositeLine('l-echo-foxtrot', [anchor('lib-echo', 'echo-foxtrot'), anchor('lib-foxtrot', 'foxtrot-echo')], 'line'));
 
-  // The demand hangs off FOXTROT's 'down' feeder as a node-relative lead — the
-  // router keeps it attached and vertical in both views (no alignment pass, no
-  // absolute point).
+  // Demands hang off a 'down' feeder as a node-relative lead — the router keeps
+  // them attached and vertical in both views (no alignment pass, no absolute point).
   composite.addLine(new CompositeLine('l-foxtrot-dem', demandLead('lib-foxtrot', 'foxtrot-dem'), 'demand'));
+  composite.addLine(new CompositeLine('l-charlie-dem', demandLead('lib-charlie', 'charlie-dem'), 'demand'));
 
   applyLineRatings(composite, LINE_RATINGS);
 

@@ -3,7 +3,10 @@
  * CompositeCanvas in box mode to a string and assert it paints boxes (name +
  * sub-label, voltage class), a cable dash, and a transformer glyph. Also checks
  * the office-safe SVG export, and numeric line labels (data + `lineLabels`
- * resolver) on screen and in the export. Run with: node ssr-smoke.mjs
+ * resolver) on screen and in the export. Also exercises the app's real fixture +
+ * bus-section topology (imported as TypeScript — Node ≥ 22.18 strips types):
+ * a double bus with its coupler closed is one box labelled with both bus ids,
+ * and opening the coupler splits it into two sections. Run with: node ssr-smoke.mjs
  */
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -13,12 +16,16 @@ import {
   CompositeLine,
   CompositeSvgExporter,
   DiagramInstance,
+  LayoutEngine,
+  SLD_LAYOUT,
   MapResolver,
   Serializer,
   buildDocument,
   newId
 } from '@sld-kit/core';
 import { CompositeCanvas } from '@sld-kit/react';
+import { buildBoxComposite, bayId, COUPLER_ID } from './src/fixture.ts';
+import { barBusIdLabel, busLabelOf, busSections, withSwitchState } from './src/switching.ts';
 
 const sub = (id, name, busId, kv, feeders) =>
   buildDocument({
@@ -98,6 +105,35 @@ const alphaSideWithBetaAt = (betaX) => {
 const facingRight = alphaSideWithBetaAt(900);
 const facingLeft = alphaSideWithBetaAt(-900);
 
+// Bus-section topology on the real fixture (CHARLIE = double bus + coupler).
+const fixture = buildBoxComposite();
+const charlie = fixture.getChild('lib-charlie').resolved;
+const closedSections = busSections(charlie);
+const fixtureHtml = renderToStaticMarkup(
+  h(CompositeCanvas, {
+    layout: new CompositeLayoutEngine().layout(fixture),
+    boxMode: true,
+    boxSubLabel: (child) => busLabelOf(busSections(child.instance.resolved))
+  })
+);
+// Detail view with the app's child engine: bars labelled by bus id, left of the bar.
+const detailFixture = buildBoxComposite();
+detailFixture.updateMeta({ boxMode: false });
+const detailEngine = new CompositeLayoutEngine(new LayoutEngine({ ...SLD_LAYOUT, busBarLabelAnchor: 'center-left' }, { busBarLabel: barBusIdLabel }));
+const detailHtml = renderToStaticMarkup(h(CompositeCanvas, { layout: detailEngine.layout(detailFixture) }));
+const detailSvg = new CompositeSvgExporter(detailEngine).export(detailFixture);
+const setState = (id, state) => {
+  const el = charlie.getElement(id);
+  el.data = withSwitchState(el.data, state);
+};
+setState(COUPLER_ID, 'open');
+const openSections = busSections(charlie);
+setState(bayId('charlie-delta'), 'open');
+const openBaySections = busSections(charlie);
+setState(COUPLER_ID, 'closed');
+setState(bayId('charlie-delta'), 'closed');
+const sectionFeeders = (sections) => sections.map((s) => [...s.connectionIds].sort().join(',')).join(' | ');
+
 const checks = [
   ['renders an <svg>', /<svg/.test(html)],
   ['renders box names', html.includes('ALPHA') && html.includes('BETA') && html.includes('GAMMA')],
@@ -107,9 +143,22 @@ const checks = [
   ['draws a transformer glyph backing', html.includes('fill-background')],
   ['export is office-safe (no class/style/marker)', !svg.includes('class=') && !svg.includes('<style') && !svg.includes('<marker')],
   ['export renders boxes', svg.includes('ALPHA') && svg.includes('#dcfce7')],
-  ['draws stacked line labels', html.includes('>1200/1500<') && html.includes('>1100/1300<')],
+  ['draws stacked line labels', html.includes('>1500/1200<') && html.includes('>1100/1300<')],
   ['formats a winter/summer-only capacity as one row', formatCapacity([150, undefined, 100, undefined]).join('|') === '150/100'],
-  ['exports stacked line labels', svg.includes('>1200/1500<') && svg.includes('>1100/1300<')],
+  ['exports stacked line labels', svg.includes('>1500/1200<') && svg.includes('>1100/1300<')],
+  ['closed coupler: one section with both bus ids', closedSections.length === 1 && busLabelOf(closedSections) === '39770 / 39771'],
+  ['closed coupler: the box shows "39770 / 39771"', fixtureHtml.includes('>39770 / 39771<')],
+  [
+    'open coupler: two sections, feeders on their own bar',
+    openSections.length === 2 && sectionFeeders(openSections) === 'charlie-alpha | charlie-delta,charlie-dem'
+  ],
+  [
+    'open bay: feeder stays on its bar, flagged de-energised',
+    sectionFeeders(openBaySections) === 'charlie-alpha | charlie-delta,charlie-dem' &&
+      openBaySections[1].openConnectionIds.join() === 'charlie-delta'
+  ],
+  ['detail bars show their bus id, left-anchored', /text-anchor="end"[^>]*>39771</.test(detailHtml) && !detailHtml.includes('>BB1<')],
+  ['detail export shows bar bus ids', /text-anchor="end"[^>]*>39770</.test(detailSvg)],
   ['auto-facing derives the exit side from live positions', facingRight === 'right' && facingLeft === 'left']
 ];
 
