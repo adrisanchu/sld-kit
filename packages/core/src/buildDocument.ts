@@ -26,6 +26,10 @@ export interface FeederSpec {
 export interface BayPositionSpec {
   type: PositionType;
   row: number;
+  /** Explicit element id; defaults to a fresh `newId()`. Set it to address the position later (e.g. switch state). */
+  id?: ElementId;
+  /** Opaque consumer metadata (see `SldElement.data`) — roundtripped, never read. */
+  data?: unknown;
   /** Explicit label; when omitted, auto-named `${prefix}-${n}` for the type. */
   label?: string;
   /** Columns the position spans (default 1). */
@@ -44,9 +48,19 @@ export interface BaySpec {
   positions: BayPositionSpec[];
 }
 
+/** One busbar row. `id` / `data` are optional, like on positions. */
+export interface BusBarSpec {
+  label: string;
+  row: number;
+  /** Explicit element id; defaults to a fresh `newId()`. */
+  id?: ElementId;
+  /** Opaque consumer metadata (e.g. a bus number) — roundtripped, never read. */
+  data?: unknown;
+}
+
 export interface BuildDocumentSpec {
   meta?: Partial<DocumentMeta>;
-  busbars: Array<{ label: string; row: number }>;
+  busbars: BusBarSpec[];
   bays: BaySpec[];
   /** Naming-prefix overrides for auto-named positions (per position type). */
   prefixes?: Record<string, string>;
@@ -72,7 +86,7 @@ export function buildDocument(spec: BuildDocumentSpec): SldDocument {
   const prefixes = spec.prefixes ?? POSITION_LABEL_PREFIX;
 
   for (const bb of spec.busbars) {
-    doc.addElement(BusBar.of({ label: bb.label, row: bb.row }));
+    doc.addElement(BusBar.of({ id: bb.id, label: bb.label, row: bb.row, data: bb.data }));
   }
 
   // Place every bay's positions, auto-naming the unlabeled ones as we go so the
@@ -82,6 +96,8 @@ export function buildDocument(spec: BuildDocumentSpec): SldDocument {
   for (const bay of spec.bays) {
     for (const p of bay.positions) {
       const pos = Position.of({
+        id: p.id,
+        data: p.data,
         label: p.label ?? nextPositionLabel(doc, p.type, prefixes),
         type: p.type,
         row: p.row,

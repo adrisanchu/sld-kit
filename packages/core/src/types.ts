@@ -49,6 +49,36 @@ export type ExternalAssetKind = 'line' | 'transformer' | 'renewable' | 'storage'
 export type ExternalDirection = 'up' | 'down' | 'left' | 'right';
 
 /**
+ * One of eight discrete label slots, named `{vertical}-{horizontal}` relative
+ * to the labelled element's *own* frame (top = its top edge). Shared label
+ * vocabulary across the library: a composite child's name label snaps to any of
+ * them (so it rides with the child's rotation — "top-left" stays the diagram's
+ * own top-left corner whatever its `angleDeg`), and a bus bar's label uses a
+ * subset (see `BusBarLabelAnchor`). (`center-center` is intentionally omitted —
+ * a label over the element's body.)
+ */
+export type LabelAnchor =
+  | 'top-left'
+  | 'top-center'
+  | 'top-right'
+  | 'center-left'
+  | 'center-right'
+  | 'bottom-left'
+  | 'bottom-center'
+  | 'bottom-right';
+
+export const LABEL_ANCHORS: readonly LabelAnchor[] = [
+  'top-left',
+  'top-center',
+  'top-right',
+  'center-left',
+  'center-right',
+  'bottom-left',
+  'bottom-center',
+  'bottom-right'
+] as const;
+
+/**
  * One end of a Connection.
  *
  * External assets (a transmission line leaving the diagram, the low-voltage

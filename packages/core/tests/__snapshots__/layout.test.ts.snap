@@ -7,6 +7,7 @@ exports[`LayoutEngine > geometry is stable (snapshot) 1`] = `
       "bb-1",
       {
         "kind": "busbar",
+        "label": "BB1",
         "labelAt": {
           "x": 60,
           "y": 93,
@@ -17,12 +18,14 @@ exports[`LayoutEngine > geometry is stable (snapshot) 1`] = `
           "x": 60,
           "y": 101,
         },
+        "textAnchor": "start",
       },
     ],
     [
       "bb-2",
       {
         "kind": "busbar",
+        "label": "BB2",
         "labelAt": {
           "x": 60,
           "y": 567,
@@ -33,6 +36,7 @@ exports[`LayoutEngine > geometry is stable (snapshot) 1`] = `
           "x": 60,
           "y": 575,
         },
+        "textAnchor": "start",
       },
     ],
     [

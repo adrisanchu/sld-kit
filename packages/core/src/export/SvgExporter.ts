@@ -159,19 +159,19 @@ export class SvgExporter {
         'stroke-width': barFmt?.strokeWidth,
         'stroke-dasharray': barFmt?.dashArray
       });
-      if (bar.label) {
+      if (geo.label) {
         this.emitLabel(
           b,
           {
             x: geo.labelAt.x,
             y: geo.labelAt.y,
-            'text-anchor': 'start',
+            'text-anchor': geo.textAnchor,
             'font-family': cfg.fontFamily,
             'font-size': cfg.busLabelFontSize,
             'font-weight': 'bold',
             fill: theme.structure.label
           },
-          bar.label,
+          geo.label,
           geo.labelAt.x,
           geo.labelAt.y,
           labelAngleDeg

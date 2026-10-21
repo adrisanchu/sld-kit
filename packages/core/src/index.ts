@@ -6,7 +6,7 @@
 
 export * from './types';
 export { newId } from './ids';
-export { SLD_LAYOUT, type SldLayoutConfig } from './layout';
+export { SLD_LAYOUT, type SldLayoutConfig, type BusBarLabelAnchor } from './layout';
 export {
   DEFAULT_THEME,
   positionColors,
@@ -34,6 +34,7 @@ export {
   type BuildDocumentSpec,
   type BaySpec,
   type BayPositionSpec,
+  type BusBarSpec,
   type FeederSpec
 } from './buildDocument';
 export { nextPositionLabel, nextExternalLabel, POSITION_LABEL_PREFIX, EXTERNAL_LABEL_PREFIX } from './naming';
@@ -46,6 +47,8 @@ export {
   type DiagramLayout,
   type ElementGeometry,
   type BusBarGeometry,
+  type BusBarLabelResolver,
+  type LayoutEngineOptions,
   type PositionGeometry,
   type ConnectionGeometry
 } from './layout/LayoutEngine';

@@ -160,8 +160,11 @@ pass a `label`; supply `prefixes` to rename the counters. Feeders are
 what leaves the diagram, and a column can carry several feeders (e.g. one off the
 top position toward the top bar and one off the bottom). Give a feeder an `id`
 for a stable, shareable connection id — e.g. a tie-line a composite auto-links by
-matching the same id across two diagrams. Anything the spec can't express stays
-reachable through the explicit element/command API.
+matching the same id across two diagrams. Busbars and positions also accept an
+optional `id` (to address them later, e.g. switch state) and an opaque `data`
+value (e.g. a bus number). A position between two bars wires to both, which is
+how you express a double bus with a coupler. Anything the spec can't express
+stays reachable through the explicit element/command API.
 
 ## Theming
 
@@ -266,6 +269,23 @@ database. `data` travels inside the diagram JSON and is not queryable. For
 DB-backed metadata, keep your own table keyed by the element's stable
 `ElementId` and join at render time (the "sidecar" pattern). Use `data` for
 attributes that must travel _with_ the exported file.
+
+**Showing `data` on bus bars.** A bar's label defaults to its own `label`
+(`BB1`). To show something else, such as a bus number kept in `data`, pass a
+`busBarLabel` resolver to the `LayoutEngine`. The layout resolves the text, so
+the live view and the SVG export always agree. Where the label sits uses the
+same `LabelAnchor` slot names as a composite child's name label, relative to
+the bar. `top-left` (the default) puts it above the bar's left end. Long labels
+can run into the first bay's stem there, so you can opt into `center-left`
+instead, which places it beside the bar's start and widens the left margin to
+fit:
+
+```ts
+const engine = new LayoutEngine(
+  { ...SLD_LAYOUT, busBarLabelAnchor: 'center-left' }, // default 'top-left'
+  { busBarLabel: (bar) => getElementData<{ busId?: number }>(bar)?.busId?.toString() } // null/undefined keeps bar.label
+);
+```
 
 ### Reserved `data` namespaces (`sld`, `cim`)
 

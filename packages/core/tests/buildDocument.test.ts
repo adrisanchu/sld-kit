@@ -167,3 +167,41 @@ describe('buildDocument', () => {
     expect(doc.positions()[0].label).toBe('feeder-1');
   });
 });
+
+describe('buildDocument — explicit ids and data', () => {
+  // Double bus with a coupler between the bars: a feeder above BB1, one below
+  // BB2, the coupler wired to both bars.
+  const doubleBus = () =>
+    buildDocument({
+      busbars: [
+        { id: 'bb-1', label: 'BB1', row: 1, data: { busId: 1 } },
+        { id: 'bb-2', label: 'BB2', row: 3, data: { busId: 2 } }
+      ],
+      bays: [
+        { col: 0, positions: [{ id: 'p-up', type: 'line', row: 0, data: { tag: 'up' }, feeder: { asset: 'line', label: 'UP' } }] },
+        { col: 1, positions: [{ id: 'cpl', type: 'central', row: 2 }] },
+        { col: 2, positions: [{ id: 'p-dn', type: 'line', row: 4, feeder: { asset: 'line', label: 'DN' } }] }
+      ]
+    });
+  const wiredTo = (doc: ReturnType<typeof buildDocument>, id: string) =>
+    doc
+      .connectionsOf(id)
+      .flatMap((c) => c.elementIds())
+      .filter((x) => x !== id)
+      .sort();
+
+  it('keeps explicit busbar/position ids and data', () => {
+    const doc = doubleBus();
+    expect(doc.getElement('bb-1')?.data).toEqual({ busId: 1 });
+    expect(doc.getElement('bb-2')?.data).toEqual({ busId: 2 });
+    expect(doc.getElement('p-up')?.data).toEqual({ tag: 'up' });
+    expect(doc.getElement('cpl')?.data).toBeUndefined();
+  });
+
+  it('wires a coupler between two bars to both, and outer feeders to one bar', () => {
+    const doc = doubleBus();
+    expect(wiredTo(doc, 'cpl')).toEqual(['bb-1', 'bb-2']);
+    expect(wiredTo(doc, 'p-up')).toEqual(['bb-1']);
+    expect(wiredTo(doc, 'p-dn')).toEqual(['bb-2']);
+  });
+});
