@@ -27,6 +27,7 @@ import {
   TRANSFORMER_SYMBOL
 } from './layout-constants';
 import { arcMidpoint, segmentAngleDeg, simplify } from './polyline';
+import { resolveFormat, type ElementFormat, type ElementFormatResolver, type FormatContext } from '../theme';
 import { feederBoxCenter, layoutSectionBoxes, type BoxSectionsResolver, type SectionBox, type SectionTie } from './sections';
 
 /** Fixed frame for an unresolved child, so it stays selectable and movable. */
@@ -218,17 +219,64 @@ export interface CompositeLink {
   points: Point[];
 }
 
-/** Resolve child `Connection`s from `(instanceId, connectionId)` references. */
-function connectionsFor(
-  refs: { instanceId: string; connectionId: string }[],
-  children: ChildLayout[]
-): Connection[] {
-  const out: Connection[] = [];
+type Ref = { instanceId: string; connectionId: string };
+
+/** Resolve child `Connection`s (with their owning document) from `(instanceId, connectionId)` references. */
+function connectionRefs(refs: Ref[], children: ChildLayout[]): { conn: Connection; doc: SldDocument }[] {
+  const out: { conn: Connection; doc: SldDocument }[] = [];
   for (const { instanceId, connectionId } of refs) {
-    const el = children.find((c) => c.instance.id === instanceId)?.instance.resolved?.getElement(connectionId);
-    if (el instanceof Connection) out.push(el);
+    const doc = children.find((c) => c.instance.id === instanceId)?.instance.resolved;
+    const el = doc?.getElement(connectionId);
+    if (doc && el instanceof Connection) out.push({ conn: el, doc });
   }
   return out;
+}
+
+/** Resolve child `Connection`s from `(instanceId, connectionId)` references. */
+function connectionsFor(refs: Ref[], children: ChildLayout[]): Connection[] {
+  return connectionRefs(refs, children).map((r) => r.conn);
+}
+
+const linkRefs = (link: CompositeLink): Ref[] => [
+  { instanceId: link.a.instanceId, connectionId: link.connectionId },
+  { instanceId: link.b.instanceId, connectionId: link.connectionId }
+];
+
+const lineRefs = (line: CompositeLine): Ref[] =>
+  line.vertices.flatMap((v) => (v.kind === 'anchor' ? [{ instanceId: v.instanceId, connectionId: v.connectionId }] : []));
+
+/** First format {@link resolveFormat} yields across the backing connections (each with its own document). */
+function firstResolved(refs: Ref[], children: ChildLayout[], resolve?: ElementFormatResolver | null, theme?: FormatContext['theme']) {
+  for (const { conn, doc } of connectionRefs(refs, children)) {
+    const fmt = resolveFormat(conn, resolve, { doc, theme });
+    if (fmt) return fmt;
+  }
+  return undefined;
+}
+
+/**
+ * The format of an **auto-link**: the first of its backing child connections
+ * that the consumer's resolver formats — or, failing that, the default
+ * open-connection look when either end touches an open position. Shared by the
+ * canvas (both adapters) and the exporter, so screen and export agree.
+ */
+export function linkFormat(
+  link: CompositeLink,
+  children: ChildLayout[],
+  resolve?: ElementFormatResolver | null,
+  theme?: FormatContext['theme']
+): ElementFormat | undefined {
+  return firstResolved(linkRefs(link), children, resolve, theme);
+}
+
+/** The format of a **manual line**, from the child connections it anchors to (see {@link linkFormat}). */
+export function lineFormat(
+  line: CompositeLine,
+  children: ChildLayout[],
+  resolve?: ElementFormatResolver | null,
+  theme?: FormatContext['theme']
+): ElementFormat | undefined {
+  return firstResolved(lineRefs(line), children, resolve, theme);
 }
 
 /**
@@ -239,13 +287,7 @@ function connectionsFor(
  * the tag means.
  */
 export function linkConnections(link: CompositeLink, children: ChildLayout[]): Connection[] {
-  return connectionsFor(
-    [
-      { instanceId: link.a.instanceId, connectionId: link.connectionId },
-      { instanceId: link.b.instanceId, connectionId: link.connectionId }
-    ],
-    children
-  );
+  return connectionsFor(linkRefs(link), children);
 }
 
 /**
@@ -254,12 +296,7 @@ export function linkConnections(link: CompositeLink, children: ChildLayout[]): C
  * auto-link). A line with only free `point` vertices returns `[]`.
  */
 export function lineConnections(line: CompositeLine, children: ChildLayout[]): Connection[] {
-  return connectionsFor(
-    line.vertices.flatMap((v) =>
-      v.kind === 'anchor' ? [{ instanceId: v.instanceId, connectionId: v.connectionId }] : []
-    ),
-    children
-  );
+  return connectionsFor(lineRefs(line), children);
 }
 
 /** A structural glyph placed on a line: a `SymbolRegistry` key + a placement. */

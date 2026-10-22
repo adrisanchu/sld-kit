@@ -6,6 +6,9 @@ import {
   CompositeLayoutEngine,
   CompositeSvgExporter,
   OrthogonalRouter,
+  Position,
+  lineFormat,
+  SWITCH_OPEN_CONNECTION_FORMAT,
   BOX_SIZE,
   BOX_SECTION_GAP,
   CompositeLine,
@@ -1063,6 +1066,17 @@ describe('Box view — section boxes (boxSections)', () => {
     expect(lw.y).toBeLessThan(a.frame.y + a.frame.height);
     // Box B (BB2) faces EAST: its line leaves B's right edge.
     expect(le.x).toBe(b.frame.x + b.frame.width);
+  });
+
+  it("a line anchored to an open bay's feeder gets the open-connection look (screen + export)", () => {
+    const doc = sectionDoc();
+    const mid = doc.getChild('mid')!.resolved!;
+    (mid.getElement('p-e') as Position).state = 'open';
+    const layout = engine().layout(doc);
+    expect(lineFormat(lineOf(layout, 'le').line, layout.children)).toEqual(SWITCH_OPEN_CONNECTION_FORMAT);
+    expect(lineFormat(lineOf(layout, 'lw').line, layout.children)).toBeUndefined();
+    const svg = new CompositeSvgExporter(engine()).export(doc);
+    expect(svg).toContain('stroke="#94a3b8"');
   });
 
   it('detail view ignores the split', () => {

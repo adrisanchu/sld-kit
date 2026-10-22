@@ -12,6 +12,8 @@
 
 import type { SldElement } from './elements/Element';
 import { Position, effectiveState } from './elements/Position';
+import { Connection } from './elements/Connection';
+import type { SldDocument } from './SldDocument';
 
 export interface PositionTypeColors {
   fill: string;
@@ -50,6 +52,14 @@ export interface ElementFormat {
  */
 export const SWITCH_OPEN_FORMAT: ElementFormat = { fillOpacity: 0.3, dashArray: '4 3' };
 
+/**
+ * Default look of a connection that directly touches an open position (its
+ * stems to the bars, its feeder, and any composite line anchored to it): grey
+ * and dashed — no flow through an open bay. Deeper de-energisation (lines cut
+ * off further away) is topology, left to the consumer's resolver.
+ */
+export const SWITCH_OPEN_CONNECTION_FORMAT: ElementFormat = { stroke: '#94a3b8', dashArray: '4 3' };
+
 export interface SldTheme {
   /**
    * Colors keyed by (open) `PositionType` string. A position whose type has
@@ -81,6 +91,11 @@ export interface SldTheme {
    * `resolveElementFormat` returns nothing for it. Default {@link SWITCH_OPEN_FORMAT}.
    */
   switchOpenFormat?: ElementFormat;
+  /**
+   * How a connection directly touching an open position looks when
+   * `resolveElementFormat` returns nothing for it. Default {@link SWITCH_OPEN_CONNECTION_FORMAT}.
+   */
+  switchOpenConnectionFormat?: ElementFormat;
 }
 
 /**
@@ -110,7 +125,8 @@ export const DEFAULT_THEME: SldTheme = {
     positionStrokeWidth: 1.5,
     connectionStrokeWidth: 2
   },
-  switchOpenFormat: SWITCH_OPEN_FORMAT
+  switchOpenFormat: SWITCH_OPEN_FORMAT,
+  switchOpenConnectionFormat: SWITCH_OPEN_CONNECTION_FORMAT
 };
 
 /**
@@ -121,28 +137,55 @@ export function positionColors(theme: SldTheme, type: string): PositionTypeColor
   return theme.positionTypes[type] ?? theme.fallbackPositionType;
 }
 
+/** A consumer's format resolver (the theme's `resolveElementFormat` / the views' `formatResolver`). */
+export type ElementFormatResolver = (el: SldElement) => ElementFormat | null | undefined;
+
+/** Context for {@link resolveFormat}: the element's document and the open-state looks. */
+export interface FormatContext {
+  /** The document `el` belongs to — needed to tell whether a connection touches an open position. */
+  doc?: SldDocument | null;
+  /** Overrides for the default open looks (an `SldTheme` fits). */
+  theme?: Pick<SldTheme, 'switchOpenFormat' | 'switchOpenConnectionFormat'>;
+}
+
+/** Whether a connection has an open position at either end (requires its document). */
+export function touchesOpenPosition(conn: Connection, doc: SldDocument): boolean {
+  return conn.elementIds().some((id) => {
+    const el = doc.getElement(id);
+    return el instanceof Position && effectiveState(el) === 'open';
+  });
+}
+
 /**
  * The one place an element's formatting overlay is decided, shared by the
  * exporters and both adapters: the consumer's resolver wins; otherwise an open
- * position gets the default open look; otherwise nothing (default attributes).
+ * position gets the default open look, and a connection touching one (when its
+ * `doc` is given) the default open-connection look; otherwise nothing.
  */
 export function resolveFormat(
   el: SldElement,
-  resolve?: ((el: SldElement) => ElementFormat | null | undefined) | null,
-  openFormat: ElementFormat = SWITCH_OPEN_FORMAT
+  resolve?: ElementFormatResolver | null,
+  ctx: FormatContext = {}
 ): ElementFormat | undefined {
   const fmt = resolve?.(el);
   if (fmt) return fmt;
-  return el instanceof Position && effectiveState(el) === 'open' ? openFormat : undefined;
+  if (el instanceof Position && effectiveState(el) === 'open') {
+    return ctx.theme?.switchOpenFormat ?? SWITCH_OPEN_FORMAT;
+  }
+  if (el instanceof Connection && ctx.doc && touchesOpenPosition(el, ctx.doc)) {
+    return ctx.theme?.switchOpenConnectionFormat ?? SWITCH_OPEN_CONNECTION_FORMAT;
+  }
+  return undefined;
 }
 
 /**
  * Resolve an element's formatting overlay against a theme: its
- * `resolveElementFormat`, else its `switchOpenFormat` for an open position (see
- * {@link resolveFormat}). `undefined` leaves the element's defaults untouched.
+ * `resolveElementFormat`, else the theme's open looks (see {@link resolveFormat}).
+ * Pass the element's `doc` so connections touching an open position are styled.
+ * `undefined` leaves the element's defaults untouched.
  */
-export function elementFormat(theme: SldTheme, el: SldElement): ElementFormat | undefined {
-  return resolveFormat(el, theme.resolveElementFormat, theme.switchOpenFormat ?? SWITCH_OPEN_FORMAT);
+export function elementFormat(theme: SldTheme, el: SldElement, doc?: SldDocument): ElementFormat | undefined {
+  return resolveFormat(el, theme.resolveElementFormat, { doc, theme });
 }
 
 /**
@@ -176,6 +219,7 @@ export function resolveTheme(theme?: Partial<SldTheme>): SldTheme {
     fallbackPositionType: { ...DEFAULT_THEME.fallbackPositionType, ...theme.fallbackPositionType },
     structure: { ...DEFAULT_THEME.structure, ...theme.structure },
     ...(theme.resolveElementFormat !== undefined ? { resolveElementFormat: theme.resolveElementFormat } : {}),
-    switchOpenFormat: theme.switchOpenFormat ?? DEFAULT_THEME.switchOpenFormat
+    switchOpenFormat: theme.switchOpenFormat ?? DEFAULT_THEME.switchOpenFormat,
+    switchOpenConnectionFormat: theme.switchOpenConnectionFormat ?? DEFAULT_THEME.switchOpenConnectionFormat
   };
 }

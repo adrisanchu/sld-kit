@@ -248,10 +248,19 @@ it's absent, the bay is closed. Switching state is part of the electrical model
   position spec, and toggle it undoably with `UpdateElementCommand`
   (`{ ...before, state: 'open' }`).
 - **Default look:** open bays render faded and dashed, from the theme's
-  `switchOpenFormat` (default `SWITCH_OPEN_FORMAT`). Both adapters and the
-  exporter apply it. Your `resolveElementFormat` / `formatResolver` still wins
-  when it returns a format, and `resolveFormat(el, resolver)` is the shared rule.
-  Diagrams without `state` render exactly as before.
+  `switchOpenFormat` (default `SWITCH_OPEN_FORMAT`). Every connection *directly*
+  touching an open bay renders grey and dashed: its stems to the bars, its
+  feeder, and any composite link or line anchored to it. That comes from
+  `switchOpenConnectionFormat` (default `SWITCH_OPEN_CONNECTION_FORMAT`).
+  - Both adapters and the exporters apply these looks. Your
+    `resolveElementFormat` / `formatResolver` still wins when it returns a
+    format.
+  - `resolveFormat(el, resolver, { doc })` is the shared rule. A connection
+    needs its `doc` to know its endpoints' state.
+  - `linkFormat` and `lineFormat` resolve composite links and lines.
+  - Deeper de-energisation (lines cut off further away) is topology, left to
+    your resolver.
+  - Diagrams without `state` render exactly as before.
 
 ## Open position types
 

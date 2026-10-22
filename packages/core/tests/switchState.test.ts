@@ -9,6 +9,7 @@ import {
   SldParseError,
   SvgExporter,
   SWITCH_OPEN_FORMAT,
+  SWITCH_OPEN_CONNECTION_FORMAT,
   UpdateElementCommand,
   buildDocument,
   effectiveState,
@@ -89,8 +90,32 @@ describe('resolveFormat / default open look', () => {
 
   it('a theme can restyle the open look', () => {
     const svg = new SvgExporter().export(oneBay('open'), { theme: { switchOpenFormat: { fillOpacity: 0.1 } } });
-    expect(svg).toContain('fill-opacity="0.1"');
-    expect(svg).not.toContain('stroke-dasharray="4 3"');
+    const rect = svg.match(/<rect[^>]*fill-opacity="0\.1"[^>]*>/)?.[0];
+    expect(rect).toBeDefined();
+    expect(rect).not.toContain('stroke-dasharray');
+  });
+
+  it("greys + dashes an open bay's direct connections (stem and feeder), only with the doc", () => {
+    const doc = oneBay('open');
+    for (const id of ['c-bus', 'c-ext']) {
+      expect(resolveFormat(doc.getElement(id)!, undefined, { doc })).toEqual(SWITCH_OPEN_CONNECTION_FORMAT);
+      // Without its document a connection can't know its endpoints' state.
+      expect(resolveFormat(doc.getElement(id)!)).toBeUndefined();
+    }
+    const closed = oneBay('closed');
+    expect(resolveFormat(closed.getElement('c-bus')!, undefined, { doc: closed })).toBeUndefined();
+    // The consumer's resolver still wins.
+    const mine = { stroke: '#ff0000' };
+    expect(resolveFormat(doc.getElement('c-bus')!, () => mine, { doc })).toBe(mine);
+  });
+
+  it('exports open-bay connections grey + dashed (line and arrowhead); a theme can restyle them', () => {
+    const svg = new SvgExporter().export(oneBay('open'));
+    expect(svg.match(/stroke="#94a3b8"/g)!.length).toBe(2); // stem + feeder
+    expect(svg).toContain('fill="#94a3b8"'); // the feeder's arrowhead
+    const custom = new SvgExporter().export(oneBay('open'), { theme: { switchOpenConnectionFormat: { stroke: '#123456' } } });
+    expect(custom).toContain('stroke="#123456"');
+    expect(new SvgExporter().export(oneBay('closed'))).not.toContain('#94a3b8');
   });
 
   it('ElementFormat.stroke recolours a connection and its arrowhead in the export', () => {

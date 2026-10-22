@@ -5,12 +5,12 @@ import type { Rect } from '../layout/geometry';
 import { connectionPath } from '../layout/paths';
 import { SymbolRegistry } from '../symbols/SymbolRegistry';
 import { createDefaultSymbolRegistry } from '../symbols/defaults';
-import { DEFAULT_THEME, firstFormat, resolveTheme, type SldTheme } from '../theme';
+import { DEFAULT_THEME, resolveTheme, type SldTheme } from '../theme';
 import { CompositeDocument } from './CompositeDocument';
 import {
   CompositeLayoutEngine,
-  linkConnections,
-  lineConnections,
+  linkFormat,
+  lineFormat,
   type ChildLayout,
   type CompositeLineLayout,
   type LineGlyph,
@@ -86,7 +86,7 @@ export class CompositeSvgExporter {
     // Links first (underneath the children). A commissioning overlay on the
     // shared child connection restyles the whole tie-line (dash / width).
     for (const link of layout.links) {
-      const lf = firstFormat(linkConnections(link, layout.children), theme.resolveElementFormat);
+      const lf = linkFormat(link, layout.children, theme.resolveElementFormat, theme);
       b.element('polyline', {
         points: link.points.map((p) => `${p.x},${p.y}`).join(' '),
         fill: 'none',
@@ -103,7 +103,7 @@ export class CompositeSvgExporter {
     // structural glyph (transformer circles, demand triangle); a commissioning
     // tag on the anchored child connection can still override dash / width.
     for (const line of layout.lines) {
-      const lf = firstFormat(lineConnections(line.line, layout.children), theme.resolveElementFormat);
+      const lf = lineFormat(line.line, layout.children, theme.resolveElementFormat, theme);
       b.element('path', {
         d: connectionPath(line.points, undefined, this.cfg.hopRadius),
         fill: 'none',

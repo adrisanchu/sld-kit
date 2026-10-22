@@ -12,12 +12,16 @@ export {
   positionColors,
   elementFormat,
   resolveFormat,
+  touchesOpenPosition,
   SWITCH_OPEN_FORMAT,
+  SWITCH_OPEN_CONNECTION_FORMAT,
   firstFormat,
   resolveTheme,
   type SldTheme,
   type PositionTypeColors,
-  type ElementFormat
+  type ElementFormat,
+  type ElementFormatResolver,
+  type FormatContext
 } from './theme';
 export { getElementData } from './data';
 
@@ -127,6 +131,8 @@ export {
   labelFlipDeg,
   linkConnections,
   lineConnections,
+  linkFormat,
+  lineFormat,
   resolveNameLabelLayout,
   PLACEHOLDER_FRAME,
   NAME_LABEL_PAD,

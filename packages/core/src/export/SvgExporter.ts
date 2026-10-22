@@ -89,7 +89,7 @@ export class SvgExporter {
       const geo = layout.geometry.get(conn.id);
       if (geo?.kind !== 'connection') continue;
 
-      const connFmt = elementFormat(theme, conn);
+      const connFmt = elementFormat(theme, conn, doc);
       b.element('path', {
         d: connectionPath(geo.points, geo.hops, cfg.hopRadius),
         fill: 'none',
