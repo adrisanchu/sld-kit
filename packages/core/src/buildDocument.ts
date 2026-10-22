@@ -1,4 +1,4 @@
-import type { DocumentMeta, ElementId, ExternalAssetKind, ExternalDirection, PositionType } from './types';
+import type { DocumentMeta, ElementId, ExternalAssetKind, ExternalDirection, PositionType, SwitchState } from './types';
 import { SldDocument } from './SldDocument';
 import { BusBar } from './elements/BusBar';
 import { Position } from './elements/Position';
@@ -31,6 +31,8 @@ export interface BayPositionSpec {
   id?: ElementId;
   /** Opaque consumer metadata (see `SldElement.data`) — roundtripped, never read. */
   data?: unknown;
+  /** Switching state; omit for `closed`. */
+  state?: SwitchState;
   /** Explicit label; when omitted, auto-named `${prefix}-${n}` for the type. */
   label?: string;
   /** Columns the position spans (default 1). */
@@ -107,6 +109,7 @@ export function buildDocument(spec: BuildDocumentSpec): SldDocument {
       const pos = Position.of({
         id: p.id,
         data: cloneData(p.data),
+        state: p.state,
         label: p.label ?? nextPositionLabel(doc, p.type, prefixes),
         type: p.type,
         row: p.row,

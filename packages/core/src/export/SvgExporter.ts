@@ -93,7 +93,7 @@ export class SvgExporter {
       b.element('path', {
         d: connectionPath(geo.points, geo.hops, cfg.hopRadius),
         fill: 'none',
-        stroke: theme.structure.connection,
+        stroke: connFmt?.stroke ?? theme.structure.connection,
         'stroke-width': connFmt?.strokeWidth ?? theme.structure.connectionStrokeWidth,
         'stroke-dasharray': connFmt?.dashArray
       });
@@ -101,7 +101,7 @@ export class SvgExporter {
       if (geo.arrow) {
         b.element('path', {
           d: arrowheadPath(geo.arrow.at, geo.arrow.angle, cfg.arrowSize),
-          fill: theme.structure.connection
+          fill: connFmt?.stroke ?? theme.structure.connection
         });
       }
 

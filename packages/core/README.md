@@ -212,8 +212,10 @@ seam**: `resolveElementFormat(el) => ElementFormat`. The core never reads `data`
 or knows any domain concept — **the consumer** supplies a function that inspects
 whatever it wants (a `data` field, a CIM class, a commissioning date) and returns
 a generic `ElementFormat`, layered on top of the per-type color. `ElementFormat`
-fields — `strokeWidth`, `dashArray`, `fillOpacity`, `fill` — are all office-safe
-presentation attributes, so exports still paste into PowerPoint.
+fields — `strokeWidth`, `dashArray`, `fillOpacity`, `fill`, and `stroke` (the
+colour of a connection or composite line, e.g. grey for a de-energised one) —
+are all office-safe presentation attributes, so exports still paste into
+PowerPoint.
 
 ```ts
 // Consumer policy: dash + ghost anything the app considers "future".
@@ -231,6 +233,25 @@ first backing connection the resolver formats — so tagging **either** diagram 
 enough, still with zero domain knowledge in the core. A worked commissioning
 example (a `data.sld.commissioning` reader mapped to formats) lives in the Svelte
 example app, not in the library.
+
+### Switching state (`Position.state`)
+
+A position (bay) has an optional first-class `state: 'open' | 'closed'`. When
+it's absent, the bay is closed. Switching state is part of the electrical model
+(CIM `Switch.open`), so it lives on the element, not in `data` (see
+[ADR 0002](../../docs/adr/0002-switch-state.md)).
+
+- **Reading it:** use `effectiveState(pos)`. Today it returns `pos.state ?? 'closed'`.
+  Once sub-element breakers carry state, it will derive the bay's state from
+  them, and callers won't notice.
+- **Setting it:** pass it to `Position.of({ state })` or `buildDocument`'s
+  position spec, and toggle it undoably with `UpdateElementCommand`
+  (`{ ...before, state: 'open' }`).
+- **Default look:** open bays render faded and dashed, from the theme's
+  `switchOpenFormat` (default `SWITCH_OPEN_FORMAT`). Both adapters and the
+  exporter apply it. Your `resolveElementFormat` / `formatResolver` still wins
+  when it returns a format, and `resolveFormat(el, resolver)` is the shared rule.
+  Diagrams without `state` render exactly as before.
 
 ## Open position types
 

@@ -113,6 +113,14 @@ export type Endpoint =
 export type ElementKind = 'busbar' | 'position' | 'connection';
 
 /**
+ * Switching state of a position (bay): whether it conducts. Absent means
+ * `closed`. First-class (not in `data`) because it is part of the electrical
+ * model — it maps to CIM `Switch.open` — and core gives open bays a default
+ * look (`SldTheme.switchOpenFormat`). See ADR 0002.
+ */
+export type SwitchState = 'open' | 'closed';
+
+/**
  * Future sub-element of a position (breaker, disconnector, CT…).
  * Persisted from v1 so adding those later is not a schema change.
  * `symbol` is a SymbolRegistry key; `slot` says where on the position's
@@ -155,6 +163,8 @@ export interface PositionJson<TData = unknown> {
   col: number;
   colSpan: number;
   subElements: SubElementJson[];
+  /** Switching state; absent = `closed`. Read it through `effectiveState`. */
+  state?: SwitchState;
   /** Opaque consumer metadata, roundtripped untouched. */
   data?: TData;
 }

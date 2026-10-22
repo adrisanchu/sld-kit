@@ -11,6 +11,8 @@ export {
   DEFAULT_THEME,
   positionColors,
   elementFormat,
+  resolveFormat,
+  SWITCH_OPEN_FORMAT,
   firstFormat,
   resolveTheme,
   type SldTheme,
@@ -21,7 +23,7 @@ export { getElementData } from './data';
 
 export { SldElement } from './elements/Element';
 export { BusBar, type BusBarOptions } from './elements/BusBar';
-export { Position, type PositionOptions } from './elements/Position';
+export { Position, effectiveState, type PositionOptions } from './elements/Position';
 export { Connection, type ConnectionOptions } from './elements/Connection';
 export { element, external } from './elements/endpoints';
 export { elementFromJson } from './elements/factory';
@@ -147,6 +149,15 @@ export {
   type CompositeDocumentJson
 } from './composite/CompositeSerializer';
 export { CompositeSvgExporter, type CompositeSvgExportOptions } from './composite/CompositeSvgExporter';
+export {
+  BOX_SECTION_GAP,
+  layoutSectionBoxes,
+  type BoxSection,
+  type BoxSectionSplit,
+  type BoxSectionsResolver,
+  type SectionBox,
+  type SectionTie
+} from './composite/sections';
 export {
   AddChildCommand,
   RemoveChildCommand,

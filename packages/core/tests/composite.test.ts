@@ -7,6 +7,7 @@ import {
   CompositeSvgExporter,
   OrthogonalRouter,
   BOX_SIZE,
+  BOX_SECTION_GAP,
   CompositeLine,
   chordFrame,
   CommandStack,
@@ -34,6 +35,7 @@ import {
   type SldElement,
   type SldDocumentJson,
   type CompositeLayout,
+  type BoxSectionsResolver,
   type Point
 } from '../src';
 import {
@@ -960,6 +962,128 @@ describe('Box view — line labels', () => {
     expect(svg).not.toContain('class=');
     expect(svg).not.toContain('<style');
     expect(svg).not.toContain('currentColor');
+  });
+});
+
+describe('Box view — section boxes (boxSections)', () => {
+  // MID: a double bus — feeder m-w on BB1, m-e on BB2, coupler between the bars.
+  // WEST sits left of MID, EAST right of it; one line from each to MID.
+  const sectionDoc = (opts: { boxMode?: boolean } = {}) => {
+    const mid = buildDocument({
+      meta: { id: 'mid', name: 'MID', substation: 'MID', voltageKv: 220 },
+      busbars: [
+        { id: 'bb-1', label: 'BB1', row: 1 },
+        { id: 'bb-2', label: 'BB2', row: 3 }
+      ],
+      bays: [
+        { col: 0, positions: [{ id: 'p-w', type: 'line', row: 0, feeder: { asset: 'line', label: 'W', direction: 'up', id: 'm-w' } }] },
+        { col: 1, positions: [{ id: 'cpl', type: 'central', row: 2 }] },
+        { col: 2, positions: [{ id: 'p-e', type: 'line', row: 4, feeder: { asset: 'line', label: 'E', direction: 'down', id: 'm-e' } }] }
+      ]
+    });
+    const single = (id: string, feederId: string, dir: ExternalDirection) =>
+      buildDocument({
+        meta: { id, name: id.toUpperCase(), substation: id, voltageKv: 220 },
+        busbars: [{ label: 'BB', row: 0 }],
+        bays: [{ col: 0, positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'L', direction: dir, id: feederId } }] }]
+      });
+    const res = new MapResolver(
+      new Map([
+        ['mid', Serializer.toJSON(mid)],
+        ['west', Serializer.toJSON(single('west', 'w-m', 'right'))],
+        ['east', Serializer.toJSON(single('east', 'e-m', 'left'))]
+      ])
+    );
+    const doc = new CompositeDocument({ id: 'c', name: 'c', boxMode: opts.boxMode ?? true, defaultRouting: 'orthogonal', autoFacing: true });
+    doc.addChild(DiagramInstance.of({ id: 'mid', libraryId: 'mid', x: 0, y: 0 }));
+    doc.addChild(DiagramInstance.of({ id: 'west', libraryId: 'west', x: -600, y: 0 }));
+    doc.addChild(DiagramInstance.of({ id: 'east', libraryId: 'east', x: 900, y: 0 }));
+    const anchor = (instanceId: string, connectionId: string) => ({ kind: 'anchor' as const, instanceId, connectionId });
+    doc.addLine(new CompositeLine('lw', [anchor('mid', 'm-w'), anchor('west', 'w-m')]));
+    doc.addLine(new CompositeLine('le', [anchor('mid', 'm-e'), anchor('east', 'e-m')]));
+    doc.resolveChildren(res);
+    return doc;
+  };
+  const split = (inst: DiagramInstance) =>
+    inst.id === 'mid'
+      ? {
+          sections: [
+            { key: 'bb-1', connectionIds: ['m-w'], data: { ids: [1] } },
+            { key: 'bb-2', connectionIds: ['m-e'], data: { ids: [2] } }
+          ],
+          ties: [{ a: 'bb-1', b: 'bb-2' }]
+        }
+      : null;
+  const engine = (boxSections?: BoxSectionsResolver) =>
+    new CompositeLayoutEngine(undefined, undefined, undefined, { boxSections });
+  const childOf = (layout: CompositeLayout, id: string) => layout.children.find((c) => c.instance.id === id)!;
+  const lineOf = (layout: CompositeLayout, id: string) => layout.lines.find((l) => l.line.id === id)!;
+
+  it('without a resolver (or with null) a child stays one box', () => {
+    const mid = childOf(engine().layout(sectionDoc()), 'mid');
+    expect(mid.boxes).toBeUndefined();
+    expect(mid.frame).toEqual({ x: 0, y: 0, width: BOX_SIZE.width, height: BOX_SIZE.height });
+    expect(childOf(engine(split).layout(sectionDoc()), 'west').boxes).toBeUndefined();
+  });
+
+  it('a single section keeps the default frame but carries its section', () => {
+    const one = engine((i) => (i.id === 'mid' ? { sections: [{ key: 'all', connectionIds: ['m-w', 'm-e'] }] } : null));
+    const mid = childOf(one.layout(sectionDoc()), 'mid');
+    expect(mid.frame).toEqual({ x: 0, y: 0, width: BOX_SIZE.width, height: BOX_SIZE.height });
+    expect(mid.boxes!.map((b) => b.key)).toEqual(['all']);
+    expect(mid.boxes![0].frame).toEqual(mid.frame);
+  });
+
+  it('two sections lay two boxes side by side, joined by a tie', () => {
+    const mid = childOf(engine(split).layout(sectionDoc()), 'mid');
+    const [a, b] = mid.boxes!;
+    expect(a.frame).toEqual({ x: 0, y: 0, width: BOX_SIZE.width, height: BOX_SIZE.height });
+    expect(b.frame.x).toBe(BOX_SIZE.width + BOX_SECTION_GAP);
+    expect(mid.frame.width).toBe(2 * BOX_SIZE.width + BOX_SECTION_GAP);
+    expect(mid.ties).toEqual([
+      {
+        a: 'bb-1',
+        b: 'bb-2',
+        points: [
+          { x: BOX_SIZE.width, y: BOX_SIZE.height / 2 },
+          { x: BOX_SIZE.width + BOX_SECTION_GAP, y: BOX_SIZE.height / 2 }
+        ]
+      }
+    ]);
+  });
+
+  it("each feeder attaches to its own section's box, which faces its own peer", () => {
+    const layout = engine(split).layout(sectionDoc());
+    const [a, b] = childOf(layout, 'mid').boxes!;
+    const lw = lineOf(layout, 'lw').points[0];
+    const le = lineOf(layout, 'le').points[0];
+    // Box A (BB1) faces WEST: its line leaves A's left edge.
+    expect(lw.x).toBe(a.frame.x);
+    expect(lw.y).toBeGreaterThan(a.frame.y);
+    expect(lw.y).toBeLessThan(a.frame.y + a.frame.height);
+    // Box B (BB2) faces EAST: its line leaves B's right edge.
+    expect(le.x).toBe(b.frame.x + b.frame.width);
+  });
+
+  it('detail view ignores the split', () => {
+    const mid = childOf(engine(split).layout(sectionDoc({ boxMode: false })), 'mid');
+    expect(mid.boxes).toBeUndefined();
+    expect(mid.ties).toBeUndefined();
+  });
+
+  it('exports one box per section with its own sub-label, a muted tie, and a format-stroked line', () => {
+    const svg = new CompositeSvgExporter(engine(split)).export(sectionDoc(), {
+      boxSubLabel: (child, section) => (section ? `#${(section.data as { ids: number[] }).ids.join('/')}` : child.name),
+      // Lines are styled through the one seam: the anchored child connection's format.
+      theme: { resolveElementFormat: (el) => (el.id === 'm-e' ? { stroke: '#999999' } : undefined) }
+    });
+    expect(svg).toContain('>#1<');
+    expect(svg).toContain('>#2<');
+    expect(svg.match(/>MID</g)).toHaveLength(2); // the name on both boxes
+    expect(svg).toContain('stroke-opacity="0.45"');
+    expect(svg).toContain('stroke="#999999"');
+    expect(svg).not.toContain('class=');
+    expect(svg).not.toContain('<style');
   });
 });
 

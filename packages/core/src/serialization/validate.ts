@@ -147,6 +147,9 @@ export function parseDocument(input: unknown): { errors: SldParseError[]; doc?: 
         if (el.subElements !== undefined && !Array.isArray(el.subElements)) {
           fail(`Position ${el.id}: invalid subElements`);
         }
+        if (el.state !== undefined && el.state !== 'open' && el.state !== 'closed') {
+          fail(`Position ${el.id}: invalid state (expected "open" or "closed")`);
+        }
         break;
       }
       case 'connection':

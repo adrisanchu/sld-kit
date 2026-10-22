@@ -27,6 +27,7 @@ import {
   TRANSFORMER_SYMBOL
 } from './layout-constants';
 import { arcMidpoint, segmentAngleDeg, simplify } from './polyline';
+import { feederBoxCenter, layoutSectionBoxes, type BoxSectionsResolver, type SectionBox, type SectionTie } from './sections';
 
 /** Fixed frame for an unresolved child, so it stays selectable and movable. */
 export const PLACEHOLDER_FRAME = { width: 360, height: 240 } as const;
@@ -88,6 +89,13 @@ export interface ChildLayout {
   name: string;
   /** Resolved geometry of the `name` label — anchor slot, extra rotation, size. */
   nameLabel: NameLabelLayout;
+  /**
+   * Box view only, when a `boxSections` resolver returned sections: the child's
+   * boxes (child-local), side by side inside `frame`. Absent → one box over `frame`.
+   */
+  boxes?: SectionBox[];
+  /** Box view only: muted ties between section boxes (child-local), e.g. an open coupler. */
+  ties?: SectionTie[];
 }
 
 /**
@@ -385,12 +393,19 @@ export interface CompositeLayoutOptions {
   boxSize?: { width: number; height: number } | null;
   /** Numeric/text labels per line (see {@link LineLabelResolver}); placed by the layout so screen and export agree. */
   lineLabels?: LineLabelResolver;
+  /**
+   * Split a child into several boxes in box view (see {@link BoxSectionsResolver}),
+   * e.g. one per electrically separate bus section. Feeders attach to their own
+   * section's box. Ignored in detail view.
+   */
+  boxSections?: BoxSectionsResolver;
 }
 
 export class CompositeLayoutEngine {
   private boxChildEngine: LayoutEngine;
   private readonly boxSize: { width: number; height: number } | null;
   private readonly lineLabels?: LineLabelResolver;
+  private readonly boxSections?: BoxSectionsResolver;
   /** Detail-view child layouts with swapped directions, keyed by `(libraryId, dir signature)`. */
   private detailLayoutCache = new Map<string, DiagramLayout>();
 
@@ -404,6 +419,7 @@ export class CompositeLayoutEngine {
     this.boxChildEngine = boxChildEngine ?? new LayoutEngine(BOX_CHILD_LAYOUT);
     this.boxSize = options.boxSize === undefined ? BOX_SIZE : options.boxSize;
     this.lineLabels = options.lineLabels;
+    this.boxSections = options.boxSections;
   }
 
   layout(doc: CompositeDocument): CompositeLayout {
@@ -450,7 +466,16 @@ export class CompositeLayoutEngine {
    */
   private makeChildLayout(instance: DiagramInstance, layout: DiagramLayout | null, boxMode = false): ChildLayout {
     const size = !layout ? PLACEHOLDER_FRAME : boxMode && this.boxSize ? this.boxSize : layout.size;
-    const frame: Rect = { x: 0, y: 0, width: size.width, height: size.height };
+    let frame: Rect = { x: 0, y: 0, width: size.width, height: size.height };
+    // Box view: a consumer split lays several same-size boxes side by side; the
+    // child's frame becomes their union (so selection, drag and bounds still work).
+    let boxes: SectionBox[] | undefined;
+    let ties: SectionTie[] | undefined;
+    const split = boxMode && layout && instance.resolved ? this.boxSections?.(instance) : undefined;
+    if (split?.sections.length) {
+      const laid = layoutSectionBoxes(split, size);
+      ({ boxes, ties, frame } = laid);
+    }
     const pivot: Point = { x: frame.width / 2, y: frame.height / 2 };
     const transform = new Transform2D(instance.x, instance.y, instance.angleDeg, pivot);
     return {
@@ -462,7 +487,8 @@ export class CompositeLayoutEngine {
       worldCorners: transform.applyRect(frame),
       labelAngleDeg: labelFlipDeg(instance.angleDeg),
       name: instance.resolved?.meta.name || instance.libraryId,
-      nameLabel: resolveNameLabelLayout(frame, instance.labelAnchor, instance.labelDirection, instance.angleDeg)
+      nameLabel: resolveNameLabelLayout(frame, instance.labelAnchor, instance.labelDirection, instance.angleDeg),
+      ...(boxes ? { boxes, ties } : {})
     };
   }
 
@@ -570,16 +596,18 @@ export class CompositeLayoutEngine {
    * re-derives facing for free.
    */
   private buildPeerCenters(doc: CompositeDocument, children: ChildLayout[]): Map<string, Point> {
-    const centerOf = new Map<string, Point>();
-    for (const c of children) {
-      const b = c.worldBounds;
-      centerOf.set(c.instance.id, { x: b.x + b.width / 2, y: b.y + b.height / 2 });
-    }
+    const byId = new Map(children.map((c) => [c.instance.id, c]));
+    // A feeder's centre is its own box's — the section box when the child is
+    // split — so each section faces its own peer.
+    const centerOf = (instanceId: string, connectionId: string): Point | undefined => {
+      const c = byId.get(instanceId);
+      return c ? feederBoxCenter(c, connectionId) : undefined;
+    };
 
     const out = new Map<string, Point>();
     const pair = (ia: string, ca: string, ib: string, cb: string) => {
-      const pa = centerOf.get(ia);
-      const pb = centerOf.get(ib);
+      const pa = centerOf(ia, ca);
+      const pb = centerOf(ib, cb);
       if (!pa || !pb || ia === ib) return;
       out.set(feederKey(ia, ca), pb);
       out.set(feederKey(ib, cb), pa);

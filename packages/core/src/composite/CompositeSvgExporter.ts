@@ -16,6 +16,7 @@ import {
   type LineGlyph,
   type LineLabelLayout
 } from './CompositeLayoutEngine';
+import type { BoxSection } from './sections';
 
 export interface CompositeSvgExportOptions {
   /** Paint an opaque background rect (default true — slides are light). */
@@ -33,8 +34,12 @@ export interface CompositeSvgExportOptions {
    * Falls back to the theme background.
    */
   boxFill?: (child: ChildLayout) => string | undefined;
-  /** Secondary line under the box name (e.g. an integer bus ID). */
-  boxSubLabel?: (child: ChildLayout) => string | null | undefined;
+  /**
+   * Secondary line under the box name (e.g. an integer bus ID). When a
+   * `boxSections` resolver split the child, it's called once per box with that
+   * box's `section` (its opaque `data` carries whatever the consumer put there).
+   */
+  boxSubLabel?: (child: ChildLayout, section?: BoxSection) => string | null | undefined;
 }
 
 /**
@@ -85,7 +90,7 @@ export class CompositeSvgExporter {
       b.element('polyline', {
         points: link.points.map((p) => `${p.x},${p.y}`).join(' '),
         fill: 'none',
-        stroke: theme.structure.connection,
+        stroke: lf?.stroke ?? theme.structure.connection,
         'stroke-width': lf?.strokeWidth ?? 2,
         'stroke-dasharray': lf?.dashArray ?? '6 4'
       });
@@ -102,7 +107,7 @@ export class CompositeSvgExporter {
       b.element('path', {
         d: connectionPath(line.points, undefined, this.cfg.hopRadius),
         fill: 'none',
-        stroke: theme.structure.connection,
+        stroke: lf?.stroke ?? theme.structure.connection,
         'stroke-width': lf?.strokeWidth ?? theme.structure.connectionStrokeWidth,
         'stroke-dasharray': lf?.dashArray ?? line.dashArray
       });
@@ -228,10 +233,37 @@ export class CompositeSvgExporter {
    * bold, and an optional sub-label (e.g. a bus ID) beneath it.
    */
   private renderBox(b: SvgBuilder, child: ChildLayout, theme: SldTheme, options: CompositeSvgExportOptions): void {
-    const { frame } = child;
+    // Ties under the boxes: a muted dashed run between two section boxes.
+    for (const tie of child.ties ?? []) {
+      b.element('polyline', {
+        points: tie.points.map((p) => `${p.x},${p.y}`).join(' '),
+        fill: 'none',
+        stroke: theme.structure.connection,
+        'stroke-opacity': 0.45,
+        'stroke-width': theme.structure.connectionStrokeWidth,
+        'stroke-dasharray': '6 4'
+      });
+    }
+    if (!child.boxes) {
+      this.renderBoxFrame(b, child, child.frame, options.boxSubLabel?.(child), theme, options);
+      return;
+    }
+    for (const box of child.boxes) {
+      this.renderBoxFrame(b, child, box.frame, options.boxSubLabel?.(child, box.section), theme, options);
+    }
+  }
+
+  /** One box: the rounded rect over `frame`, the child name and an optional sub-label. */
+  private renderBoxFrame(
+    b: SvgBuilder,
+    child: ChildLayout,
+    frame: Rect,
+    sub: string | null | undefined,
+    theme: SldTheme,
+    options: CompositeSvgExportOptions
+  ): void {
     const cx = frame.x + frame.width / 2;
     const cy = frame.y + frame.height / 2;
-    const sub = options.boxSubLabel?.(child);
     b.element('rect', {
       x: frame.x,
       y: frame.y,
