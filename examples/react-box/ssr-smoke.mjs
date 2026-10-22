@@ -168,6 +168,8 @@ const checks = [
   ['open bay: its feeder is reported de-energised (greys its line)', openBayFeeders.has('charlie-delta') && openBayFeeders.size === 1],
   ['detail bars show their bus id, left-anchored', /text-anchor="end"[^>]*>39771</.test(detailHtml) && !detailHtml.includes('>BB1<')],
   ['detail export draws the open coupler with core\'s default open look', detailSvg.includes('stroke-dasharray="4 3"') && detailSvg.includes('fill-opacity="0.3"')],
+  ['detail export greys + dashes the open coupler\'s stems to both bars', (detailSvg.match(/<path[^>]*stroke="#94a3b8"[^>]*stroke-dasharray="4 3"/g) ?? []).length >= 2],
+  ['detail canvas greys the open coupler\'s stems too', detailHtml.includes('stroke="#94a3b8"')],
   ['detail export shows bar bus ids', /text-anchor="end"[^>]*>39770</.test(detailSvg)],
   ['auto-facing derives the exit side from live positions', facingRight === 'right' && facingLeft === 'left']
 ];

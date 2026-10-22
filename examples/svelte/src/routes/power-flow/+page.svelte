@@ -86,7 +86,9 @@
   function makeResolver(map: FlowMap): FlowResolver {
     return (key) => {
       const f = map.get(key);
-      if (!f || !f.active) return { active: false }; // open / blocked → grey, no dots
+      // Open / blocked → grey and dashed, no dots: the overlay paints over the
+      // connection, so it repeats core's open-connection look (grey + dashed).
+      if (!f || !f.active) return { active: false, dashed: true };
       const load = f.capacity ? f.magnitude / f.capacity : 0;
       return {
         active: true,

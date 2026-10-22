@@ -8,6 +8,7 @@ import {
   CompositeSvgExporter,
   LayoutEngine,
   RemoveLineCommand,
+  SWITCH_OPEN_CONNECTION_FORMAT,
   SLD_LAYOUT,
   SetAutoFacingCommand,
   SetBoxModeCommand,
@@ -55,8 +56,6 @@ function busLabel(child: ChildLayout, section?: BoxSection): string | null {
   return sectionLabel(child.instance.resolved, section);
 }
 
-/** Stroke of a de-energised line — a literal colour, so it exports too. */
-const OPEN_LINE_STROKE = '#94a3b8';
 
 type Tool = 'select' | 'draw';
 type Draft = { point: { x: number; y: number }; snap: { instanceId: string; connectionId: string } | null };
@@ -130,11 +129,13 @@ export default function App() {
     }
     return out;
   }, [layout]);
-  // The one styling seam: grey open feeders. Core applies it to the child's own
-  // connection (detail view) and to every composite line anchored to it (both
-  // views); the export gets the same function as its theme resolver.
+  // Core already greys + dashes every connection that *directly* touches an open
+  // position. This resolver only extends that look to feeders the topology cuts
+  // off further away (same format, so both read alike). Core applies it to the
+  // child's own connection (detail view) and to every composite line anchored to
+  // it (both views); the export gets the same function as its theme resolver.
   const formatResolver = useCallback(
-    (el: SldElement): ElementFormat | undefined => (openConnections.has(el) ? { stroke: OPEN_LINE_STROKE } : undefined),
+    (el: SldElement): ElementFormat | undefined => (openConnections.has(el) ? SWITCH_OPEN_CONNECTION_FORMAT : undefined),
     [openConnections]
   );
   const lineColorClass = useCallback(
