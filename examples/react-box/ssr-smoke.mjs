@@ -5,8 +5,9 @@
  * the office-safe SVG export, and numeric line labels (data + `lineLabels`
  * resolver) on screen and in the export. Also exercises the app's real fixture +
  * bus-section topology (imported as TypeScript — Node ≥ 22.18 strips types):
- * a double bus with its coupler closed is one box labelled with both bus ids,
- * and opening the coupler splits it into two sections. Run with: node ssr-smoke.mjs
+ * the fixture's double bus starts with its coupler open, so the box view draws
+ * two section boxes joined by a muted tie; closing the coupler merges them into
+ * one box labelled with both bus ids. Run with: node ssr-smoke.mjs
  */
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -25,7 +26,7 @@ import {
 } from '@sld-kit/core';
 import { CompositeCanvas } from '@sld-kit/react';
 import { buildBoxComposite, bayId, COUPLER_ID } from './src/fixture.ts';
-import { barBusIdLabel, busLabelOf, busSections, withSwitchState } from './src/switching.ts';
+import { barBusIdLabel, boxSplit, busTopology, openFeeders, sectionLabel } from './src/topology.ts';
 
 const sub = (id, name, busId, kv, feeders) =>
   buildDocument({
@@ -105,33 +106,37 @@ const alphaSideWithBetaAt = (betaX) => {
 const facingRight = alphaSideWithBetaAt(900);
 const facingLeft = alphaSideWithBetaAt(-900);
 
-// Bus-section topology on the real fixture (CHARLIE = double bus + coupler).
+// Bus-section topology on the real fixture (CHARLIE = double bus + coupler,
+// which starts OPEN). The engine splits boxes via the app's `boxSplit`.
 const fixture = buildBoxComposite();
 const charlie = fixture.getChild('lib-charlie').resolved;
-const closedSections = busSections(charlie);
-const fixtureHtml = renderToStaticMarkup(
-  h(CompositeCanvas, {
-    layout: new CompositeLayoutEngine().layout(fixture),
-    boxMode: true,
-    boxSubLabel: (child) => busLabelOf(busSections(child.instance.resolved))
-  })
-);
+const splitEngine = new CompositeLayoutEngine(undefined, undefined, undefined, { boxSections: boxSplit });
+const boxSubLabel = (child, section) => sectionLabel(child.instance.resolved, section);
+const renderFixture = () =>
+  renderToStaticMarkup(h(CompositeCanvas, { layout: splitEngine.layout(fixture), boxMode: true, boxSubLabel }));
+const charlieBoxes = () => splitEngine.layout(fixture).children.find((c) => c.instance.id === 'lib-charlie');
+const openSections = busTopology(charlie).sections;
+const splitChild = charlieBoxes();
+const splitHtml = renderFixture();
+const splitSvg = new CompositeSvgExporter(splitEngine).export(fixture, { boxSubLabel });
 // Detail view with the app's child engine: bars labelled by bus id, left of the bar.
 const detailFixture = buildBoxComposite();
 detailFixture.updateMeta({ boxMode: false });
 const detailEngine = new CompositeLayoutEngine(new LayoutEngine({ ...SLD_LAYOUT, busBarLabelAnchor: 'center-left' }, { busBarLabel: barBusIdLabel }));
 const detailHtml = renderToStaticMarkup(h(CompositeCanvas, { layout: detailEngine.layout(detailFixture) }));
 const detailSvg = new CompositeSvgExporter(detailEngine).export(detailFixture);
+// Switching state is core's first-class `Position.state` (a test may poke it directly).
 const setState = (id, state) => {
-  const el = charlie.getElement(id);
-  el.data = withSwitchState(el.data, state);
+  charlie.getElement(id).state = state;
 };
-setState(COUPLER_ID, 'open');
-const openSections = busSections(charlie);
 setState(bayId('charlie-delta'), 'open');
-const openBaySections = busSections(charlie);
-setState(COUPLER_ID, 'closed');
+const openBaySections = busTopology(charlie).sections;
+const openBayFeeders = openFeeders(charlie);
 setState(bayId('charlie-delta'), 'closed');
+setState(COUPLER_ID, 'closed');
+const closedSections = busTopology(charlie).sections;
+const mergedChild = charlieBoxes();
+const mergedHtml = renderFixture();
 const sectionFeeders = (sections) => sections.map((s) => [...s.connectionIds].sort().join(',')).join(' | ');
 
 const checks = [
@@ -146,18 +151,23 @@ const checks = [
   ['draws stacked line labels', html.includes('>1500/1200<') && html.includes('>1100/1300<')],
   ['formats a winter/summer-only capacity as one row', formatCapacity([150, undefined, 100, undefined]).join('|') === '150/100'],
   ['exports stacked line labels', svg.includes('>1500/1200<') && svg.includes('>1100/1300<')],
-  ['closed coupler: one section with both bus ids', closedSections.length === 1 && busLabelOf(closedSections) === '39770 / 39771'],
-  ['closed coupler: the box shows "39770 / 39771"', fixtureHtml.includes('>39770 / 39771<')],
   [
     'open coupler: two sections, feeders on their own bar',
     openSections.length === 2 && sectionFeeders(openSections) === 'charlie-alpha | charlie-delta,charlie-dem'
   ],
+  ['open coupler: CHARLIE lays out as two boxes joined by a tie', splitChild.boxes?.length === 2 && splitChild.ties?.length === 1],
+  ['open coupler: each box shows its own bus id', splitHtml.includes('>39770<') && splitHtml.includes('>39771<') && !splitHtml.includes('39770 / 39771')],
+  ['open coupler: the export draws both boxes and a muted tie', splitSvg.includes('>39770<') && splitSvg.includes('>39771<') && splitSvg.includes('stroke-opacity="0.45"')],
+  ['closed coupler: one section with both bus ids', closedSections.length === 1 && sectionLabel(charlie) === '39770 / 39771'],
+  ['closed coupler: merges back into one box, "39770 / 39771"', mergedChild.boxes?.length === 1 && !mergedChild.ties?.length && mergedHtml.includes('>39770 / 39771<')],
   [
     'open bay: feeder stays on its bar, flagged de-energised',
     sectionFeeders(openBaySections) === 'charlie-alpha | charlie-delta,charlie-dem' &&
       openBaySections[1].openConnectionIds.join() === 'charlie-delta'
   ],
+  ['open bay: its feeder is reported de-energised (greys its line)', openBayFeeders.has('charlie-delta') && openBayFeeders.size === 1],
   ['detail bars show their bus id, left-anchored', /text-anchor="end"[^>]*>39771</.test(detailHtml) && !detailHtml.includes('>BB1<')],
+  ['detail export draws the open coupler with core\'s default open look', detailSvg.includes('stroke-dasharray="4 3"') && detailSvg.includes('fill-opacity="0.3"')],
   ['detail export shows bar bus ids', /text-anchor="end"[^>]*>39770</.test(detailSvg)],
   ['auto-facing derives the exit side from live positions', facingRight === 'right' && facingLeft === 'left']
 ];

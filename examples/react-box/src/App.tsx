@@ -14,8 +14,11 @@ import {
   SetPortDirectionCommand,
   TransformChildCommand,
   newId,
+  type BoxSection,
   type ChildLayout,
   type Command,
+  type ElementFormat,
+  type SldElement,
   type CompositeDocument,
   type CompositeLineKind,
   type CompositeLineLayout,
@@ -33,7 +36,7 @@ import {
 } from '@sld-kit/react';
 import { ArrowLeft, Boxes, Layers, Magnet, Maximize, PenLine, MousePointer2, Redo2, Trash2, Undo2 } from 'lucide-react';
 import { buildBoxComposite, ratingLabels, voltageClass, voltageFill } from './fixture';
-import { barBusIdLabel, busLabelOf, busSections } from './switching';
+import { barBusIdLabel, boxSplit, openFeeders, sectionLabel } from './topology';
 
 const LINE_KINDS: { kind: CompositeLineKind; label: string }[] = [
   { kind: 'line', label: 'Overhead' },
@@ -45,12 +48,15 @@ const LINE_KINDS: { kind: CompositeLineKind; label: string }[] = [
 /**
  * The bus id(s) a box shows under its name, derived from the child's topology:
  * each bar carries its own id, and bars joined through closed switches (e.g. a
- * double bus with the coupler closed) share one box — `39770 / 39771`.
+ * double bus with the coupler closed) share one box — `39770 / 39771`. A split
+ * child labels each section box with its own ids.
  */
-function busLabel(child: ChildLayout): string | null {
-  const doc = child.instance.resolved;
-  return doc ? busLabelOf(busSections(doc)) : null;
+function busLabel(child: ChildLayout, section?: BoxSection): string | null {
+  return sectionLabel(child.instance.resolved, section);
 }
+
+/** Stroke of a de-energised line — a literal colour, so it exports too. */
+const OPEN_LINE_STROKE = '#94a3b8';
 
 type Tool = 'select' | 'draw';
 type Draft = { point: { x: number; y: number }; snap: { instanceId: string; connectionId: string } | null };
@@ -70,14 +76,16 @@ export default function App() {
   // `lineLabels` resolver formats each line's ratings (folded into `line.data`
   // by the fixture) — placed by the core layout, so screen and export agree.
   // The detail-view child engine labels each bar with its bus id, placed left of
-  // the bar so a long label never runs into a bay's stem.
+  // the bar so a long label never runs into a bay's stem. `boxSections` splits a
+  // substation into one box per bus section (e.g. a double bus with its coupler
+  // open), computed from live switch states in `topology.ts`.
   const engine = useMemo(
     () =>
       new CompositeLayoutEngine(
         new LayoutEngine({ ...SLD_LAYOUT, busBarLabelAnchor: 'center-left' }, { busBarLabel: barBusIdLabel }),
         undefined,
         undefined,
-        { lineLabels: ratingLabels }
+        { lineLabels: ratingLabels, boxSections: boxSplit }
       ),
     []
   );
@@ -107,6 +115,28 @@ export default function App() {
   const run = useCallback((cmd: Command<CompositeDocument>) => stack.execute(cmd, composite), [stack, composite]);
 
   const childColorClass = useCallback((c: ChildLayout) => voltageClass(c.instance.resolved?.meta.voltageKv), []);
+
+  // De-energised feeder connections (their bay is open, or cut off from every
+  // bar), by object identity — element ids can repeat across children.
+  const openConnections = useMemo(() => {
+    const out = new Set<SldElement>();
+    for (const c of layout.children) {
+      const doc = c.instance.resolved;
+      if (!doc) continue;
+      for (const id of openFeeders(doc)) {
+        const el = doc.getElement(id);
+        if (el) out.add(el);
+      }
+    }
+    return out;
+  }, [layout]);
+  // The one styling seam: grey open feeders. Core applies it to the child's own
+  // connection (detail view) and to every composite line anchored to it (both
+  // views); the export gets the same function as its theme resolver.
+  const formatResolver = useCallback(
+    (el: SldElement): ElementFormat | undefined => (openConnections.has(el) ? { stroke: OPEN_LINE_STROKE } : undefined),
+    [openConnections]
+  );
   const lineColorClass = useCallback(
     (ln: CompositeLineLayout) => {
       const a = ln.line.vertices.find((v) => v.kind === 'anchor');
@@ -243,7 +273,8 @@ export default function App() {
     const svg = new CompositeSvgExporter(engine).export(composite, {
       boxMode: true,
       boxFill: (c) => voltageFill(c.instance.resolved?.meta.voltageKv),
-      boxSubLabel: busLabel
+      boxSubLabel: busLabel,
+      theme: { resolveElementFormat: formatResolver }
     });
     downloadText(`${slugify(composite.meta.name)}.svg`, svg, 'image/svg+xml');
   };
@@ -297,6 +328,7 @@ export default function App() {
           selectedLineId={selectedLineId}
           childColorClass={childColorClass}
           lineColorClass={lineColorClass}
+          formatResolver={formatResolver}
           onChildDown={handleChildDown}
           onCanvasPoint={onCanvasPoint}
           onDrawCommit={commitDraw}

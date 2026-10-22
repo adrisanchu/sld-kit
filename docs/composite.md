@@ -60,6 +60,21 @@ floating router still snaps near-aligned ports within `ALIGN_TOLERANCE`, as a
 fallback for unequal slot counts. `new OrthogonalRouter(STUB_LENGTH, 0)` disables
 that snap.
 
+A child can also be drawn as **several boxes**. Pass a
+`boxSections: (instance) => { sections, ties } | null` resolver in the engine
+options:
+
+- Each section has a `key`, the feeder `connectionIds` drawn from it, and an
+  opaque `data` value.
+- The layout places the section boxes side by side (`BOX_SECTION_GAP` apart)
+  inside the child's frame (`ChildLayout.boxes`). Each feeder attaches to its
+  own section's box, and auto-facing turns each box toward its own peer.
+- `ties` join pairs of boxes with a muted dashed run (`ChildLayout.ties`).
+- `boxSubLabel(child, section)` labels each box. Core never knows why a child
+  splits: the react-box example uses it for a double bus whose coupler is open.
+- Returning `null` or a single section keeps one box. The detail view ignores
+  the split.
+
 ## Manual lines
 
 Auto-links are convenient but always straight and dashed — they can't express a

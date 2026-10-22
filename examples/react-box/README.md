@@ -40,11 +40,18 @@ pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
   over `summer/autumn`, or a single `winter/summer` row. The core layout places
   them. Lines without a reading have no label.
 - **Double bus + coupler** — CHARLIE has two bars, each carrying its own bus id
-  in `data`. Every bay and the coupler carry switch state in `data.switch`.
-  `src/switching.ts` (example-local, not core) walks the topology: closed
-  positions join what they touch, open ones conduct nothing. Bars joined that
-  way form one **bus section**. With the coupler closed, CHARLIE is one section,
-  so its box reads `39770 / 39771`. In the detail view each bar is labelled
+  in `data`. Switching state is core's first-class `Position.state` (absent =
+  closed). The open coupler gets core's default faded, dashed look with no app
+  code. `src/topology.ts` (example-local, not core) walks the topology through
+  `effectiveState`: closed positions join what they touch, open ones conduct
+  nothing. Bars joined that
+  way form one **bus section**. The engine's `boxSections` hook (`boxSplit`)
+  draws one box per section. The coupler starts **open**, so CHARLIE shows as
+  two boxes (`39770` toward ALPHA; `39771` toward DELTA and a demand) joined by
+  a muted dashed tie. With the coupler closed they merge into one box,
+  `39770 / 39771`. Lines whose feeder is de-energised are drawn grey on screen
+  and in the export. One format resolver returns `{ stroke }` for them, used
+  as the canvas `formatResolver` and the export's `theme.resolveElementFormat`. In the detail view each bar is labelled
   with its bus id instead of `BB1`/`BB2`. The child `LayoutEngine` gets a
   `busBarLabel` resolver and `busBarLabelAnchor: 'center-left'`, so the id sits
   beside the bar and never runs into a stem.
