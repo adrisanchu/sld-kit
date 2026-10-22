@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { Connection, ConnectionGeometry, ElementFormat } from '@sld-kit/core';
-  import { SLD_LAYOUT, arrowheadPath, connectionPath, createDefaultSymbolRegistry } from '@sld-kit/core';
+  import type { Connection, ConnectionGeometry, ElementFormat, SldDocument } from '@sld-kit/core';
+  import { SLD_LAYOUT, arrowheadPath, connectionPath, createDefaultSymbolRegistry, resolveFormat } from '@sld-kit/core';
   import type { FormatResolver } from '../format';
   import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
 
@@ -21,6 +21,11 @@
   export let showLabel: boolean = true;
   /** Commissioning overlay (stroke width); see PositionView. */
   export let formatResolver: FormatResolver | null = null;
+  /**
+   * The document this connection belongs to. Lets core's default open look grey
+   * and dash a connection that touches an open position (see `resolveFormat`).
+   */
+  export let doc: SldDocument | null = null;
   /** Numeric presentation config (stroke widths, hit target, symbol). */
   export let style: SldViewStyle = DEFAULT_VIEW_STYLE;
 
@@ -35,7 +40,7 @@
 
   let hovered = false;
 
-  $: fmt = (formatResolver?.(conn) ?? null) as ElementFormat | null;
+  $: fmt = (resolveFormat(conn, formatResolver, { doc }) ?? null) as ElementFormat | null;
   $: baseStrokeW = hovered && interactive ? style.connection.hoverStrokeWidth : style.connection.strokeWidth;
   $: strokeW = selected ? style.connection.selectedStrokeWidth : (fmt?.strokeWidth ?? baseStrokeW);
   // A format `stroke` (e.g. grey for a de-energised line) recolours the line and

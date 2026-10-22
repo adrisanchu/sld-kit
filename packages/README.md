@@ -132,6 +132,7 @@ Try it: [live demo](https://adrisanchu.github.io/sld-kit/box/) (React, from
 | Line labels (`CompositeLine.data` + `lineLabels`) | core layout places `ln.label`; `CompositeCanvas` draws it   |    ⬜    |  ✅   |
 | Section boxes (`boxSections` → `child.boxes`/`ties`) | core layout; `ChildDiagramView` box branch, `boxSubLabel(child, section)` |    ⬜    |  ✅   |
 | Open-bay default look (`Position.state` → `resolveFormat`) | `PositionView`                                           |    ✅    |  ✅   |
+| Open-bay connections grey + dashed (`switchOpenConnectionFormat`) | `ConnectionView` (`doc` prop), `CompositeCanvas` via `linkFormat`/`lineFormat` |    ✅    |  ✅   |
 | `ElementFormat.stroke` (line colour)              | `ConnectionView`, `CompositeCanvas` links + lines           |    ✅    |  ✅   |
 
 ### Flow overlays (generic, domain-agnostic)

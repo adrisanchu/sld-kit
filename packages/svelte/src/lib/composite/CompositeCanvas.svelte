@@ -2,9 +2,8 @@
   import { onMount, createEventDispatcher } from 'svelte';
   import {
     SLD_LAYOUT,
-    firstFormat,
-    linkConnections,
-    lineConnections,
+    linkFormat,
+    lineFormat,
     type CompositeLayout,
     type ChildLayout,
     type CompositeLineLayout,
@@ -267,9 +266,9 @@
 >
   <!-- Inter-diagram auto-links (dashed), underneath the children. A commissioning
        overlay on the shared child connection restyles the tie-line (dash / width);
-       tagging it in either diagram is enough (see `linkConnections`). -->
+       tagging it in either diagram is enough (see `linkFormat`). -->
   {#each layout.links as link (link.connectionId)}
-    {@const lf = firstFormat(linkConnections(link, layout.children), formatResolver ?? undefined)}
+    {@const lf = linkFormat(link, layout.children, formatResolver)}
     <polyline
       points={link.points.map((p) => `${p.x},${p.y}`).join(' ')}
       fill="none"
@@ -298,7 +297,7 @@
        like a child's connections; falls back to the neutral primary stroke. -->
   {#each layout.lines as ln (ln.line.id)}
     {@const cls = lineColorClass(ln)}
-    {@const lf = firstFormat(lineConnections(ln.line, layout.children), formatResolver ?? undefined)}
+    {@const lf = lineFormat(ln.line, layout.children, formatResolver)}
     <polyline
       points={ln.points.map((p) => `${p.x},${p.y}`).join(' ')}
       fill="none"

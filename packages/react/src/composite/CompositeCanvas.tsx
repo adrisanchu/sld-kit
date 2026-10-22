@@ -2,9 +2,8 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import {
   SLD_LAYOUT,
   connectionPath,
-  firstFormat,
-  linkConnections,
-  lineConnections,
+  linkFormat,
+  lineFormat,
   rotateSide,
   type CompositeLayout,
   type ChildLayout,
@@ -382,9 +381,9 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     >
       {/* Inter-diagram auto-links (dashed), underneath the children. A commissioning
           overlay on the shared child connection restyles the tie-line; tagging it
-          in either diagram is enough (see `linkConnections`). */}
+          in either diagram is enough (see `linkFormat`). */}
       {layout.links.map((link) => {
-        const lf = firstFormat(linkConnections(link, layout.children), fmt);
+        const lf = linkFormat(link, layout.children, fmt);
         const pts = link.points.map((p) => `${p.x},${p.y}`).join(' ');
         return (
           <g key={link.connectionId}>
@@ -417,7 +416,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
           demand triangle); rounded orthogonal corners via `connectionPath`. */}
       {layout.lines.map((ln) => {
         const cls = lineColorClass(ln);
-        const lf = firstFormat(lineConnections(ln.line, layout.children), fmt);
+        const lf = lineFormat(ln.line, layout.children, fmt);
         const dash = lf?.dashArray ?? ln.dashArray;
         return (
           <g

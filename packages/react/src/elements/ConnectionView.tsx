@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import type { Connection, ConnectionGeometry, ElementFormat } from '@sld-kit/core';
-import { SLD_LAYOUT, arrowheadPath, connectionPath } from '@sld-kit/core';
+import type { Connection, ConnectionGeometry, SldDocument } from '@sld-kit/core';
+import { SLD_LAYOUT, arrowheadPath, connectionPath, resolveFormat } from '@sld-kit/core';
 import type { FormatResolver } from '../format';
 import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
 import { SymbolGlyph } from '../composite/SymbolGlyph';
@@ -22,6 +22,11 @@ export interface ConnectionViewProps {
   showLabel?: boolean;
   /** Per-element overlay (stroke width); see PositionView. */
   formatResolver?: FormatResolver | null;
+  /**
+   * The document this connection belongs to. Lets core's default open look grey
+   * and dash a connection that touches an open position (see `resolveFormat`).
+   */
+  doc?: SldDocument | null;
   /** Numeric presentation config (stroke widths, hit target, symbol). */
   style?: SldViewStyle;
   onSelect?: (detail: { id: string; shiftKey: boolean }) => void;
@@ -42,13 +47,16 @@ export function ConnectionView({
   colorClass = null,
   showLabel = true,
   formatResolver = null,
+  doc = null,
   style = DEFAULT_VIEW_STYLE,
   onSelect,
   onEditLabel
 }: ConnectionViewProps) {
   const [hovered, setHovered] = useState(false);
 
-  const fmt = useMemo<ElementFormat | null>(() => formatResolver?.(conn) ?? null, [formatResolver, conn]);
+  // Not memoised: documents mutate in place, so an endpoint position toggling
+  // open/closed leaves `conn` the same object. The check is two lookups.
+  const fmt = resolveFormat(conn, formatResolver, { doc }) ?? null;
 
   const baseStrokeW = hovered && interactive ? style.connection.hoverStrokeWidth : style.connection.strokeWidth;
   const strokeW = selected ? style.connection.selectedStrokeWidth : (fmt?.strokeWidth ?? baseStrokeW);

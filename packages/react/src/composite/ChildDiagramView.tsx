@@ -229,6 +229,7 @@ export function ChildDiagramView({
               labelAngleDeg={labelAngleDeg}
               colorClass={connColor}
               formatResolver={formatResolver}
+              doc={resolved}
               style={style}
               showLabel={showConnectionLabels}
             />
