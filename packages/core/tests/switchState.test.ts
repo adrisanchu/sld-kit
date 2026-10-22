@@ -11,6 +11,10 @@ import {
   SWITCH_OPEN_FORMAT,
   SWITCH_OPEN_CONNECTION_FORMAT,
   UpdateElementCommand,
+  ChildDocumentCommand,
+  CompositeDocument,
+  DiagramInstance,
+  MapResolver,
   buildDocument,
   effectiveState,
   element,
@@ -123,5 +127,41 @@ describe('resolveFormat / default open look', () => {
       theme: { resolveElementFormat: (el) => (el.id === 'c-ext' ? { stroke: '#94a3b8' } : undefined) }
     });
     expect(svg.match(/#94a3b8/g)!.length).toBeGreaterThanOrEqual(2); // line + arrowhead
+  });
+});
+
+describe('ChildDocumentCommand (child edits in the composite history)', () => {
+  const composite = () => {
+    const doc = new CompositeDocument({ id: 'c', name: 'c' });
+    doc.addChild(DiagramInstance.of({ id: 'inst', libraryId: 'lib', x: 0, y: 0 }));
+    doc.resolveChildren(new MapResolver(new Map([['lib', Serializer.toJSON(oneBay())]])));
+    return doc;
+  };
+  const bay = (doc: CompositeDocument) => doc.getChild('inst')!.resolved!.getElement('p') as Position;
+  const toggle = (doc: CompositeDocument, state: 'open' | 'closed') => {
+    const before = bay(doc).toJSON();
+    return new ChildDocumentCommand('inst', new UpdateElementCommand(before, { ...before, state }));
+  };
+
+  it('toggles a child bay as one composite step, undoable, and notifies the composite', () => {
+    const doc = composite();
+    const stack = new CommandStack<CompositeDocument>();
+    const changes: string[] = [];
+    doc.subscribe((c) => changes.push(c.type));
+    stack.execute(toggle(doc, 'open'), doc);
+    expect(effectiveState(bay(doc))).toBe('open');
+    stack.undo(doc);
+    expect(effectiveState(bay(doc))).toBe('closed');
+    stack.redo(doc);
+    expect(effectiveState(bay(doc))).toBe('open');
+    expect(changes).toEqual(['children', 'children', 'children']);
+  });
+
+  it('is a no-op for a missing child', () => {
+    const doc = composite();
+    const before = bay(doc).toJSON();
+    const cmd = new ChildDocumentCommand('nope', new UpdateElementCommand(before, { ...before, state: 'open' }));
+    expect(() => cmd.do(doc)).not.toThrow();
+    expect(effectiveState(bay(doc))).toBe('closed');
   });
 });

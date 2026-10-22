@@ -95,6 +95,12 @@ of `vertices`, each either a free `point` (fixed in composite coordinates) or an
   that id. Everything else still auto-links.
 - **Commands only.** `AddLineCommand` / `RemoveLineCommand` / `UpdateLineCommand`
   keep undo/redo intact, exactly like the child commands.
+- **Editing a child's internals** (e.g. toggling a bay's `Position.state` from a
+  composite view): wrap the single-diagram command in
+  `ChildDocumentCommand(instanceId, cmd)`. It runs against that child's
+  resolved document as one step of the composite's history, and notifies the
+  composite (`touchChild`) so views re-layout. So one `CommandStack<CompositeDocument>`
+  covers both levels.
 - **Export.** `CompositeSvgExporter` renders each line as a plain solid `<path>`
   (via the shared `connectionPath`), under the same Office-safe constraints —
   presentation attributes only, no markers/classes/`<style>`.

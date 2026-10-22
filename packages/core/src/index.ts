@@ -176,5 +176,6 @@ export {
   SetLineDataCommand,
   SetBoxModeCommand,
   SetPortDirectionCommand,
+  ChildDocumentCommand,
   SetAutoFacingCommand
 } from './composite/commands';

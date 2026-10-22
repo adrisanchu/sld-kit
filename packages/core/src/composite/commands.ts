@@ -260,3 +260,38 @@ export class SetAutoFacingCommand implements Command<CompositeDocument> {
     doc.updateMeta({ autoFacing: this.before });
   }
 }
+
+/**
+ * Run a single-diagram command (e.g. an `UpdateElementCommand` toggling a bay's
+ * `Position.state`) against one child's resolved document, as ONE step of the
+ * composite's history — so a composite editor keeps a single undo/redo stack
+ * while editing a child's internals. Notifies the composite (`touchChild`) so
+ * views re-layout. No-op when the child is missing or unresolved.
+ *
+ * Note: instances placed from the same `libraryId` share one resolved document,
+ * so an edit shows on all of them.
+ */
+export class ChildDocumentCommand implements Command<CompositeDocument> {
+  readonly label: string;
+
+  constructor(
+    private instanceId: string,
+    private inner: Command<SldDocument>
+  ) {
+    this.label = inner.label;
+  }
+
+  do(doc: CompositeDocument): void {
+    const child = doc.getChild(this.instanceId)?.resolved;
+    if (!child) return;
+    this.inner.do(child);
+    doc.touchChild(this.instanceId);
+  }
+
+  undo(doc: CompositeDocument): void {
+    const child = doc.getChild(this.instanceId)?.resolved;
+    if (!child) return;
+    this.inner.undo(child);
+    doc.touchChild(this.instanceId);
+  }
+}

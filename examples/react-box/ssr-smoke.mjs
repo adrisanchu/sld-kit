@@ -19,6 +19,9 @@ import {
   DiagramInstance,
   LayoutEngine,
   SLD_LAYOUT,
+  ChildDocumentCommand,
+  CommandStack,
+  UpdateElementCommand,
   MapResolver,
   Serializer,
   buildDocument,
@@ -139,6 +142,24 @@ const mergedChild = charlieBoxes();
 const mergedHtml = renderFixture();
 const sectionFeeders = (sections) => sections.map((s) => [...s.connectionIds].sort().join(',')).join(' | ');
 
+// Phase 5 operate loop on the real fixture: toggle the coupler from a composite
+// command stack (as the detail view's click does) and watch the box view merge,
+// then undo to split again.
+const operated = buildBoxComposite();
+const opStack = new CommandStack();
+const opBoxes = () => splitEngine.layout(operated).children.find((c) => c.instance.id === 'lib-charlie').boxes?.length;
+const toggleCoupler = (state) => {
+  const before = operated.getChild('lib-charlie').resolved.getElement(COUPLER_ID).toJSON();
+  opStack.execute(new ChildDocumentCommand('lib-charlie', new UpdateElementCommand(before, { ...before, state })), operated);
+};
+let opNotified = 0;
+operated.subscribe(() => opNotified++);
+const opSplit = opBoxes();
+toggleCoupler('closed');
+const opMerged = opBoxes();
+opStack.undo(operated);
+const opUndone = opBoxes();
+
 const checks = [
   ['renders an <svg>', /<svg/.test(html)],
   ['renders box names', html.includes('ALPHA') && html.includes('BETA') && html.includes('GAMMA')],
@@ -171,6 +192,10 @@ const checks = [
   ['detail export greys + dashes the open coupler\'s stems to both bars', (detailSvg.match(/<path[^>]*stroke="#94a3b8"[^>]*stroke-dasharray="4 3"/g) ?? []).length >= 2],
   ['detail canvas greys the open coupler\'s stems too', detailHtml.includes('stroke="#94a3b8"')],
   ['detail export shows bar bus ids', /text-anchor="end"[^>]*>39770</.test(detailSvg)],
+  [
+    'operate: closing the coupler via a composite command merges CHARLIE; undo splits it again',
+    opSplit === 2 && opMerged === 1 && opUndone === 2 && opNotified === 2
+  ],
   ['auto-facing derives the exit side from live positions', facingRight === 'right' && facingLeft === 'left']
 ];
 

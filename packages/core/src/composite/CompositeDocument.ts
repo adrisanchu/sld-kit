@@ -147,6 +147,17 @@ export class CompositeDocument {
     this.emit({ type: 'children', ids: [instanceId] });
   }
 
+  /**
+   * Signal that a child's *resolved document* changed (e.g. a bay toggled
+   * open), so composite subscribers re-layout. A child's content isn't part of
+   * the composite model, so its edits don't notify on their own. Low-level:
+   * called by {@link ChildDocumentCommand}.
+   */
+  touchChild(instanceId: string): void {
+    if (!this.children.has(instanceId)) return;
+    this.emit({ type: 'children', ids: [instanceId] });
+  }
+
   /** Add a line. Throws {@link DuplicateIdError} if its id is taken, leaving the composite unchanged. */
   addLine(line: CompositeLine): void {
     if (this.lines.has(line.id)) throw new DuplicateIdError([line.id], `Duplicate line id: ${line.id}`);

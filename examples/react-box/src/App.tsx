@@ -8,6 +8,10 @@ import {
   CompositeSvgExporter,
   LayoutEngine,
   RemoveLineCommand,
+  ChildDocumentCommand,
+  Position,
+  UpdateElementCommand,
+  effectiveState,
   SWITCH_OPEN_CONNECTION_FORMAT,
   SLD_LAYOUT,
   SetAutoFacingCommand,
@@ -98,6 +102,9 @@ export default function App() {
   const [lineKind, setLineKind] = useState<CompositeLineKind>('line');
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
+  // Detail view = operate mode (the adapter's explore mode): the substation the
+  // user flew into; its positions are live (click toggles open/closed).
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft[]>([]);
   const [dark, setDark] = useState(false);
 
@@ -151,7 +158,10 @@ export default function App() {
   const chooseTool = (t: Tool) => {
     setTool(t);
     setDraft([]);
-    if (t === 'draw') setSelectedLineId(null);
+    if (t === 'draw') {
+      setSelectedLineId(null);
+      setFocusedId(null); // drawing leaves operate mode
+    }
   };
 
   const onCanvasPoint = useCallback(
@@ -238,7 +248,37 @@ export default function App() {
     setSelectedChildId(null);
   };
 
-  const toggleBoxMode = () => run(new SetBoxModeCommand(boxMode, !boxMode));
+  // ── Operate (detail view): fly into a substation, click its switches ────────
+  // Box view is a read-only projection of switch state; only the detail view
+  // operates. Reuses the adapter's explore mode — no new adapter API.
+  const operating = !boxMode && tool === 'select';
+  const focusChild = ({ id }: { id: string }) => {
+    const child = layout.children.find((c) => c.instance.id === id);
+    if (!child) return;
+    setFocusedId(id);
+    canvasRef.current?.flyTo(child.worldBounds, { durationMs: 450 });
+  };
+  const blur = useCallback(() => {
+    setFocusedId((prev) => {
+      if (prev !== null) canvasRef.current?.flyToFit({ durationMs: 450 });
+      return null;
+    });
+  }, []);
+  // Toggle a position's first-class `state` as ONE step of the composite
+  // history (undo/redo work across the box↔detail toggle); the composite
+  // re-layouts, so the box view re-splits / merges from the new state.
+  const toggleSwitch = ({ instanceId, elementId }: { instanceId: string; elementId: string }) => {
+    const el = composite.getChild(instanceId)?.resolved?.getElement(elementId);
+    if (!(el instanceof Position)) return;
+    const before = el.toJSON();
+    const state = effectiveState(el) === 'open' ? 'closed' : 'open';
+    run(new ChildDocumentCommand(instanceId, new UpdateElementCommand(before, { ...before, state })));
+  };
+
+  const toggleBoxMode = () => {
+    setFocusedId(null);
+    run(new SetBoxModeCommand(boxMode, !boxMode));
+  };
   const toggleAutoFacing = () => run(new SetAutoFacingCommand(autoFacing, !autoFacing));
 
   // Pin a feeder's exit side (the canvas cycles it clockwise on click). The pin
@@ -261,12 +301,15 @@ export default function App() {
   // Escape cancels a draft; Delete removes the selected line.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setDraft([]);
+      if (e.key === 'Escape') {
+        setDraft([]);
+        blur();
+      }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedLineId) deleteSelected();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedLineId, deleteSelected]);
+  }, [selectedLineId, deleteSelected, blur]);
 
   const exportSvg = () => {
     // Export through the same engine the canvas uses, so the SVG carries the
@@ -338,7 +381,14 @@ export default function App() {
             setSelectedChildId(null);
           }}
           onPortDirection={pinPortDirection}
-          onClearSelection={clearSelection}
+          explore={operating}
+          focusedId={operating ? focusedId : null}
+          onChildFocus={focusChild}
+          onElementActivate={toggleSwitch}
+          onClearSelection={() => {
+            clearSelection();
+            blur();
+          }}
         />
 
         {/* Minimal floating chrome — the app owns all orchestration; the canvas

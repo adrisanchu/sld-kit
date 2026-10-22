@@ -55,6 +55,17 @@ pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
   with its bus id instead of `BB1`/`BB2`. The child `LayoutEngine` gets a
   `busBarLabel` resolver and `busBarLabelAnchor: 'center-left'`, so the id sits
   beside the bar and never runs into a stem.
+- **Operate in the detail view** — with the Select tool, the detail view
+  reuses the adapter's explore mode (`explore`, `focusedId`, `onChildFocus`,
+  `onElementActivate`). Click a substation to fly into it, then click a
+  position to open or close it. Escape or a background click flies out.
+  - Each toggle is a core `ChildDocumentCommand` wrapping an
+    `UpdateElementCommand` on `Position.state`, so it's one step in the same
+    undo/redo history as box moves and line edits.
+  - Switch back to the box view and CHARLIE splits or merges to match. Its
+    lines grey out when their bay is open.
+  - The box view stays a read-only projection of switch state; you drag boxes
+    and draw lines there.
 - **Office-safe export** — `CompositeSvgExporter` with `boxMode`, `boxFill` and
   `boxSubLabel` produces a PowerPoint-pasteable SVG.
 
