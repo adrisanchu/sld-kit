@@ -38,6 +38,9 @@
   $: fmt = (formatResolver?.(conn) ?? null) as ElementFormat | null;
   $: baseStrokeW = hovered && interactive ? style.connection.hoverStrokeWidth : style.connection.strokeWidth;
   $: strokeW = selected ? style.connection.selectedStrokeWidth : (fmt?.strokeWidth ?? baseStrokeW);
+  // A format `stroke` (e.g. grey for a de-energised line) recolours the line and
+  // its arrowhead; the selection highlight still wins.
+  $: lineColor = !selected && fmt?.stroke ? fmt.stroke : 'currentColor';
   $: pathD = connectionPath(geo.points, geo.hops, SLD_LAYOUT.hopRadius);
   $: label = conn.from.kind === 'external' ? conn.from.label : conn.to.kind === 'external' ? conn.to.label : conn.label;
   $: symbolDef = geo.symbol ? symbols.get(geo.symbol.key) : undefined;
@@ -68,13 +71,13 @@
   <path
     d={pathD}
     fill="none"
-    stroke="currentColor"
+    stroke={lineColor}
     stroke-width={strokeW}
     stroke-dasharray={fmt?.dashArray ?? undefined}
     class={selected ? 'text-primary' : ''}
   />
   {#if geo.arrow}
-    <path d={arrowheadPath(geo.arrow.at, geo.arrow.angle, SLD_LAYOUT.arrowSize)} fill="currentColor" />
+    <path d={arrowheadPath(geo.arrow.at, geo.arrow.angle, SLD_LAYOUT.arrowSize)} fill={lineColor} />
   {/if}
   {#if geo.dot}
     <circle cx={geo.dot.x} cy={geo.dot.y} r={SLD_LAYOUT.nodeDotRadius} fill="currentColor" />

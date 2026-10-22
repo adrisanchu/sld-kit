@@ -274,6 +274,7 @@
       points={link.points.map((p) => `${p.x},${p.y}`).join(' ')}
       fill="none"
       class="stroke-primary/70"
+      style:stroke={lf?.stroke}
       stroke-width={lf?.strokeWidth ?? cs.linkStrokeWidth}
       stroke-dasharray={lf?.dashArray ?? cs.linkDashArray}
     />
@@ -304,6 +305,7 @@
       stroke={cls ? 'currentColor' : undefined}
       class={cls ?? 'stroke-primary'}
       style={cls ? 'color: hsl(var(--sld-pos))' : ''}
+      style:stroke={ln.line.id !== selectedLineId ? lf?.stroke : undefined}
       stroke-width={ln.line.id === selectedLineId
         ? cs.lineSelectedStrokeWidth
         : (lf?.strokeWidth ?? cs.lineStrokeWidth)}

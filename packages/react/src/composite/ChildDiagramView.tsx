@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { ChildLayout } from '@sld-kit/core';
+import type { BoxSection, ChildLayout, Rect } from '@sld-kit/core';
 import { BusBarView } from '../elements/BusBarView';
 import { PositionView } from '../elements/PositionView';
 import { ConnectionView } from '../elements/ConnectionView';
@@ -49,7 +49,8 @@ export interface ChildDiagramViewProps {
    */
   boxMode?: boolean;
   /** Secondary line under the box name (e.g. an integer bus ID). Box mode only. */
-  boxSubLabel?: (child: ChildLayout) => string | null;
+  /** Secondary line per box (e.g. bus ids); called with the box's `section` when the child is split. */
+  boxSubLabel?: (child: ChildLayout, section?: BoxSection) => string | null;
   /** Fallback text when a child diagram can't be resolved. */
   notFoundLabel?: string;
   onChildDown?: (detail: { id: string; event: React.PointerEvent }) => void;
@@ -147,53 +148,73 @@ export function ChildDiagramView({
   return (
     <g transform={child.transform.toSvgTransform()} opacity={dimmed ? 0.3 : 1} className="sld-child">
       {boxDisplay ? (
-        // Grid-level box: a saturated, colour-filled rounded rect with the name
-        // and bus id centred in the voltage colour — big and bold so the grid
-        // reads from afar (the reference look).
+        // Grid-level box(es): a saturated, colour-filled rounded rect with the
+        // name and bus id centred in the voltage colour — big and bold so the
+        // grid reads from afar (the reference look). A child split into bus
+        // sections draws one box per section, joined by muted dashed ties.
         (() => {
-          const cx = child.frame.x + child.frame.width / 2;
-          const cy = child.frame.y + child.frame.height / 2;
-          const sub = boxSubLabel?.(child) ?? null;
           const textFill = colorClass ? 'var(--sld-pos)' : undefined;
           const textClass = colorClass ? 'font-bold' : 'fill-foreground font-bold';
-          return (
-            <g className={colorClass ?? undefined}>
-              <rect
-                x={child.frame.x}
-                y={child.frame.y}
-                width={child.frame.width}
-                height={child.frame.height}
-                rx={8}
-                fill={colorClass ? 'var(--sld-pos)' : undefined}
-                fillOpacity={colorClass ? box.fillOpacity : undefined}
-                stroke={colorClass ? 'var(--sld-pos)' : undefined}
-                strokeWidth={box.strokeWidth}
-                className={colorClass ? undefined : 'fill-muted stroke-border'}
-              />
-              <g transform={labelAngleDeg ? `rotate(${labelAngleDeg} ${cx} ${cy})` : undefined}>
-                <text
-                  x={cx}
-                  y={cy + (sub ? -3 : box.nameFontSize * 0.35)}
-                  textAnchor="middle"
-                  fontSize={box.nameFontSize}
-                  fill={textFill}
-                  className={`pointer-events-none select-none ${textClass}`}
-                >
-                  {child.name}
-                </text>
-                {sub && (
+          const renderBox = (frame: Rect, sub: string | null, key: string) => {
+            const cx = frame.x + frame.width / 2;
+            const cy = frame.y + frame.height / 2;
+            return (
+              <g key={key}>
+                <rect
+                  x={frame.x}
+                  y={frame.y}
+                  width={frame.width}
+                  height={frame.height}
+                  rx={8}
+                  fill={colorClass ? 'var(--sld-pos)' : undefined}
+                  fillOpacity={colorClass ? box.fillOpacity : undefined}
+                  stroke={colorClass ? 'var(--sld-pos)' : undefined}
+                  strokeWidth={box.strokeWidth}
+                  className={colorClass ? undefined : 'fill-muted stroke-border'}
+                />
+                <g transform={labelAngleDeg ? `rotate(${labelAngleDeg} ${cx} ${cy})` : undefined}>
                   <text
                     x={cx}
-                    y={cy + box.idFontSize + 2}
+                    y={cy + (sub ? -3 : box.nameFontSize * 0.35)}
                     textAnchor="middle"
-                    fontSize={box.idFontSize}
+                    fontSize={box.nameFontSize}
                     fill={textFill}
                     className={`pointer-events-none select-none ${textClass}`}
                   >
-                    {sub}
+                    {child.name}
                   </text>
-                )}
+                  {sub && (
+                    <text
+                      x={cx}
+                      y={cy + box.idFontSize + 2}
+                      textAnchor="middle"
+                      fontSize={box.idFontSize}
+                      fill={textFill}
+                      className={`pointer-events-none select-none ${textClass}`}
+                    >
+                      {sub}
+                    </text>
+                  )}
+                </g>
               </g>
+            );
+          };
+          return (
+            <g className={colorClass ?? undefined}>
+              {(child.ties ?? []).map((tie) => (
+                <polyline
+                  key={`tie:${tie.a}:${tie.b}`}
+                  points={tie.points.map((p) => `${p.x},${p.y}`).join(' ')}
+                  fill="none"
+                  strokeWidth={box.strokeWidth}
+                  strokeDasharray="6 4"
+                  className="stroke-muted-foreground"
+                  strokeOpacity={0.6}
+                />
+              ))}
+              {child.boxes
+                ? child.boxes.map((b) => renderBox(b.frame, boxSubLabel?.(child, b.section) ?? null, b.key))
+                : renderBox(child.frame, boxSubLabel?.(child) ?? null, 'box')}
             </g>
           );
         })()

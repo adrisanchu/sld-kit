@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import type { Position, PositionGeometry, ElementFormat } from '@sld-kit/core';
-  import { SLD_LAYOUT } from '@sld-kit/core';
+  import { SLD_LAYOUT, resolveFormat } from '@sld-kit/core';
   import { DEFAULT_POSITION_TOKENS, type PositionTokens } from '../labels';
   import type { FormatResolver } from '../format';
   import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
@@ -46,7 +46,8 @@
   let hovered = false;
 
   $: token = colorClass ?? tokens[pos.type];
-  $: fmt = (formatResolver?.(pos) ?? null) as ElementFormat | null;
+  // The consumer's resolver wins; otherwise an open bay gets core's default open look.
+  $: fmt = (resolveFormat(pos, formatResolver) ?? null) as ElementFormat | null;
   $: baseAlpha = hovered && interactive ? style.position.hoverFillOpacity : style.position.fillOpacity;
   $: fillAlpha = fmt?.fillOpacity != null ? baseAlpha * fmt.fillOpacity : baseAlpha;
   $: strokeW = fmt?.strokeWidth ?? style.position.strokeWidth;

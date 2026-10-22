@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { Position, PositionGeometry, ElementFormat } from '@sld-kit/core';
-import { SLD_LAYOUT } from '@sld-kit/core';
+import { SLD_LAYOUT, resolveFormat } from '@sld-kit/core';
 import { DEFAULT_POSITION_TOKENS, type PositionTokens } from '../labels';
 import type { FormatResolver } from '../format';
 import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
@@ -65,7 +65,8 @@ export function PositionView({
   const [hovered, setHovered] = useState(false);
 
   const token = colorClass ?? tokens[pos.type];
-  const fmt = useMemo<ElementFormat | null>(() => formatResolver?.(pos) ?? null, [formatResolver, pos]);
+  // The consumer's resolver wins; otherwise an open bay gets core's default open look.
+  const fmt = useMemo<ElementFormat | null>(() => resolveFormat(pos, formatResolver) ?? null, [formatResolver, pos]);
 
   const baseAlpha = hovered && interactive ? style.position.hoverFillOpacity : style.position.fillOpacity;
   const fillAlpha = fmt?.fillOpacity != null ? baseAlpha * fmt.fillOpacity : baseAlpha;

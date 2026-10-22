@@ -13,7 +13,8 @@ import {
   type ExternalConnectionTip,
   type ExternalDirection,
   type Point,
-  type Rect
+  type Rect,
+  type BoxSection
 } from '@sld-kit/core';
 import { createPanZoom, type ContentBounds } from '../panzoom';
 import { useStore } from '../useStore';
@@ -67,7 +68,7 @@ export interface CompositeCanvasProps {
    */
   boxMode?: boolean;
   /** Secondary line under each box name (e.g. an integer bus ID). Box mode only. */
-  boxSubLabel?: (child: ChildLayout) => string | null;
+  boxSubLabel?: (child: ChildLayout, section?: BoxSection) => string | null;
   /** CSS class per position type; the consumer's stylesheet supplies the colors. */
   tokens?: PositionTokens;
   /** Per-child color class override (e.g. a voltage bucket). */
@@ -391,6 +392,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
               points={pts}
               fill="none"
               className="stroke-primary/70"
+              style={lf?.stroke ? { stroke: lf.stroke } : undefined}
               strokeWidth={lf?.strokeWidth ?? (boxMode ? cs.boxLineStrokeWidth : cs.linkStrokeWidth)}
               strokeDasharray={lf?.dashArray ?? cs.linkDashArray}
             />
@@ -426,7 +428,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
             <path
               d={connectionPath(ln.points, undefined, SLD_LAYOUT.hopRadius)}
               fill="none"
-              stroke="currentColor"
+              stroke={ln.line.id !== selectedLineId && lf?.stroke ? lf.stroke : 'currentColor'}
               strokeWidth={
                 ln.line.id === selectedLineId
                   ? cs.lineSelectedStrokeWidth
