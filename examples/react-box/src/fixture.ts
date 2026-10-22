@@ -10,10 +10,11 @@
  *
  * Most subs are single bus. CHARLIE is a **double bus with a coupler**: feeders
  * hang above BB1 or below BB2 (each on one fixed bar) and a coupler position
- * sits between the bars. Each bar carries its own integer bus id in `data`, and
- * every bay plus the coupler carries switch state in `data.switch` (see
- * `switching.ts`). With the coupler closed both bars form one electrical node,
- * so the box view shows one box labelled with both ids (`39770 / 39771`).
+ * sits between the bars. Each bar carries its own integer bus id in `data`;
+ * switching state is the core's first-class `Position.state` (absent = closed).
+ * The coupler starts open, so the bars are two electrical nodes (see
+ * `topology.ts`) and the box view shows two boxes (`39770`, `39771`) joined by a
+ * muted tie; closed, they'd merge into one box labelled `39770 / 39771`.
  */
 import {
   CompositeDocument,
@@ -22,13 +23,13 @@ import {
   MapResolver,
   Serializer,
   buildDocument,
+  type CompositeLineKind,
   type ExternalDirection,
   type LineVertexJson,
   type BaySpec,
   type PositionType,
   type SldDocument
 } from '@sld-kit/core';
-import type { SwitchData } from './switching';
 
 interface Feeder {
   id: string;
@@ -50,9 +51,6 @@ interface Sub {
   y: number;
   feeders: Feeder[];
 }
-
-/** Every bay (and the coupler) is a switchable position; all closed by default. */
-const closed = (): { switch: SwitchData } => ({ switch: { operable: true, state: 'closed' } });
 
 /** Stable position id for the bay feeding `feederId` (feeder ids are unique in the fixture). */
 export const bayId = (feederId: string) => `pos-${feederId}`;
@@ -76,7 +74,6 @@ function buildSub(sub: Sub): SldDocument {
         type: f.type ?? 'line',
         label: f.label,
         row,
-        data: closed(),
         feeder: { asset: f.type === 'demand' ? 'demand' : 'line', label: f.label, direction: f.direction, id: f.id }
       }
     ]
@@ -100,7 +97,9 @@ function buildSub(sub: Sub): SldDocument {
     ],
     bays: [
       ...top.map((f, i) => bay(f, i, 0)),
-      { col: top.length, positions: [{ id: COUPLER_ID, type: 'central', label: 'BC', row: 2, data: closed() }] },
+      // The coupler starts OPEN: the bars run split, so CHARLIE shows as two boxes
+      // (39770 tied to ALPHA, 39771 to DELTA + the demand) joined by a muted tie.
+      { col: top.length, positions: [{ id: COUPLER_ID, type: 'central', label: 'BC', row: 2, state: 'open' }] },
       ...bottom.map((f, i) => bay(f, top.length + 1 + i, 4))
     ]
   });
@@ -129,21 +128,21 @@ const SUBS: Sub[] = [
     ]
   },
   {
-    id: 'lib-delta', name: 'DELTA', buses: [39910], kv: 220, x: 560, y: 430,
+    id: 'lib-delta', name: 'DELTA', buses: [39910], kv: 220, x: 800, y: 430,
     feeders: [
       { id: 'delta-charlie', label: 'L2', direction: 'left' },
       { id: 'delta-echo', label: 'C1', direction: 'right' }
     ]
   },
   {
-    id: 'lib-echo', name: 'ECHO', buses: [39775], kv: 220, x: 1120, y: 430,
+    id: 'lib-echo', name: 'ECHO', buses: [39775], kv: 220, x: 1360, y: 430,
     feeders: [
       { id: 'echo-delta', label: 'C1', direction: 'left' },
       { id: 'echo-foxtrot', label: 'L3', direction: 'down' }
     ]
   },
   {
-    id: 'lib-foxtrot', name: 'FOXTROT', buses: [39831], kv: 220, x: 1120, y: 860,
+    id: 'lib-foxtrot', name: 'FOXTROT', buses: [39831], kv: 220, x: 1360, y: 860,
     feeders: [
       { id: 'foxtrot-echo', label: 'L3', direction: 'up' },
       { id: 'foxtrot-dem', label: 'D1', direction: 'down', type: 'demand' }
@@ -207,12 +206,11 @@ export const LINE_RATINGS: LineRating[] = [
   // l-echo-foxtrot and the demand: deliberately unlabelled.
 ];
 
-/** Fold rating readings into each addressed line's `data` (build-time, before any command stack). */
-export function applyLineRatings(composite: CompositeDocument, readings: LineRating[]): void {
-  for (const { id, ...ratings } of readings) {
-    const line = composite.getLine(id);
-    if (line) composite.setLineData(id, { ...(line.data as object | undefined), ratings } satisfies LineRatingData);
-  }
+/** A line's `data` from its rating reading, if it has one (folded in when the line is built). */
+export function ratingData(lineId: string, readings: LineRating[] = LINE_RATINGS): LineRatingData | undefined {
+  const reading = readings.find((r) => r.id === lineId);
+  if (!reading) return undefined;
+  return { ratings: { capacity: reading.capacity, mva: reading.mva } };
 }
 
 /**
@@ -263,18 +261,19 @@ export function buildBoxComposite(): CompositeDocument {
 
   // Overhead lines (solid), a transformer (circles) and a cable (dashed).
   // Stable ids so the rating readings can address each line.
-  composite.addLine(new CompositeLine('l-alpha-bravo', [anchor('lib-alpha', 'alpha-bravo'), anchor('lib-bravo', 'bravo-alpha')], 'line'));
-  composite.addLine(new CompositeLine('l-alpha-charlie', [anchor('lib-alpha', 'alpha-charlie'), anchor('lib-charlie', 'charlie-alpha')], 'transformer'));
-  composite.addLine(new CompositeLine('l-charlie-delta', [anchor('lib-charlie', 'charlie-delta'), anchor('lib-delta', 'delta-charlie')], 'line'));
-  composite.addLine(new CompositeLine('l-delta-echo', [anchor('lib-delta', 'delta-echo'), anchor('lib-echo', 'echo-delta')], 'cable'));
-  composite.addLine(new CompositeLine('l-echo-foxtrot', [anchor('lib-echo', 'echo-foxtrot'), anchor('lib-foxtrot', 'foxtrot-echo')], 'line'));
+  // Each line carries its rating reading (if any) in `data`, set at construction.
+  const addLine = (id: string, vertices: LineVertexJson[], kind: CompositeLineKind) =>
+    composite.addLine(new CompositeLine(id, vertices, kind, undefined, ratingData(id)));
+  addLine('l-alpha-bravo', [anchor('lib-alpha', 'alpha-bravo'), anchor('lib-bravo', 'bravo-alpha')], 'line');
+  addLine('l-alpha-charlie', [anchor('lib-alpha', 'alpha-charlie'), anchor('lib-charlie', 'charlie-alpha')], 'transformer');
+  addLine('l-charlie-delta', [anchor('lib-charlie', 'charlie-delta'), anchor('lib-delta', 'delta-charlie')], 'line');
+  addLine('l-delta-echo', [anchor('lib-delta', 'delta-echo'), anchor('lib-echo', 'echo-delta')], 'cable');
+  addLine('l-echo-foxtrot', [anchor('lib-echo', 'echo-foxtrot'), anchor('lib-foxtrot', 'foxtrot-echo')], 'line');
 
   // Demands hang off a 'down' feeder as a node-relative lead — the router keeps
   // them attached and vertical in both views (no alignment pass, no absolute point).
-  composite.addLine(new CompositeLine('l-foxtrot-dem', demandLead('lib-foxtrot', 'foxtrot-dem'), 'demand'));
-  composite.addLine(new CompositeLine('l-charlie-dem', demandLead('lib-charlie', 'charlie-dem'), 'demand'));
-
-  applyLineRatings(composite, LINE_RATINGS);
+  addLine('l-foxtrot-dem', demandLead('lib-foxtrot', 'foxtrot-dem'), 'demand');
+  addLine('l-charlie-dem', demandLead('lib-charlie', 'charlie-dem'), 'demand');
 
   composite.resolveChildren(resolver);
 
