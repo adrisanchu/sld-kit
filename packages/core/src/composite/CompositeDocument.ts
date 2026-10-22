@@ -176,7 +176,13 @@ export class CompositeDocument {
     this.emit({ type: 'lines', ids: [id] });
   }
 
-  /** Replace a line's opaque `data` (deep-copied; `undefined` clears it). */
+  /**
+   * Replace a line's opaque `data` (deep-copied; `undefined` clears it).
+   *
+   * Currently unused by the examples (fixtures pass `data` to the
+   * `CompositeLine` constructor) — kept for future line-property editing; call
+   * it only through {@link SetLineDataCommand}.
+   */
   setLineData(id: string, data: unknown): void {
     const line = this.lines.get(id);
     if (!line) return;
