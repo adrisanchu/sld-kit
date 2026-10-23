@@ -131,6 +131,7 @@ Try it: [live demo](https://adrisanchu.github.io/sld-kit/box/) (React, from
 | Uniform box size (`boxSize`, default `BOX_SIZE`) | core `CompositeLayoutEngine` option (no adapter surface)    |    ⬜    |  ✅   |
 | Line labels (`CompositeLine.data` + `lineLabels`) | core layout places `ln.label`; `CompositeCanvas` draws it   |    ⬜    |  ✅   |
 | Section boxes (`boxSections` → `child.boxes`/`ties`) | core layout; `ChildDiagramView` box branch, `boxSubLabel(child, section)` |    ⬜    |  ✅   |
+| Expand in place (`layout(doc, { expanded })`) + box ↔ detail morph | `ChildDiagramView` (`animateMorph`), `CompositeCanvas` (expanded drawn last, re-routed lines fade in) |    ⬜    |  ✅   |
 | Open-bay default look (`Position.state` → `resolveFormat`) | `PositionView`                                           |    ✅    |  ✅   |
 | Open-bay connections grey + dashed (`switchOpenConnectionFormat`) | `ConnectionView` (`doc` prop), `CompositeCanvas` via `linkFormat`/`lineFormat` |    ✅    |  ✅   |
 | `ElementFormat.stroke` (line colour)              | `ConnectionView`, `CompositeCanvas` links + lines           |    ✅    |  ✅   |

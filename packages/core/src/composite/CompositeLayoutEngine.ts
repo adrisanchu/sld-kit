@@ -97,6 +97,22 @@ export interface ChildLayout {
   boxes?: SectionBox[];
   /** Box view only: muted ties between section boxes (child-local), e.g. an open coupler. */
   ties?: SectionTie[];
+  /**
+   * Box view only: this child is *expanded* (see `layout(doc, { expanded })`) —
+   * drawn with its full detail layout, centred on where its box sits, with its
+   * feeders attached at the drawing's tips instead of the box perimeter.
+   */
+  expanded?: boolean;
+}
+
+/** Per-call layout request (view state, not document state). */
+export interface CompositeLayoutRequest {
+  /**
+   * Box view: instance ids to show **expanded** — their full detail drawing,
+   * centred on their box, while every other child stays a box. Lets a UI open
+   * one substation in place (e.g. to operate its switches). Ignored in detail view.
+   */
+  expanded?: Iterable<string>;
 }
 
 /**
@@ -459,14 +475,20 @@ export class CompositeLayoutEngine {
     this.boxSections = options.boxSections;
   }
 
-  layout(doc: CompositeDocument): CompositeLayout {
+  layout(doc: CompositeDocument, request: CompositeLayoutRequest = {}): CompositeLayout {
     const boxMode = doc.meta.boxMode ?? false;
     const defaultRouting = doc.meta.defaultRouting;
     // Box mode lays children out compactly so the box hugs its connection tips.
     const engine = boxMode ? this.boxChildEngine : this.childEngine;
-    let children = doc.allChildren().map((instance) =>
-      this.makeChildLayout(instance, instance.resolved ? engine.layout(instance.resolved) : null, boxMode)
-    );
+    // Box view can expand some children in place: their detail drawing, centred
+    // on the box they replace (so the camera can fly onto the same spot).
+    const expanded = new Set(boxMode ? (request.expanded ?? []) : []);
+    let children = doc.allChildren().map((instance) => {
+      if (expanded.has(instance.id) && instance.resolved) {
+        return this.makeChildLayout(instance, this.childEngine.layout(instance.resolved), false, this.boxFrameSize(instance));
+      }
+      return this.makeChildLayout(instance, instance.resolved ? engine.layout(instance.resolved) : null, boxMode);
+    });
 
     // The floating-connector model (attach-per-view, node-relative leads,
     // orthogonal auto-routing) runs whenever the composite shows boxes OR uses
@@ -483,6 +505,8 @@ export class CompositeLayoutEngine {
       // that endpoint swapped — physically moving the arrow tip. Box view keeps
       // the rectangle and only re-picks the perimeter side, so it is untouched.
       if (!boxMode) children = this.applyEffectiveDirections(doc, children, engine, autoFacing, peerCenterOf);
+      // An expanded child is real detail geometry too: same arrow re-layout.
+      else if (expanded.size) children = this.applyEffectiveDirections(doc, children, this.childEngine, autoFacing, peerCenterOf, expanded);
       return this.layoutFloating(doc, children, boxMode, defaultRouting, autoFacing, peerCenterOf);
     }
 
@@ -501,7 +525,16 @@ export class CompositeLayoutEngine {
    * set); its compact layout is still kept, since the port resolver reads the
    * feeder tips from it to order same-side slots along the box edge.
    */
-  private makeChildLayout(instance: DiagramInstance, layout: DiagramLayout | null, boxMode = false): ChildLayout {
+  /**
+   * `centreOn`: lay the frame out centred on a box of this size at the instance
+   * position (an expanded child replacing its box) instead of at its top-left.
+   */
+  private makeChildLayout(
+    instance: DiagramInstance,
+    layout: DiagramLayout | null,
+    boxMode = false,
+    centreOn?: { width: number; height: number }
+  ): ChildLayout {
     const size = !layout ? PLACEHOLDER_FRAME : boxMode && this.boxSize ? this.boxSize : layout.size;
     let frame: Rect = { x: 0, y: 0, width: size.width, height: size.height };
     // Box view: a consumer split lays several same-size boxes side by side; the
@@ -514,7 +547,10 @@ export class CompositeLayoutEngine {
       ({ boxes, ties, frame } = laid);
     }
     const pivot: Point = { x: frame.width / 2, y: frame.height / 2 };
-    const transform = new Transform2D(instance.x, instance.y, instance.angleDeg, pivot);
+    // Centring keeps the world centre where the box's was: (x + bw/2, y + bh/2).
+    const dx = centreOn ? (centreOn.width - frame.width) / 2 : 0;
+    const dy = centreOn ? (centreOn.height - frame.height) / 2 : 0;
+    const transform = new Transform2D(instance.x + dx, instance.y + dy, instance.angleDeg, pivot);
     return {
       instance,
       layout,
@@ -525,8 +561,15 @@ export class CompositeLayoutEngine {
       labelAngleDeg: labelFlipDeg(instance.angleDeg),
       name: instance.resolved?.meta.name || instance.libraryId,
       nameLabel: resolveNameLabelLayout(frame, instance.labelAnchor, instance.labelDirection, instance.angleDeg),
-      ...(boxes ? { boxes, ties } : {})
+      ...(boxes ? { boxes, ties } : {}),
+      ...(centreOn ? { expanded: true } : {})
     };
+  }
+
+  /** The frame size a child has as a (single) box: the uniform `boxSize`, else its compact layout's. */
+  private boxFrameSize(instance: DiagramInstance): { width: number; height: number } {
+    if (this.boxSize) return this.boxSize;
+    return instance.resolved ? this.boxChildEngine.layout(instance.resolved).size : PLACEHOLDER_FRAME;
   }
 
   /**
@@ -544,11 +587,14 @@ export class CompositeLayoutEngine {
     children: ChildLayout[],
     engine: LayoutEngine,
     autoFacing: boolean,
-    peerCenterOf: Map<string, Point> | undefined
+    peerCenterOf: Map<string, Point> | undefined,
+    /** Restrict to these instance ids (box view: just the expanded children). */
+    only?: ReadonlySet<string>
   ): ChildLayout[] {
     return children.map((child) => {
       const { instance, layout, worldBounds } = child;
       if (!layout || !instance.resolved) return child;
+      if (only && !only.has(instance.id)) return child;
 
       const childCenter = { x: worldBounds.x + worldBounds.width / 2, y: worldBounds.y + worldBounds.height / 2 };
       const overrides = new Map<string, ExternalDirection>();
@@ -562,7 +608,8 @@ export class CompositeLayoutEngine {
       }
       if (overrides.size === 0) return child; // no effective change → share the cached layout
 
-      return this.makeChildLayout(instance, this.relaidChildLayout(instance.libraryId, instance.resolved, engine, overrides));
+      const relaid = this.relaidChildLayout(instance.libraryId, instance.resolved, engine, overrides);
+      return this.makeChildLayout(instance, relaid, false, child.expanded ? this.boxFrameSize(instance) : undefined);
     });
   }
 

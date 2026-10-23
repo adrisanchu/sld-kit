@@ -139,6 +139,7 @@ export {
   NAME_LABEL_FONT_SIZE,
   type ChildLayout,
   type CompositeLayoutOptions,
+  type CompositeLayoutRequest,
   type NameLabelLayout,
   type CompositeLink,
   type CompositeLineLayout,

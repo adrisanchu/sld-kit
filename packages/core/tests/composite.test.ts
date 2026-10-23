@@ -1079,6 +1079,33 @@ describe('Box view — section boxes (boxSections)', () => {
     expect(svg).toContain('stroke="#94a3b8"');
   });
 
+  it('expands one child in place (box view): detail drawing centred on its box, feeders at its tips', () => {
+    const doc = sectionDoc();
+    const plain = engine().layout(doc);
+    const open = engine(split).layout(doc, { expanded: ['mid'] });
+    const box = childOf(plain, 'mid');
+    const mid = childOf(open, 'mid');
+    expect(mid.expanded).toBe(true);
+    expect(mid.boxes).toBeUndefined(); // the split only applies to boxes
+    expect(mid.frame.width).toBeGreaterThan(BOX_SIZE.width); // the full drawing
+    const centre = (r: { x: number; y: number; width: number; height: number }) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+    expect(centre(mid.worldBounds).x).toBeCloseTo(centre(box.worldBounds).x);
+    expect(centre(mid.worldBounds).y).toBeCloseTo(centre(box.worldBounds).y);
+    // Others stay boxes.
+    expect(childOf(open, 'west').expanded).toBeUndefined();
+    expect(childOf(open, 'west').frame.width).toBe(BOX_SIZE.width);
+    // MID's line now leaves from inside its (big) frame — a drawing tip, not the perimeter.
+    const p = lineOf(open, 'lw').points[0];
+    const fb = mid.worldBounds;
+    expect(p.x).toBeGreaterThan(fb.x);
+    expect(p.x).toBeLessThan(fb.x + fb.width);
+  });
+
+  it('ignores `expanded` in detail view', () => {
+    const doc = sectionDoc({ boxMode: false });
+    expect(childOf(engine().layout(doc, { expanded: ['mid'] }), 'mid').expanded).toBeUndefined();
+  });
+
   it('detail view ignores the split', () => {
     const mid = childOf(engine(split).layout(sectionDoc({ boxMode: false })), 'mid');
     expect(mid.boxes).toBeUndefined();

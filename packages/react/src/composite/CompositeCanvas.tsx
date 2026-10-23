@@ -363,6 +363,14 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         ? 'cursor-grab'
         : '';
 
+  const expandedIds = useMemo(
+    () => new Set(layout.children.filter((c) => c.expanded).map((c) => c.instance.id)),
+    [layout]
+  );
+  const orderedChildren = useMemo(
+    () => [...layout.children.filter((c) => !c.expanded), ...layout.children.filter((c) => c.expanded)],
+    [layout]
+  );
   const fmt = formatResolver ?? undefined;
 
   return (
@@ -418,10 +426,15 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         const cls = lineColorClass(ln);
         const lf = lineFormat(ln.line, layout.children, fmt);
         const dash = lf?.dashArray ?? ln.dashArray;
+        // A line touching an expanded child re-routes (box perimeter ↔ drawing
+        // tip); keying on that remounts it with a short fade so the jump reads
+        // as part of the morph.
+        const reroute = ln.line.vertices.some((v) => v.kind === 'anchor' && expandedIds.has(v.instanceId));
         return (
           <g
-            key={ln.line.id}
-            className={cls ?? 'text-primary'}
+            key={`${ln.line.id}:${reroute ? 'x' : 'b'}`}
+            className={`${cls ?? 'text-primary'}${reroute ? ' sld-line-in' : ''}`}
+            data-sld-anim
             style={cls ? { color: 'var(--sld-pos)' } : undefined}
           >
             <path
@@ -441,8 +454,9 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         );
       })}
 
-      {/* Children in z-order. */}
-      {layout.children.map((child) => (
+      {/* Children in z-order — an expanded child last, so its drawing sits above
+          the neighbouring boxes it may overlap. */}
+      {orderedChildren.map((child) => (
         <ChildDiagramView
           key={child.instance.id}
           child={child}

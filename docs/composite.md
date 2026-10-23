@@ -75,6 +75,17 @@ options:
 - Returning `null` or a single section keeps one box. The detail view ignores
   the split.
 
+A box view can also open one substation **in place**:
+`engine.layout(doc, { expanded: [instanceId] })`.
+- The expanded child gets its full detail drawing, centred on where its box
+  sits (`ChildLayout.expanded`), and its feeders attach at the drawing's tips.
+- Every other child stays a box.
+- This is view state, passed per call, never stored in the document.
+- The React `ChildDiagramView` animates any box ↔ detail switch (this, or the
+  view toggle). The previous frame's outline morphs into the new one while the
+  new content fades in, and re-routed lines fade in. `prefers-reduced-motion`
+  disables it, and `animateMorph={false}` opts out.
+
 ## Manual lines
 
 Auto-links are convenient but always straight and dashed — they can't express a
