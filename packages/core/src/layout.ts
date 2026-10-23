@@ -1,3 +1,5 @@
+import type { LabelAnchor } from './types';
+
 /**
  * Fixed spacing constants used by the LayoutEngine to map matrix slots to
  * pixels. The persisted document never stores pixel coordinates — tweaking
@@ -52,8 +54,22 @@ export const SLD_LAYOUT = {
   hopRadius: 6,
   fontFamily: 'Arial, Helvetica, sans-serif',
   labelFontSize: 12,
-  busLabelFontSize: 13
+  busLabelFontSize: 13,
+  /**
+   * Slot a bus bar's label snaps to, in the shared `LabelAnchor` vocabulary
+   * (relative to the bar). `top-left` (default): above the bar's left end.
+   * `center-left`: beside the bar's start, vertically centred, with the left
+   * margin widened to fit the longest label, so long labels never run into a stem.
+   */
+  busBarLabelAnchor: 'top-left' as BusBarLabelAnchor
 } as const;
+
+/**
+ * The `LabelAnchor` slots a bus bar label supports (see
+ * `SLD_LAYOUT.busBarLabelAnchor`). An `auto` mode (top-left unless it collides,
+ * else center-left) may extend this later.
+ */
+export type BusBarLabelAnchor = Extract<LabelAnchor, 'top-left' | 'center-left'>;
 
 /**
  * The injectable layout config. `SLD_LAYOUT` is declared `as const` so its
@@ -62,5 +78,9 @@ export const SLD_LAYOUT = {
  * a tweaked config — `{ ...SLD_LAYOUT, cellWidth: 160 }` — without type casts.
  */
 export type SldLayoutConfig = {
-  -readonly [K in keyof typeof SLD_LAYOUT]: (typeof SLD_LAYOUT)[K] extends number ? number : string;
+  -readonly [K in keyof typeof SLD_LAYOUT]: K extends 'busBarLabelAnchor'
+    ? BusBarLabelAnchor
+    : (typeof SLD_LAYOUT)[K] extends number
+      ? number
+      : string;
 };

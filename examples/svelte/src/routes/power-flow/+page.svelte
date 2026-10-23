@@ -12,7 +12,9 @@
     CompositeLayoutEngine,
     LayoutEngine,
     CommandStack,
+    Position,
     UpdateElementCommand,
+    effectiveState,
     type CompositeDocument,
     type CompositeLayout,
     type ChildLayout,
@@ -25,7 +27,7 @@
   import Maximize from 'lucide-svelte/icons/maximize';
   import { POSITION_TYPE_TOKENS, SLD_VIEW_STYLE, SLD_CHILD_NOT_FOUND, voltageToken } from '$lib/components/sld/theme';
   import { buildPowerFlowDemo } from '$lib/powerflow/fixture';
-  import { getFlow, withFlowState, flowFormat, applyPowerFlow, loadTier } from '$lib/powerflow/flow-data';
+  import { getFlow, applyPowerFlow, loadTier } from '$lib/powerflow/flow-data';
   import { POWER_FLOW_READINGS } from '$lib/powerflow/readings';
   import { computeFlowMap, type FlowMap } from '$lib/powerflow/model';
 
@@ -84,7 +86,9 @@
   function makeResolver(map: FlowMap): FlowResolver {
     return (key) => {
       const f = map.get(key);
-      if (!f || !f.active) return { active: false }; // open / blocked → grey, no dots
+      // Open / blocked → grey and dashed, no dots: the overlay paints over the
+      // connection, so it repeats core's open-connection look (grey + dashed).
+      if (!f || !f.active) return { active: false, dashed: true };
       const load = f.capacity ? f.magnitude / f.capacity : 0;
       return {
         active: true,
@@ -136,11 +140,10 @@
     const childDoc = composite.getChild(instanceId)?.resolved;
     const el = childDoc?.getElement(elementId);
     if (!childDoc || !el) return;
-    const f = getFlow(el);
-    if (!f?.operable) return; // only switches operate; other clicks are inert
+    if (!(el instanceof Position) || !getFlow(el)?.operable) return; // only switches operate; other clicks are inert
     const before = el.toJSON();
-    const next = f.state === 'open' ? 'closed' : 'open';
-    stack.execute(new UpdateElementCommand(before, { ...before, data: withFlowState(before.data, next) }), childDoc);
+    const next = effectiveState(el) === 'open' ? 'closed' : 'open';
+    stack.execute(new UpdateElementCommand(before, { ...before, state: next }), childDoc);
     flowTick++;
   }
 
@@ -150,13 +153,9 @@
       const d = inst.resolved;
       if (!d) continue;
       for (const pos of d.positions()) {
-        const f = getFlow(pos);
-        if (f?.operable && f.state === 'open') {
+        if (getFlow(pos)?.operable && effectiveState(pos) === 'open') {
           const before = pos.toJSON();
-          stack.execute(
-            new UpdateElementCommand(before, { ...before, data: withFlowState(before.data, 'closed') }),
-            d
-          );
+          stack.execute(new UpdateElementCommand(before, { ...before, state: 'closed' }), d);
         }
       }
     }
@@ -189,7 +188,6 @@
         {resolveFlow}
         {resolveLineLabel}
         {paused}
-        formatResolver={flowFormat}
         {childColorClass}
         childConnectionColorClass={neutralConnections}
         tokens={POSITION_TYPE_TOKENS}

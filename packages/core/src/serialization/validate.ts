@@ -17,6 +17,24 @@ export class SldParseError extends Error {
   }
 }
 
+/**
+ * Thrown when an id is already taken: by `buildDocument` (every duplicate in
+ * the spec, reported at once) and at runtime by `SldDocument.addElement` /
+ * `CompositeDocument.addChild` / `addLine`, which reject the offending item and
+ * leave the document unchanged. Extends `SldParseError`, so existing handlers
+ * keep catching it; check `instanceof DuplicateIdError` to handle it
+ * specifically, and read `ids` for the clashing id(s).
+ */
+export class DuplicateIdError extends SldParseError {
+  constructor(
+    readonly ids: string[],
+    message = `Duplicate id: ${ids.join(', ')}`
+  ) {
+    super(message);
+    this.name = 'DuplicateIdError';
+  }
+}
+
 export type Migration = (json: Record<string, unknown>) => Record<string, unknown>;
 
 const migrations = new Map<number, Migration>();
@@ -128,6 +146,9 @@ export function parseDocument(input: unknown): { errors: SldParseError[]; doc?: 
         }
         if (el.subElements !== undefined && !Array.isArray(el.subElements)) {
           fail(`Position ${el.id}: invalid subElements`);
+        }
+        if (el.state !== undefined && el.state !== 'open' && el.state !== 'closed') {
+          fail(`Position ${el.id}: invalid state (expected "open" or "closed")`);
         }
         break;
       }

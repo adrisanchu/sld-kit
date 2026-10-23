@@ -121,6 +121,7 @@
         {labelAngleDeg}
         colorClass={connColor}
         {formatResolver}
+        doc={resolved}
         {style}
         showLabel={showConnectionLabels}
       />

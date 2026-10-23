@@ -2,36 +2,12 @@ import { SldDocument } from '../SldDocument';
 import { Connection } from '../elements/Connection';
 import { Serializer, SldParseError } from '../serialization/Serializer';
 import { newId } from '../ids';
-import type { ExternalDirection } from '../types';
+import type { ExternalDirection, LabelAnchor } from '../types';
 import type { DocumentResolver } from './DocumentResolver';
 
-/**
- * One of eight discrete slots on the child's frame the always-on name label
- * snaps to, named `{vertical}-{horizontal}`. Semantic to the child's *own* frame
- * (top = the diagram's top edge), so the label rides with the child's rotation —
- * "top-left" stays the diagram's own top-left corner whatever its `angleDeg`.
- * (`center-center` is intentionally omitted — a name over the diagram body.)
- */
-export type LabelAnchor =
-  | 'top-left'
-  | 'top-center'
-  | 'top-right'
-  | 'center-left'
-  | 'center-right'
-  | 'bottom-left'
-  | 'bottom-center'
-  | 'bottom-right';
-
-export const LABEL_ANCHORS: readonly LabelAnchor[] = [
-  'top-left',
-  'top-center',
-  'top-right',
-  'center-left',
-  'center-right',
-  'bottom-left',
-  'bottom-center',
-  'bottom-right'
-] as const;
+// The name label's slot vocabulary lives in `types.ts` (shared with bus-bar
+// labels); re-exported here so existing imports keep working.
+export { LABEL_ANCHORS, type LabelAnchor } from '../types';
 
 const DEFAULT_LABEL_ANCHOR: LabelAnchor = 'top-left';
 

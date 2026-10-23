@@ -91,18 +91,18 @@ export function BusBarView({
         strokeWidth={fmt?.strokeWidth}
         strokeDasharray={fmt?.dashArray ?? undefined}
       />
-      {showLabel && bar.label && (
+      {showLabel && geo.label && (
         <g transform={labelAngleDeg ? `rotate(${labelAngleDeg} ${geo.labelAt.x} ${geo.labelAt.y})` : undefined}>
           <text
             x={geo.labelAt.x}
             y={geo.labelAt.y}
-            textAnchor="start"
+            textAnchor={geo.textAnchor}
             fontSize={SLD_LAYOUT.busLabelFontSize}
             fontWeight="600"
             fill="currentColor"
             className="select-none"
           >
-            {bar.label}
+            {geo.label}
           </text>
         </g>
       )}

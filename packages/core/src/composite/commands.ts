@@ -173,6 +173,31 @@ export class UpdateLineKindCommand implements Command<CompositeDocument> {
 }
 
 /**
+ * Replace a line's opaque `data` via before/after snapshots (e.g. updated
+ * ratings from the consumer's model). `undefined` clears it. Undoable.
+ *
+ * Currently unused (no editor edits line data yet) — kept, with its tests, for
+ * future line-property editing; revisit when that lands.
+ */
+export class SetLineDataCommand implements Command<CompositeDocument> {
+  readonly label = 'Update line data';
+
+  constructor(
+    private id: string,
+    private before: unknown,
+    private after: unknown
+  ) {}
+
+  do(doc: CompositeDocument): void {
+    doc.setLineData(this.id, this.after);
+  }
+
+  undo(doc: CompositeDocument): void {
+    doc.setLineData(this.id, this.before);
+  }
+}
+
+/**
  * Pin (or clear) a feeder's exit direction on a child, via before/after
  * snapshots — a deliberate per-instance override that beats the auto-facing
  * policy and the child's authored direction. `undefined` clears the pin (back to
@@ -233,5 +258,40 @@ export class SetAutoFacingCommand implements Command<CompositeDocument> {
 
   undo(doc: CompositeDocument): void {
     doc.updateMeta({ autoFacing: this.before });
+  }
+}
+
+/**
+ * Run a single-diagram command (e.g. an `UpdateElementCommand` toggling a bay's
+ * `Position.state`) against one child's resolved document, as ONE step of the
+ * composite's history — so a composite editor keeps a single undo/redo stack
+ * while editing a child's internals. Notifies the composite (`touchChild`) so
+ * views re-layout. No-op when the child is missing or unresolved.
+ *
+ * Note: instances placed from the same `libraryId` share one resolved document,
+ * so an edit shows on all of them.
+ */
+export class ChildDocumentCommand implements Command<CompositeDocument> {
+  readonly label: string;
+
+  constructor(
+    private instanceId: string,
+    private inner: Command<SldDocument>
+  ) {
+    this.label = inner.label;
+  }
+
+  do(doc: CompositeDocument): void {
+    const child = doc.getChild(this.instanceId)?.resolved;
+    if (!child) return;
+    this.inner.do(child);
+    doc.touchChild(this.instanceId);
+  }
+
+  undo(doc: CompositeDocument): void {
+    const child = doc.getChild(this.instanceId)?.resolved;
+    if (!child) return;
+    this.inner.undo(child);
+    doc.touchChild(this.instanceId);
   }
 }

@@ -4,6 +4,7 @@ import { CompositeLine, type CompositeLineKind, type LineVertexJson } from './Co
 import type { LineRouting } from './routing';
 import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
 import type { DocumentResolver } from './DocumentResolver';
+import { DuplicateIdError } from '../serialization/validate';
 
 export interface CompositeMeta {
   id: string;
@@ -98,7 +99,9 @@ export class CompositeDocument {
 
   // ── Mutations (called by commands) ─────────────────────────────────────────
 
+  /** Add a child. Throws {@link DuplicateIdError} if its id is taken, leaving the composite unchanged. */
   addChild(inst: DiagramInstance): void {
+    if (this.children.has(inst.id)) throw new DuplicateIdError([inst.id], `Duplicate child id: ${inst.id}`);
     this.children.set(inst.id, inst);
     this.emit({ type: 'children', ids: [inst.id] });
   }
@@ -144,7 +147,20 @@ export class CompositeDocument {
     this.emit({ type: 'children', ids: [instanceId] });
   }
 
+  /**
+   * Signal that a child's *resolved document* changed (e.g. a bay toggled
+   * open), so composite subscribers re-layout. A child's content isn't part of
+   * the composite model, so its edits don't notify on their own. Low-level:
+   * called by {@link ChildDocumentCommand}.
+   */
+  touchChild(instanceId: string): void {
+    if (!this.children.has(instanceId)) return;
+    this.emit({ type: 'children', ids: [instanceId] });
+  }
+
+  /** Add a line. Throws {@link DuplicateIdError} if its id is taken, leaving the composite unchanged. */
   addLine(line: CompositeLine): void {
+    if (this.lines.has(line.id)) throw new DuplicateIdError([line.id], `Duplicate line id: ${line.id}`);
     this.lines.set(line.id, line);
     this.emit({ type: 'lines', ids: [line.id] });
   }
@@ -168,6 +184,20 @@ export class CompositeDocument {
     const line = this.lines.get(id);
     if (!line) return;
     line.kind = kind;
+    this.emit({ type: 'lines', ids: [id] });
+  }
+
+  /**
+   * Replace a line's opaque `data` (deep-copied; `undefined` clears it).
+   *
+   * Currently unused by the examples (fixtures pass `data` to the
+   * `CompositeLine` constructor) — kept for future line-property editing; call
+   * it only through {@link SetLineDataCommand}.
+   */
+  setLineData(id: string, data: unknown): void {
+    const line = this.lines.get(id);
+    if (!line) return;
+    line.data = data === undefined ? undefined : structuredClone(data);
     this.emit({ type: 'lines', ids: [id] });
   }
 

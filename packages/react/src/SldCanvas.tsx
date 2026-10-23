@@ -297,6 +297,7 @@ export const SldCanvas = forwardRef<SldCanvasHandle, SldCanvasProps>(function Sl
           interactive={interactive}
           colorClass={colorClass}
           formatResolver={formatResolver}
+          doc={doc}
           style={style}
           showLabel={showConnectionLabels}
           onSelect={onSelect}

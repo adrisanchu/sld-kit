@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { buildDocument, SldParseError, type Endpoint } from '../src';
+import {
+  buildDocument,
+  SldParseError,
+  DuplicateIdError,
+  SldDocument,
+  BusBar,
+  Position,
+  AddElementCommand,
+  CommandStack,
+  CompositeDocument,
+  CompositeLine,
+  DiagramInstance,
+  type Endpoint
+} from '../src';
 
 const isExternal = (e: Endpoint): e is Extract<Endpoint, { kind: 'external' }> => e.kind === 'external';
 
@@ -165,5 +178,118 @@ describe('buildDocument', () => {
       prefixes: { line: 'feeder' }
     });
     expect(doc.positions()[0].label).toBe('feeder-1');
+  });
+});
+
+describe('buildDocument — explicit ids and data', () => {
+  // Double bus with a coupler between the bars: a feeder above BB1, one below
+  // BB2, the coupler wired to both bars.
+  const doubleBus = () =>
+    buildDocument({
+      busbars: [
+        { id: 'bb-1', label: 'BB1', row: 1, data: { busId: 1 } },
+        { id: 'bb-2', label: 'BB2', row: 3, data: { busId: 2 } }
+      ],
+      bays: [
+        { col: 0, positions: [{ id: 'p-up', type: 'line', row: 0, data: { tag: 'up' }, feeder: { asset: 'line', label: 'UP' } }] },
+        { col: 1, positions: [{ id: 'cpl', type: 'central', row: 2 }] },
+        { col: 2, positions: [{ id: 'p-dn', type: 'line', row: 4, feeder: { asset: 'line', label: 'DN' } }] }
+      ]
+    });
+  const wiredTo = (doc: ReturnType<typeof buildDocument>, id: string) =>
+    doc
+      .connectionsOf(id)
+      .flatMap((c) => c.elementIds())
+      .filter((x) => x !== id)
+      .sort();
+
+  it('keeps explicit busbar/position ids and data', () => {
+    const doc = doubleBus();
+    expect(doc.getElement('bb-1')?.data).toEqual({ busId: 1 });
+    expect(doc.getElement('bb-2')?.data).toEqual({ busId: 2 });
+    expect(doc.getElement('p-up')?.data).toEqual({ tag: 'up' });
+    expect(doc.getElement('cpl')?.data).toBeUndefined();
+  });
+
+  it('wires a coupler between two bars to both, and outer feeders to one bar', () => {
+    const doc = doubleBus();
+    expect(wiredTo(doc, 'cpl')).toEqual(['bb-1', 'bb-2']);
+    expect(wiredTo(doc, 'p-up')).toEqual(['bb-1']);
+    expect(wiredTo(doc, 'p-dn')).toEqual(['bb-2']);
+  });
+});
+
+describe('Duplicate ids', () => {
+  const bay = (col: number, id?: string, feederId?: string) => ({
+    col,
+    positions: [{ id, type: 'line' as const, row: 1, feeder: feederId ? { asset: 'line' as const, label: `F${col}`, id: feederId } : undefined }]
+  });
+
+  it('buildDocument without ids or data still just works (the quick first draft)', () => {
+    const doc = buildDocument({ busbars: [{ label: 'BB', row: 0 }], bays: [bay(0), bay(1)] });
+    expect(doc.positions()).toHaveLength(2);
+    expect(doc.positions().every((p) => p.data === undefined)).toBe(true);
+  });
+
+  it('buildDocument reports every duplicate, with where it is, before building', () => {
+    let err: unknown;
+    try {
+      buildDocument({
+        busbars: [{ id: 'x', label: 'BB1', row: 0 }],
+        bays: [bay(0, 'p'), bay(1, 'p'), bay(2, 'x'), bay(3, undefined, 'p')]
+      });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(DuplicateIdError);
+    expect(err).toBeInstanceOf(SldParseError); // existing handlers keep working
+    const dup = err as DuplicateIdError;
+    expect(dup.ids.sort()).toEqual(['p', 'x']);
+    expect(dup.message).toContain('duplicate id "p" (position col 0 row 1, position col 1 row 1, feeder "F3")');
+    expect(dup.message).toContain('duplicate id "x" (busbar "BB1", position col 2 row 1)');
+  });
+
+  it('buildDocument deep-copies data, so elements never share an object', () => {
+    const shared = { switch: { state: 'closed' } };
+    const doc = buildDocument({
+      busbars: [{ label: 'BB', row: 0, data: shared }],
+      bays: [0, 1].map((col) => ({ col, positions: [{ id: `p${col}`, type: 'line', row: 1, data: shared }] }))
+    });
+    expect(doc.getElement('p0')!.data).toEqual(shared);
+    expect(doc.getElement('p0')!.data).not.toBe(doc.getElement('p1')!.data);
+    expect(doc.getElement('p0')!.data).not.toBe(shared);
+  });
+
+  it('addElement rejects a taken id and leaves the document unchanged', () => {
+    const doc = new SldDocument(undefined, { rows: 2, cols: 1 });
+    doc.addElement(BusBar.of({ id: 'bb', label: 'BB', row: 0 }));
+    expect(() => doc.addElement(Position.of({ id: 'bb', type: 'line', row: 1, col: 0 }))).toThrow(DuplicateIdError);
+    expect(doc.all()).toHaveLength(1);
+    expect(doc.getElement('bb')).toBeInstanceOf(BusBar);
+  });
+
+  it('a rejected AddElementCommand never enters undo history', () => {
+    const doc = new SldDocument(undefined, { rows: 2, cols: 1 });
+    const stack = new CommandStack<SldDocument>();
+    stack.execute(new AddElementCommand(BusBar.of({ id: 'bb', label: 'BB', row: 0 })), doc);
+    expect(() => stack.execute(new AddElementCommand(BusBar.of({ id: 'bb', label: 'BB', row: 1 })), doc)).toThrow(DuplicateIdError);
+    expect(doc.all()).toHaveLength(1);
+    stack.undo(doc); // undoes the first (successful) add, not the rejected one
+    expect(doc.all()).toHaveLength(0);
+    expect(stack.canUndo).toBe(false);
+  });
+
+  it('composites reject duplicate child and line ids', () => {
+    const doc = new CompositeDocument({ id: 'c', name: 'c' });
+    doc.addChild(DiagramInstance.of({ id: 'a', libraryId: 'lib', x: 0, y: 0 }));
+    expect(() => doc.addChild(DiagramInstance.of({ id: 'a', libraryId: 'other', x: 9, y: 9 }))).toThrow(DuplicateIdError);
+    expect(doc.getChild('a')!.libraryId).toBe('lib');
+    const pts = [
+      { kind: 'point' as const, x: 0, y: 0 },
+      { kind: 'point' as const, x: 1, y: 1 }
+    ];
+    doc.addLine(new CompositeLine('l', pts));
+    expect(() => doc.addLine(new CompositeLine('l', pts, 'cable'))).toThrow(DuplicateIdError);
+    expect(doc.getLine('l')!.kind).toBe('line');
   });
 });

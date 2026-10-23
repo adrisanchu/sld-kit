@@ -50,6 +50,42 @@ const layout = new CompositeLayoutEngine().layout(composite);
    220 kV level connect through a shared autotransformer without any manual
    wiring.
 
+In **box mode** (`meta.boxMode`) every resolved child is drawn as a box with one
+uniform frame, `BOX_SIZE` by default, no matter how many feeders it has. That way,
+grid-aligned boxes produce exactly straight ties. Feeders are spread along the box
+perimeter, ordered by their compact SLD tips. To go back to content-derived boxes
+(each one sized from its child's compact `BOX_CHILD_LAYOUT`), pass
+`new CompositeLayoutEngine(undefined, undefined, undefined, { boxSize: null })`. The
+floating router still snaps near-aligned ports within `ALIGN_TOLERANCE`, as a
+fallback for unequal slot counts. `new OrthogonalRouter(STUB_LENGTH, 0)` disables
+that snap.
+
+A child can also be drawn as **several boxes**. Pass a
+`boxSections: (instance) => { sections, ties } | null` resolver in the engine
+options:
+
+- Each section has a `key`, the feeder `connectionIds` drawn from it, and an
+  opaque `data` value.
+- The layout places the section boxes side by side (`BOX_SECTION_GAP` apart)
+  inside the child's frame (`ChildLayout.boxes`). Each feeder attaches to its
+  own section's box, and auto-facing turns each box toward its own peer.
+- `ties` join pairs of boxes with a muted dashed run (`ChildLayout.ties`).
+- `boxSubLabel(child, section)` labels each box. Core never knows why a child
+  splits: the react-box example uses it for a double bus whose coupler is open.
+- Returning `null` or a single section keeps one box. The detail view ignores
+  the split.
+
+A box view can also open one substation **in place**:
+`engine.layout(doc, { expanded: [instanceId] })`.
+- The expanded child gets its full detail drawing, centred on where its box
+  sits (`ChildLayout.expanded`), and its feeders attach at the drawing's tips.
+- Every other child stays a box.
+- This is view state, passed per call, never stored in the document.
+- The React `ChildDiagramView` animates any box ↔ detail switch (this, or the
+  view toggle). The previous frame's outline morphs into the new one while the
+  new content fades in, and re-routed lines fade in. `prefers-reduced-motion`
+  disables it, and `animateMorph={false}` opts out.
+
 ## Manual lines
 
 Auto-links are convenient but always straight and dashed — they can't express a
@@ -70,9 +106,23 @@ of `vertices`, each either a free `point` (fixed in composite coordinates) or an
   that id. Everything else still auto-links.
 - **Commands only.** `AddLineCommand` / `RemoveLineCommand` / `UpdateLineCommand`
   keep undo/redo intact, exactly like the child commands.
+- **Editing a child's internals** (e.g. toggling a bay's `Position.state` from a
+  composite view): wrap the single-diagram command in
+  `ChildDocumentCommand(instanceId, cmd)`. It runs against that child's
+  resolved document as one step of the composite's history, and notifies the
+  composite (`touchChild`) so views re-layout. So one `CommandStack<CompositeDocument>`
+  covers both levels.
 - **Export.** `CompositeSvgExporter` renders each line as a plain solid `<path>`
   (via the shared `connectionPath`), under the same Office-safe constraints —
   presentation attributes only, no markers/classes/`<style>`.
+- **Labels.** A line can carry an opaque `data` channel, which is roundtripped
+  but never read, like `SldElement.data`. To label lines, pass a
+  `lineLabels: (line) => string[] | null` resolver in the engine options. The
+  layout places the rows beside the line's arc-length midpoint (`ln.label`:
+  rows, anchor and backing box). They sit right of a vertical run, centred above
+  a horizontal one, and clear of a transformer glyph. The canvas and the
+  exporter draw the same placement, so labels follow dragged boxes and both
+  views. `SetLineDataCommand` keeps `data` edits undoable.
 - Unresolvable anchors (missing child/connection) are dropped; a line left with
   fewer than two points is simply not drawn (the model still keeps it), mirroring
   how dangling `libraryId`s render as placeholders.

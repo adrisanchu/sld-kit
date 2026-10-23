@@ -89,11 +89,11 @@ export class SvgExporter {
       const geo = layout.geometry.get(conn.id);
       if (geo?.kind !== 'connection') continue;
 
-      const connFmt = elementFormat(theme, conn);
+      const connFmt = elementFormat(theme, conn, doc);
       b.element('path', {
         d: connectionPath(geo.points, geo.hops, cfg.hopRadius),
         fill: 'none',
-        stroke: theme.structure.connection,
+        stroke: connFmt?.stroke ?? theme.structure.connection,
         'stroke-width': connFmt?.strokeWidth ?? theme.structure.connectionStrokeWidth,
         'stroke-dasharray': connFmt?.dashArray
       });
@@ -101,7 +101,7 @@ export class SvgExporter {
       if (geo.arrow) {
         b.element('path', {
           d: arrowheadPath(geo.arrow.at, geo.arrow.angle, cfg.arrowSize),
-          fill: theme.structure.connection
+          fill: connFmt?.stroke ?? theme.structure.connection
         });
       }
 
@@ -159,19 +159,19 @@ export class SvgExporter {
         'stroke-width': barFmt?.strokeWidth,
         'stroke-dasharray': barFmt?.dashArray
       });
-      if (bar.label) {
+      if (geo.label) {
         this.emitLabel(
           b,
           {
             x: geo.labelAt.x,
             y: geo.labelAt.y,
-            'text-anchor': 'start',
+            'text-anchor': geo.textAnchor,
             'font-family': cfg.fontFamily,
             'font-size': cfg.busLabelFontSize,
             'font-weight': 'bold',
             fill: theme.structure.label
           },
-          bar.label,
+          geo.label,
           geo.labelAt.x,
           geo.labelAt.y,
           labelAngleDeg

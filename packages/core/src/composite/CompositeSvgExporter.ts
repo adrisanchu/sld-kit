@@ -5,16 +5,18 @@ import type { Rect } from '../layout/geometry';
 import { connectionPath } from '../layout/paths';
 import { SymbolRegistry } from '../symbols/SymbolRegistry';
 import { createDefaultSymbolRegistry } from '../symbols/defaults';
-import { DEFAULT_THEME, firstFormat, resolveTheme, type SldTheme } from '../theme';
+import { DEFAULT_THEME, resolveTheme, type SldTheme } from '../theme';
 import { CompositeDocument } from './CompositeDocument';
 import {
   CompositeLayoutEngine,
-  linkConnections,
-  lineConnections,
+  linkFormat,
+  lineFormat,
   type ChildLayout,
   type CompositeLineLayout,
-  type LineGlyph
+  type LineGlyph,
+  type LineLabelLayout
 } from './CompositeLayoutEngine';
+import type { BoxSection } from './sections';
 
 export interface CompositeSvgExportOptions {
   /** Paint an opaque background rect (default true — slides are light). */
@@ -32,8 +34,12 @@ export interface CompositeSvgExportOptions {
    * Falls back to the theme background.
    */
   boxFill?: (child: ChildLayout) => string | undefined;
-  /** Secondary line under the box name (e.g. an integer bus ID). */
-  boxSubLabel?: (child: ChildLayout) => string | null | undefined;
+  /**
+   * Secondary line under the box name (e.g. an integer bus ID). When a
+   * `boxSections` resolver split the child, it's called once per box with that
+   * box's `section` (its opaque `data` carries whatever the consumer put there).
+   */
+  boxSubLabel?: (child: ChildLayout, section?: BoxSection) => string | null | undefined;
 }
 
 /**
@@ -80,11 +86,11 @@ export class CompositeSvgExporter {
     // Links first (underneath the children). A commissioning overlay on the
     // shared child connection restyles the whole tie-line (dash / width).
     for (const link of layout.links) {
-      const lf = firstFormat(linkConnections(link, layout.children), theme.resolveElementFormat);
+      const lf = linkFormat(link, layout.children, theme.resolveElementFormat, theme);
       b.element('polyline', {
         points: link.points.map((p) => `${p.x},${p.y}`).join(' '),
         fill: 'none',
-        stroke: theme.structure.connection,
+        stroke: lf?.stroke ?? theme.structure.connection,
         'stroke-width': lf?.strokeWidth ?? 2,
         'stroke-dasharray': lf?.dashArray ?? '6 4'
       });
@@ -97,11 +103,11 @@ export class CompositeSvgExporter {
     // structural glyph (transformer circles, demand triangle); a commissioning
     // tag on the anchored child connection can still override dash / width.
     for (const line of layout.lines) {
-      const lf = firstFormat(lineConnections(line.line, layout.children), theme.resolveElementFormat);
+      const lf = lineFormat(line.line, layout.children, theme.resolveElementFormat, theme);
       b.element('path', {
         d: connectionPath(line.points, undefined, this.cfg.hopRadius),
         fill: 'none',
-        stroke: theme.structure.connection,
+        stroke: lf?.stroke ?? theme.structure.connection,
         'stroke-width': lf?.strokeWidth ?? theme.structure.connectionStrokeWidth,
         'stroke-dasharray': lf?.dashArray ?? line.dashArray
       });
@@ -124,6 +130,9 @@ export class CompositeSvgExporter {
       }
       b.close();
     }
+
+    // Line labels last, so a label beside a line is never hidden under a box.
+    for (const line of layout.lines) if (line.label) this.renderLineLabel(b, line.label, theme);
 
     b.close();
     return b.toString();
@@ -154,6 +163,31 @@ export class CompositeSvgExporter {
     b.open('g', { transform: `rotate(${rotation} ${x} ${y})` });
     b.textElement('text', attrs, child.name);
     b.close();
+  }
+
+  /**
+   * A line's stacked label rows over an opaque backing box (masks anything
+   * passing beneath). Office-safe: plain `<rect>` + `<text>`, presentation
+   * attributes only.
+   */
+  private renderLineLabel(b: SvgBuilder, label: LineLabelLayout, theme: SldTheme): void {
+    const { box } = label;
+    b.element('rect', { x: box.x, y: box.y, width: box.width, height: box.height, rx: 2, fill: theme.structure.background });
+    for (const row of label.rows) {
+      b.textElement(
+        'text',
+        {
+          x: row.x,
+          y: row.y,
+          'text-anchor': label.textAnchor,
+          'font-family': this.cfg.fontFamily,
+          'font-size': label.fontSize,
+          'font-weight': 700,
+          fill: theme.structure.connection
+        },
+        row.text
+      );
+    }
   }
 
   /** Draw the kind glyphs a decorated line carries (transformer / demand). */
@@ -199,10 +233,37 @@ export class CompositeSvgExporter {
    * bold, and an optional sub-label (e.g. a bus ID) beneath it.
    */
   private renderBox(b: SvgBuilder, child: ChildLayout, theme: SldTheme, options: CompositeSvgExportOptions): void {
-    const { frame } = child;
+    // Ties under the boxes: a muted dashed run between two section boxes.
+    for (const tie of child.ties ?? []) {
+      b.element('polyline', {
+        points: tie.points.map((p) => `${p.x},${p.y}`).join(' '),
+        fill: 'none',
+        stroke: theme.structure.connection,
+        'stroke-opacity': 0.45,
+        'stroke-width': theme.structure.connectionStrokeWidth,
+        'stroke-dasharray': '6 4'
+      });
+    }
+    if (!child.boxes) {
+      this.renderBoxFrame(b, child, child.frame, options.boxSubLabel?.(child), theme, options);
+      return;
+    }
+    for (const box of child.boxes) {
+      this.renderBoxFrame(b, child, box.frame, options.boxSubLabel?.(child, box.section), theme, options);
+    }
+  }
+
+  /** One box: the rounded rect over `frame`, the child name and an optional sub-label. */
+  private renderBoxFrame(
+    b: SvgBuilder,
+    child: ChildLayout,
+    frame: Rect,
+    sub: string | null | undefined,
+    theme: SldTheme,
+    options: CompositeSvgExportOptions
+  ): void {
     const cx = frame.x + frame.width / 2;
     const cy = frame.y + frame.height / 2;
-    const sub = options.boxSubLabel?.(child);
     b.element('rect', {
       x: frame.x,
       y: frame.y,

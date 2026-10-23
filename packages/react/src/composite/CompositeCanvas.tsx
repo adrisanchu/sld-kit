@@ -2,9 +2,8 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import {
   SLD_LAYOUT,
   connectionPath,
-  firstFormat,
-  linkConnections,
-  lineConnections,
+  linkFormat,
+  lineFormat,
   rotateSide,
   type CompositeLayout,
   type ChildLayout,
@@ -13,7 +12,8 @@ import {
   type ExternalConnectionTip,
   type ExternalDirection,
   type Point,
-  type Rect
+  type Rect,
+  type BoxSection
 } from '@sld-kit/core';
 import { createPanZoom, type ContentBounds } from '../panzoom';
 import { useStore } from '../useStore';
@@ -67,7 +67,7 @@ export interface CompositeCanvasProps {
    */
   boxMode?: boolean;
   /** Secondary line under each box name (e.g. an integer bus ID). Box mode only. */
-  boxSubLabel?: (child: ChildLayout) => string | null;
+  boxSubLabel?: (child: ChildLayout, section?: BoxSection) => string | null;
   /** CSS class per position type; the consumer's stylesheet supplies the colors. */
   tokens?: PositionTokens;
   /** Per-child color class override (e.g. a voltage bucket). */
@@ -363,6 +363,14 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         ? 'cursor-grab'
         : '';
 
+  const expandedIds = useMemo(
+    () => new Set(layout.children.filter((c) => c.expanded).map((c) => c.instance.id)),
+    [layout]
+  );
+  const orderedChildren = useMemo(
+    () => [...layout.children.filter((c) => !c.expanded), ...layout.children.filter((c) => c.expanded)],
+    [layout]
+  );
   const fmt = formatResolver ?? undefined;
 
   return (
@@ -381,9 +389,9 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     >
       {/* Inter-diagram auto-links (dashed), underneath the children. A commissioning
           overlay on the shared child connection restyles the tie-line; tagging it
-          in either diagram is enough (see `linkConnections`). */}
+          in either diagram is enough (see `linkFormat`). */}
       {layout.links.map((link) => {
-        const lf = firstFormat(linkConnections(link, layout.children), fmt);
+        const lf = linkFormat(link, layout.children, fmt);
         const pts = link.points.map((p) => `${p.x},${p.y}`).join(' ');
         return (
           <g key={link.connectionId}>
@@ -391,6 +399,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
               points={pts}
               fill="none"
               className="stroke-primary/70"
+              style={lf?.stroke ? { stroke: lf.stroke } : undefined}
               strokeWidth={lf?.strokeWidth ?? (boxMode ? cs.boxLineStrokeWidth : cs.linkStrokeWidth)}
               strokeDasharray={lf?.dashArray ?? cs.linkDashArray}
             />
@@ -415,18 +424,23 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
           demand triangle); rounded orthogonal corners via `connectionPath`. */}
       {layout.lines.map((ln) => {
         const cls = lineColorClass(ln);
-        const lf = firstFormat(lineConnections(ln.line, layout.children), fmt);
+        const lf = lineFormat(ln.line, layout.children, fmt);
         const dash = lf?.dashArray ?? ln.dashArray;
+        // A line touching an expanded child re-routes (box perimeter ↔ drawing
+        // tip); keying on that remounts it with a short fade so the jump reads
+        // as part of the morph.
+        const reroute = ln.line.vertices.some((v) => v.kind === 'anchor' && expandedIds.has(v.instanceId));
         return (
           <g
-            key={ln.line.id}
-            className={cls ?? 'text-primary'}
+            key={`${ln.line.id}:${reroute ? 'x' : 'b'}`}
+            className={`${cls ?? 'text-primary'}${reroute ? ' sld-line-in' : ''}`}
+            data-sld-anim
             style={cls ? { color: 'var(--sld-pos)' } : undefined}
           >
             <path
               d={connectionPath(ln.points, undefined, SLD_LAYOUT.hopRadius)}
               fill="none"
-              stroke="currentColor"
+              stroke={ln.line.id !== selectedLineId && lf?.stroke ? lf.stroke : 'currentColor'}
               strokeWidth={
                 ln.line.id === selectedLineId
                   ? cs.lineSelectedStrokeWidth
@@ -440,8 +454,9 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         );
       })}
 
-      {/* Children in z-order. */}
-      {layout.children.map((child) => (
+      {/* Children in z-order — an expanded child last, so its drawing sits above
+          the neighbouring boxes it may overlap. */}
+      {orderedChildren.map((child) => (
         <ChildDiagramView
           key={child.instance.id}
           child={child}
@@ -466,6 +481,28 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
           onElementActivate={onElementActivate}
         />
       ))}
+
+      {/* Line labels above the children (as in the export), tinted like their
+          line. Placement is computed by the core layout — rows + backing box. */}
+      {layout.lines.map((ln) => {
+        if (!ln.label) return null;
+        const cls = lineColorClass(ln);
+        const { box, rows, textAnchor, fontSize } = ln.label;
+        return (
+          <g
+            key={`label:${ln.line.id}`}
+            className={`pointer-events-none ${cls ?? 'text-primary'}`}
+            style={cls ? { color: 'var(--sld-pos)' } : undefined}
+          >
+            <rect x={box.x} y={box.y} width={box.width} height={box.height} rx={2} className="fill-background" fillOpacity={0.9} />
+            {rows.map((r, i) => (
+              <text key={i} x={r.x} y={r.y} textAnchor={textAnchor} fontSize={fontSize} fontWeight={700} fill="currentColor">
+                {r.text}
+              </text>
+            ))}
+          </g>
+        );
+      })}
 
       {/* Selection + rotation chrome on top. */}
       {selectedChild && (

@@ -1,4 +1,5 @@
 import { newId } from '../ids';
+import { cloneData } from '../elements/Element';
 import type { LineRouting } from './routing';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -55,6 +56,13 @@ export interface CompositeLineJson {
   routing?: LineRouting;
   /** Ordered vertices of the polyline; at least two. */
   vertices: LineVertexJson[];
+  /**
+   * Opaque consumer-owned metadata (e.g. ratings from an electrical model),
+   * mirroring `SldElement.data`: roundtripped (deep-copied) but never read by the
+   * library. Must be structured-cloneable. Feed it to the layout's `lineLabels`
+   * resolver to show numeric labels.
+   */
+  data?: unknown;
 }
 
 /**
@@ -73,7 +81,9 @@ export class CompositeLine {
     /** Functional type; drives stroke style + glyph. Default `line` (overhead). */
     public kind: CompositeLineKind = DEFAULT_LINE_KIND,
     /** Drawing style; `undefined` inherits the composite's `defaultRouting`. */
-    public routing?: LineRouting
+    public routing?: LineRouting,
+    /** Opaque consumer metadata — roundtripped, never read (see {@link CompositeLineJson.data}). */
+    public data?: unknown
   ) {}
 
   /** Connection ids this line claims via anchor vertices (drives auto-link suppression). */
@@ -94,11 +104,12 @@ export class CompositeLine {
           : v.kind === 'rel'
             ? { kind: 'rel', t: round2(v.t), ox: round2(v.ox), oy: round2(v.oy) }
             : { kind: 'anchor', instanceId: v.instanceId, connectionId: v.connectionId }
-      )
+      ),
+      ...(this.data !== undefined ? { data: cloneData(this.data) } : {})
     };
   }
 
   static fromJSON(json: CompositeLineJson): CompositeLine {
-    return new CompositeLine(json.id ?? newId(), json.vertices, json.kind ?? DEFAULT_LINE_KIND, json.routing);
+    return new CompositeLine(json.id ?? newId(), json.vertices, json.kind ?? DEFAULT_LINE_KIND, json.routing, cloneData(json.data));
   }
 }

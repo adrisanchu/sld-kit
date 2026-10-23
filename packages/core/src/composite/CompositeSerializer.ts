@@ -218,7 +218,9 @@ export class CompositeSerializer {
         id: raw.id,
         kind: (raw.kind as string | undefined) ?? DEFAULT_LINE_KIND,
         ...(raw.routing !== undefined ? { routing: raw.routing as string } : {}),
-        vertices
+        vertices,
+        // Opaque, consumer-owned: passed through untouched, never validated.
+        ...(raw.data !== undefined ? { data: raw.data } : {})
       });
     }
     return lines;

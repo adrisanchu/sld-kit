@@ -1,6 +1,6 @@
 import { SldElement, cloneData } from './Element';
 import { newId } from '../ids';
-import type { ElementId, PositionJson, PositionType, SubElementJson } from '../types';
+import type { ElementId, PositionJson, PositionType, SubElementJson, SwitchState } from '../types';
 
 /** Options for {@link Position.of} — the readable, id-optional way to author a position. */
 export interface PositionOptions {
@@ -11,6 +11,8 @@ export interface PositionOptions {
   label?: string;
   colSpan?: number;
   subElements?: SubElementJson[];
+  /** Switching state; omit for `closed`. */
+  state?: SwitchState;
   data?: unknown;
   /** Explicit id; defaults to a fresh `newId()`. */
   id?: ElementId;
@@ -35,7 +37,9 @@ export class Position extends SldElement {
     public col: number,
     public colSpan: number = 1,
     public subElements: SubElementJson[] = [],
-    data?: unknown
+    data?: unknown,
+    /** Switching state; `undefined` = closed. Read it through {@link effectiveState}. */
+    public state?: SwitchState
   ) {
     super(id, label, data);
   }
@@ -55,7 +59,8 @@ export class Position extends SldElement {
       opts.col,
       opts.colSpan ?? 1,
       opts.subElements ?? [],
-      opts.data
+      opts.data,
+      opts.state
     );
   }
 
@@ -70,6 +75,7 @@ export class Position extends SldElement {
       colSpan: this.colSpan,
       subElements: this.subElements.map((s) => ({ ...s, props: s.props ? { ...s.props } : undefined }))
     };
+    if (this.state !== undefined) json.state = this.state;
     if (this.data !== undefined) json.data = cloneData(this.data);
     return json;
   }
@@ -83,7 +89,20 @@ export class Position extends SldElement {
       json.col,
       json.colSpan ?? 1,
       (json.subElements ?? []).map((s) => ({ ...s })),
-      cloneData(json.data)
+      cloneData(json.data),
+      json.state
     );
   }
+}
+
+/**
+ * The switching state a position effectively has: its own `state`, defaulting
+ * to `closed`. Single source of truth per bay — today the bay's own field;
+ * once `subElements` carry breaker/disconnector state, this will derive the
+ * bay's state from them (it conducts only if every series device is closed),
+ * and `Position.state` is then not authored for that bay. Read state through
+ * this, never `pos.state` directly, so that change stays invisible to callers.
+ */
+export function effectiveState(pos: Position): SwitchState {
+  return pos.state ?? 'closed';
 }

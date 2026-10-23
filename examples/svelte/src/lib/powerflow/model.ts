@@ -8,7 +8,7 @@
  * Keys match `worldLines(layout)`: `<instanceId>:<connId>` for a child's internal
  * connection, `link:<connId>` for an inter-diagram auto-link.
  */
-import type { CompositeLayout, SldDocument, Endpoint } from '@sld-kit/core';
+import { effectiveState, type CompositeLayout, type SldDocument, type Endpoint } from '@sld-kit/core';
 import { getFlow } from './flow-data';
 
 export interface FlowInfo {
@@ -57,8 +57,8 @@ function connectionDirection(conn: { from: Endpoint; to: Endpoint }, doc: SldDoc
 
 /**
  * Compute the live flow for every animatable line from the current switch state,
- * which is read straight out of each element's `data.flow.state` (the single
- * source of truth — flip it with a command, then recompute).
+ * read through core's `effectiveState` (the single source of truth — flip
+ * `Position.state` with a command, then recompute).
  */
 export function computeFlowMap(layout: CompositeLayout): FlowMap {
   const map: FlowMap = new Map();
@@ -77,7 +77,7 @@ export function computeFlowMap(layout: CompositeLayout): FlowMap {
     for (const pos of doc.positions()) {
       const f = getFlow(pos);
       bayInfo.set(`${inst}:${pos.id}`, {
-        open: f?.state === 'open',
+        open: effectiveState(pos) === 'open',
         mw: f?.mw ?? 0,
         capacity: f?.capacity ?? 1,
         direction: f?.direction ?? 1

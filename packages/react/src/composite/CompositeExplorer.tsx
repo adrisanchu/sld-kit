@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import type { CompositeLayout, ChildLayout } from '@sld-kit/core';
+import type { CompositeLayout, ChildLayout, BoxSection } from '@sld-kit/core';
 import { CompositeCanvas, type CompositeCanvasHandle } from './CompositeCanvas';
 import { FlowOverlay } from '../flow/FlowOverlay';
 import { LineLabelOverlay } from '../flow/LineLabelOverlay';
@@ -33,7 +33,7 @@ export interface CompositeExplorerProps {
   /** Render children as boxes until flown into; forwarded to the canvas. */
   boxMode?: boolean;
   /** Secondary line under each box name (e.g. an integer bus ID). Box mode only. */
-  boxSubLabel?: (child: ChildLayout) => string | null;
+  boxSubLabel?: (child: ChildLayout, section?: BoxSection) => string | null;
   notFoundLabel?: string;
   /**
    * The child currently flown into, or `null` at the grid overview. Controlled

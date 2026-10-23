@@ -14,8 +14,21 @@ import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './Diagr
 import { OrthogonalRouter } from './OrthogonalRouter';
 import { PortResolver, feederKey } from './PortResolver';
 import { facingSide, rotateSide, type Port } from './ports';
-import { CABLE_DASH_ARRAY, DEMAND_LEAD_LENGTH, DEMAND_SYMBOL, TRANSFORMER_SYMBOL } from './layout-constants';
+import {
+  BOX_SIZE,
+  CABLE_DASH_ARRAY,
+  DEMAND_LEAD_LENGTH,
+  DEMAND_SYMBOL,
+  LINE_LABEL_FONT_SIZE,
+  LINE_LABEL_GLYPH_CLEARANCE,
+  LINE_LABEL_LINE_HEIGHT,
+  LINE_LABEL_OFFSET,
+  LINE_LABEL_PAD,
+  TRANSFORMER_SYMBOL
+} from './layout-constants';
 import { arcMidpoint, segmentAngleDeg, simplify } from './polyline';
+import { resolveFormat, type ElementFormat, type ElementFormatResolver, type FormatContext } from '../theme';
+import { feederBoxCenter, layoutSectionBoxes, type BoxSectionsResolver, type SectionBox, type SectionTie } from './sections';
 
 /** Fixed frame for an unresolved child, so it stays selectable and movable. */
 export const PLACEHOLDER_FRAME = { width: 360, height: 240 } as const;
@@ -77,6 +90,29 @@ export interface ChildLayout {
   name: string;
   /** Resolved geometry of the `name` label — anchor slot, extra rotation, size. */
   nameLabel: NameLabelLayout;
+  /**
+   * Box view only, when a `boxSections` resolver returned sections: the child's
+   * boxes (child-local), side by side inside `frame`. Absent → one box over `frame`.
+   */
+  boxes?: SectionBox[];
+  /** Box view only: muted ties between section boxes (child-local), e.g. an open coupler. */
+  ties?: SectionTie[];
+  /**
+   * Box view only: this child is *expanded* (see `layout(doc, { expanded })`) —
+   * drawn with its full detail layout, centred on where its box sits, with its
+   * feeders attached at the drawing's tips instead of the box perimeter.
+   */
+  expanded?: boolean;
+}
+
+/** Per-call layout request (view state, not document state). */
+export interface CompositeLayoutRequest {
+  /**
+   * Box view: instance ids to show **expanded** — their full detail drawing,
+   * centred on their box, while every other child stays a box. Lets a UI open
+   * one substation in place (e.g. to operate its switches). Ignored in detail view.
+   */
+  expanded?: Iterable<string>;
 }
 
 /**
@@ -199,17 +235,64 @@ export interface CompositeLink {
   points: Point[];
 }
 
-/** Resolve child `Connection`s from `(instanceId, connectionId)` references. */
-function connectionsFor(
-  refs: { instanceId: string; connectionId: string }[],
-  children: ChildLayout[]
-): Connection[] {
-  const out: Connection[] = [];
+type Ref = { instanceId: string; connectionId: string };
+
+/** Resolve child `Connection`s (with their owning document) from `(instanceId, connectionId)` references. */
+function connectionRefs(refs: Ref[], children: ChildLayout[]): { conn: Connection; doc: SldDocument }[] {
+  const out: { conn: Connection; doc: SldDocument }[] = [];
   for (const { instanceId, connectionId } of refs) {
-    const el = children.find((c) => c.instance.id === instanceId)?.instance.resolved?.getElement(connectionId);
-    if (el instanceof Connection) out.push(el);
+    const doc = children.find((c) => c.instance.id === instanceId)?.instance.resolved;
+    const el = doc?.getElement(connectionId);
+    if (doc && el instanceof Connection) out.push({ conn: el, doc });
   }
   return out;
+}
+
+/** Resolve child `Connection`s from `(instanceId, connectionId)` references. */
+function connectionsFor(refs: Ref[], children: ChildLayout[]): Connection[] {
+  return connectionRefs(refs, children).map((r) => r.conn);
+}
+
+const linkRefs = (link: CompositeLink): Ref[] => [
+  { instanceId: link.a.instanceId, connectionId: link.connectionId },
+  { instanceId: link.b.instanceId, connectionId: link.connectionId }
+];
+
+const lineRefs = (line: CompositeLine): Ref[] =>
+  line.vertices.flatMap((v) => (v.kind === 'anchor' ? [{ instanceId: v.instanceId, connectionId: v.connectionId }] : []));
+
+/** First format {@link resolveFormat} yields across the backing connections (each with its own document). */
+function firstResolved(refs: Ref[], children: ChildLayout[], resolve?: ElementFormatResolver | null, theme?: FormatContext['theme']) {
+  for (const { conn, doc } of connectionRefs(refs, children)) {
+    const fmt = resolveFormat(conn, resolve, { doc, theme });
+    if (fmt) return fmt;
+  }
+  return undefined;
+}
+
+/**
+ * The format of an **auto-link**: the first of its backing child connections
+ * that the consumer's resolver formats — or, failing that, the default
+ * open-connection look when either end touches an open position. Shared by the
+ * canvas (both adapters) and the exporter, so screen and export agree.
+ */
+export function linkFormat(
+  link: CompositeLink,
+  children: ChildLayout[],
+  resolve?: ElementFormatResolver | null,
+  theme?: FormatContext['theme']
+): ElementFormat | undefined {
+  return firstResolved(linkRefs(link), children, resolve, theme);
+}
+
+/** The format of a **manual line**, from the child connections it anchors to (see {@link linkFormat}). */
+export function lineFormat(
+  line: CompositeLine,
+  children: ChildLayout[],
+  resolve?: ElementFormatResolver | null,
+  theme?: FormatContext['theme']
+): ElementFormat | undefined {
+  return firstResolved(lineRefs(line), children, resolve, theme);
 }
 
 /**
@@ -220,13 +303,7 @@ function connectionsFor(
  * the tag means.
  */
 export function linkConnections(link: CompositeLink, children: ChildLayout[]): Connection[] {
-  return connectionsFor(
-    [
-      { instanceId: link.a.instanceId, connectionId: link.connectionId },
-      { instanceId: link.b.instanceId, connectionId: link.connectionId }
-    ],
-    children
-  );
+  return connectionsFor(linkRefs(link), children);
 }
 
 /**
@@ -235,12 +312,7 @@ export function linkConnections(link: CompositeLink, children: ChildLayout[]): C
  * auto-link). A line with only free `point` vertices returns `[]`.
  */
 export function lineConnections(line: CompositeLine, children: ChildLayout[]): Connection[] {
-  return connectionsFor(
-    line.vertices.flatMap((v) =>
-      v.kind === 'anchor' ? [{ instanceId: v.instanceId, connectionId: v.connectionId }] : []
-    ),
-    children
-  );
+  return connectionsFor(lineRefs(line), children);
 }
 
 /** A structural glyph placed on a line: a `SymbolRegistry` key + a placement. */
@@ -275,6 +347,54 @@ export interface CompositeLineLayout {
    * present only for `kind === 'demand'` with a resolvable free end.
    */
   terminus?: LineGlyph;
+  /** Stacked text label beside the line — present only when the `lineLabels` resolver returns rows. */
+  label?: LineLabelLayout;
+}
+
+/**
+ * A line's resolved text label: rows of horizontal text (never rotated, like
+ * the reference drawings) beside the line's arc-length midpoint — to the right
+ * of a vertical run, centred above a horizontal one — plus a backing box.
+ * Renderers draw `box` then each row at its baseline; nothing to compute.
+ */
+export interface LineLabelLayout {
+  rows: { text: string; x: number; y: number }[];
+  textAnchor: 'start' | 'middle';
+  fontSize: number;
+  /** Backing box (world), sized from an estimated text width. */
+  box: Rect;
+}
+
+/**
+ * Consumer hook turning a line into label rows (e.g. `['510/575', '455/370']`
+ * formatted from `line.data`). Core never interprets the values — `null`,
+ * `undefined` or `[]` means no label ("exceptions are the norm").
+ */
+export type LineLabelResolver = (line: CompositeLine) => readonly string[] | null | undefined;
+
+/** Place label rows beside a polyline's arc-length midpoint (see {@link LineLabelLayout}). */
+export function placeLineLabel(points: Point[], rows: readonly string[], clearance = 0): LineLabelLayout | null {
+  const mid = arcMidpoint(points);
+  if (!mid || rows.length === 0) return null;
+  const rad = (mid.angleDeg * Math.PI) / 180;
+  const horizontal = Math.abs(Math.cos(rad)) >= Math.abs(Math.sin(rad));
+  const fontSize = LINE_LABEL_FONT_SIZE;
+  const lh = LINE_LABEL_LINE_HEIGHT;
+  const width = Math.max(...rows.map((r) => r.length)) * fontSize * 0.6;
+  const height = rows.length * lh;
+  const gap = LINE_LABEL_OFFSET + LINE_LABEL_PAD + clearance;
+  // Block top-left (text area, before padding).
+  const left = horizontal ? mid.at.x - width / 2 : mid.at.x + gap;
+  const top = horizontal ? mid.at.y - gap - height : mid.at.y - height / 2;
+  const x = horizontal ? mid.at.x : left;
+  // Baseline of row i: centred in its row pitch (≈0.35em below the row centre).
+  const baseline = (i: number) => top + i * lh + lh / 2 + fontSize * 0.35;
+  return {
+    rows: rows.map((text, i) => ({ text, x, y: baseline(i) })),
+    textAnchor: horizontal ? 'middle' : 'start',
+    fontSize,
+    box: { x: left - LINE_LABEL_PAD, y: top - LINE_LABEL_PAD, width: width + 2 * LINE_LABEL_PAD, height: height + 2 * LINE_LABEL_PAD }
+  };
 }
 
 /** Point at the polyline's arc-length midpoint, plus the angle of the segment it lies on. */
@@ -318,8 +438,27 @@ const floatingEndPoint = (e: NonNullable<BoxEnd>): Point => (e.port ? e.port.poi
  * coordinate space exactly as the single-diagram editor would, and the
  * composite merely wraps that geometry in the instance's `Transform2D`.
  */
+export interface CompositeLayoutOptions {
+  /**
+   * Box-view frame size. Defaults to {@link BOX_SIZE} so every box is uniform;
+   * `null` keeps the content-derived compact frame (the child's own layout size).
+   */
+  boxSize?: { width: number; height: number } | null;
+  /** Numeric/text labels per line (see {@link LineLabelResolver}); placed by the layout so screen and export agree. */
+  lineLabels?: LineLabelResolver;
+  /**
+   * Split a child into several boxes in box view (see {@link BoxSectionsResolver}),
+   * e.g. one per electrically separate bus section. Feeders attach to their own
+   * section's box. Ignored in detail view.
+   */
+  boxSections?: BoxSectionsResolver;
+}
+
 export class CompositeLayoutEngine {
   private boxChildEngine: LayoutEngine;
+  private readonly boxSize: { width: number; height: number } | null;
+  private readonly lineLabels?: LineLabelResolver;
+  private readonly boxSections?: BoxSectionsResolver;
   /** Detail-view child layouts with swapped directions, keyed by `(libraryId, dir signature)`. */
   private detailLayoutCache = new Map<string, DiagramLayout>();
 
@@ -327,19 +466,29 @@ export class CompositeLayoutEngine {
     private childEngine: LayoutEngine = new LayoutEngine(),
     boxChildEngine?: LayoutEngine,
     /** Floating-connector router used for the box view's `orthogonal`/auto lines. */
-    private readonly router: OrthogonalRouter = new OrthogonalRouter()
+    private readonly router: OrthogonalRouter = new OrthogonalRouter(),
+    options: CompositeLayoutOptions = {}
   ) {
     this.boxChildEngine = boxChildEngine ?? new LayoutEngine(BOX_CHILD_LAYOUT);
+    this.boxSize = options.boxSize === undefined ? BOX_SIZE : options.boxSize;
+    this.lineLabels = options.lineLabels;
+    this.boxSections = options.boxSections;
   }
 
-  layout(doc: CompositeDocument): CompositeLayout {
+  layout(doc: CompositeDocument, request: CompositeLayoutRequest = {}): CompositeLayout {
     const boxMode = doc.meta.boxMode ?? false;
     const defaultRouting = doc.meta.defaultRouting;
     // Box mode lays children out compactly so the box hugs its connection tips.
     const engine = boxMode ? this.boxChildEngine : this.childEngine;
-    let children = doc.allChildren().map((instance) =>
-      this.makeChildLayout(instance, instance.resolved ? engine.layout(instance.resolved) : null)
-    );
+    // Box view can expand some children in place: their detail drawing, centred
+    // on the box they replace (so the camera can fly onto the same spot).
+    const expanded = new Set(boxMode ? (request.expanded ?? []) : []);
+    let children = doc.allChildren().map((instance) => {
+      if (expanded.has(instance.id) && instance.resolved) {
+        return this.makeChildLayout(instance, this.childEngine.layout(instance.resolved), false, this.boxFrameSize(instance));
+      }
+      return this.makeChildLayout(instance, instance.resolved ? engine.layout(instance.resolved) : null, boxMode);
+    });
 
     // The floating-connector model (attach-per-view, node-relative leads,
     // orthogonal auto-routing) runs whenever the composite shows boxes OR uses
@@ -356,6 +505,8 @@ export class CompositeLayoutEngine {
       // that endpoint swapped — physically moving the arrow tip. Box view keeps
       // the rectangle and only re-picks the perimeter side, so it is untouched.
       if (!boxMode) children = this.applyEffectiveDirections(doc, children, engine, autoFacing, peerCenterOf);
+      // An expanded child is real detail geometry too: same arrow re-layout.
+      else if (expanded.size) children = this.applyEffectiveDirections(doc, children, this.childEngine, autoFacing, peerCenterOf, expanded);
       return this.layoutFloating(doc, children, boxMode, defaultRouting, autoFacing, peerCenterOf);
     }
 
@@ -368,13 +519,38 @@ export class CompositeLayoutEngine {
     return { children, links, lines, bounds, snapTips: this.externalConnectionTips(children) };
   }
 
-  /** Wrap a child's (possibly null) diagram layout in its instance transform + frame. */
-  private makeChildLayout(instance: DiagramInstance, layout: DiagramLayout | null): ChildLayout {
-    const frame: Rect = layout
-      ? { x: 0, y: 0, width: layout.size.width, height: layout.size.height }
-      : { x: 0, y: 0, width: PLACEHOLDER_FRAME.width, height: PLACEHOLDER_FRAME.height };
+  /**
+   * Wrap a child's (possibly null) diagram layout in its instance transform +
+   * frame. In box mode a resolved child gets the uniform `boxSize` frame (when
+   * set); its compact layout is still kept, since the port resolver reads the
+   * feeder tips from it to order same-side slots along the box edge.
+   */
+  /**
+   * `centreOn`: lay the frame out centred on a box of this size at the instance
+   * position (an expanded child replacing its box) instead of at its top-left.
+   */
+  private makeChildLayout(
+    instance: DiagramInstance,
+    layout: DiagramLayout | null,
+    boxMode = false,
+    centreOn?: { width: number; height: number }
+  ): ChildLayout {
+    const size = !layout ? PLACEHOLDER_FRAME : boxMode && this.boxSize ? this.boxSize : layout.size;
+    let frame: Rect = { x: 0, y: 0, width: size.width, height: size.height };
+    // Box view: a consumer split lays several same-size boxes side by side; the
+    // child's frame becomes their union (so selection, drag and bounds still work).
+    let boxes: SectionBox[] | undefined;
+    let ties: SectionTie[] | undefined;
+    const split = boxMode && layout && instance.resolved ? this.boxSections?.(instance) : undefined;
+    if (split?.sections.length) {
+      const laid = layoutSectionBoxes(split, size);
+      ({ boxes, ties, frame } = laid);
+    }
     const pivot: Point = { x: frame.width / 2, y: frame.height / 2 };
-    const transform = new Transform2D(instance.x, instance.y, instance.angleDeg, pivot);
+    // Centring keeps the world centre where the box's was: (x + bw/2, y + bh/2).
+    const dx = centreOn ? (centreOn.width - frame.width) / 2 : 0;
+    const dy = centreOn ? (centreOn.height - frame.height) / 2 : 0;
+    const transform = new Transform2D(instance.x + dx, instance.y + dy, instance.angleDeg, pivot);
     return {
       instance,
       layout,
@@ -384,8 +560,16 @@ export class CompositeLayoutEngine {
       worldCorners: transform.applyRect(frame),
       labelAngleDeg: labelFlipDeg(instance.angleDeg),
       name: instance.resolved?.meta.name || instance.libraryId,
-      nameLabel: resolveNameLabelLayout(frame, instance.labelAnchor, instance.labelDirection, instance.angleDeg)
+      nameLabel: resolveNameLabelLayout(frame, instance.labelAnchor, instance.labelDirection, instance.angleDeg),
+      ...(boxes ? { boxes, ties } : {}),
+      ...(centreOn ? { expanded: true } : {})
     };
+  }
+
+  /** The frame size a child has as a (single) box: the uniform `boxSize`, else its compact layout's. */
+  private boxFrameSize(instance: DiagramInstance): { width: number; height: number } {
+    if (this.boxSize) return this.boxSize;
+    return instance.resolved ? this.boxChildEngine.layout(instance.resolved).size : PLACEHOLDER_FRAME;
   }
 
   /**
@@ -403,11 +587,14 @@ export class CompositeLayoutEngine {
     children: ChildLayout[],
     engine: LayoutEngine,
     autoFacing: boolean,
-    peerCenterOf: Map<string, Point> | undefined
+    peerCenterOf: Map<string, Point> | undefined,
+    /** Restrict to these instance ids (box view: just the expanded children). */
+    only?: ReadonlySet<string>
   ): ChildLayout[] {
     return children.map((child) => {
       const { instance, layout, worldBounds } = child;
       if (!layout || !instance.resolved) return child;
+      if (only && !only.has(instance.id)) return child;
 
       const childCenter = { x: worldBounds.x + worldBounds.width / 2, y: worldBounds.y + worldBounds.height / 2 };
       const overrides = new Map<string, ExternalDirection>();
@@ -421,7 +608,8 @@ export class CompositeLayoutEngine {
       }
       if (overrides.size === 0) return child; // no effective change → share the cached layout
 
-      return this.makeChildLayout(instance, this.relaidChildLayout(instance.libraryId, instance.resolved, engine, overrides));
+      const relaid = this.relaidChildLayout(instance.libraryId, instance.resolved, engine, overrides);
+      return this.makeChildLayout(instance, relaid, false, child.expanded ? this.boxFrameSize(instance) : undefined);
     });
   }
 
@@ -492,16 +680,18 @@ export class CompositeLayoutEngine {
    * re-derives facing for free.
    */
   private buildPeerCenters(doc: CompositeDocument, children: ChildLayout[]): Map<string, Point> {
-    const centerOf = new Map<string, Point>();
-    for (const c of children) {
-      const b = c.worldBounds;
-      centerOf.set(c.instance.id, { x: b.x + b.width / 2, y: b.y + b.height / 2 });
-    }
+    const byId = new Map(children.map((c) => [c.instance.id, c]));
+    // A feeder's centre is its own box's — the section box when the child is
+    // split — so each section faces its own peer.
+    const centerOf = (instanceId: string, connectionId: string): Point | undefined => {
+      const c = byId.get(instanceId);
+      return c ? feederBoxCenter(c, connectionId) : undefined;
+    };
 
     const out = new Map<string, Point>();
     const pair = (ia: string, ca: string, ib: string, cb: string) => {
-      const pa = centerOf.get(ia);
-      const pb = centerOf.get(ib);
+      const pa = centerOf(ia, ca);
+      const pb = centerOf(ib, cb);
       if (!pa || !pb || ia === ib) return;
       out.set(feederKey(ia, ca), pb);
       out.set(feederKey(ib, cb), pa);
@@ -607,6 +797,15 @@ export class CompositeLayoutEngine {
       layout.terminus = { key: DEMAND_SYMBOL, at: b, angleDeg: segmentAngleDeg(a, b) };
     }
 
+    return this.withLabel(layout);
+  }
+
+  /** Attach the consumer's label rows (if any), clearing the transformer glyph. */
+  private withLabel(layout: CompositeLineLayout): CompositeLineLayout {
+    const rows = this.lineLabels?.(layout.line);
+    if (!rows?.length) return layout;
+    const label = placeLineLabel(layout.points, rows, layout.glyph ? LINE_LABEL_GLYPH_CLEARANCE : 0);
+    if (label) layout.label = label;
     return layout;
   }
 
@@ -755,7 +954,7 @@ export class CompositeLayoutEngine {
       }
     }
 
-    return layout;
+    return this.withLabel(layout);
   }
 
   /** Every child's external connection tips in world coordinates — the legacy (fixed-connector) snap targets. */
@@ -837,7 +1036,14 @@ export class CompositeLayoutEngine {
       extend({ x: b.x + b.width, y: b.y + b.height });
     }
     for (const link of links) for (const p of link.points) extend(p);
-    for (const line of lines) for (const p of line.points) extend(p);
+    for (const line of lines) {
+      for (const p of line.points) extend(p);
+      if (line.label) {
+        const b = line.label.box;
+        extend({ x: b.x, y: b.y });
+        extend({ x: b.x + b.width, y: b.y + b.height });
+      }
+    }
 
     if (!Number.isFinite(minX)) return { x: 0, y: 0, width: 0, height: 0 };
     return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };

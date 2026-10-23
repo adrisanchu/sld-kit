@@ -188,6 +188,7 @@
       {interactive}
       {colorClass}
       {formatResolver}
+      {doc}
       {style}
       showLabel={showConnectionLabels}
       on:select

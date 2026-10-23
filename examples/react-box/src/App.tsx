@@ -6,14 +6,24 @@ import {
   CompositeLine,
   CompositeSerializer,
   CompositeSvgExporter,
+  LayoutEngine,
   RemoveLineCommand,
+  ChildDocumentCommand,
+  Position,
+  UpdateElementCommand,
+  effectiveState,
+  SWITCH_OPEN_CONNECTION_FORMAT,
+  SLD_LAYOUT,
   SetAutoFacingCommand,
   SetBoxModeCommand,
   SetPortDirectionCommand,
   TransformChildCommand,
   newId,
+  type BoxSection,
   type ChildLayout,
   type Command,
+  type ElementFormat,
+  type SldElement,
   type CompositeDocument,
   type CompositeLineKind,
   type CompositeLineLayout,
@@ -29,8 +39,9 @@ import {
   useSldDocument,
   type CompositeCanvasHandle
 } from '@sld-kit/react';
-import { ArrowLeft, Boxes, Layers, Magnet, Maximize, PenLine, MousePointer2, Redo2, Trash2, Undo2 } from 'lucide-react';
-import { buildBoxComposite, voltageClass, voltageFill } from './fixture';
+import { ArrowLeft, Boxes, Layers, Magnet, Maximize, Move, PenLine, Pointer, Redo2, Trash2, Undo2 } from 'lucide-react';
+import { buildBoxComposite, ratingLabels, voltageClass, voltageFill } from './fixture';
+import { barBusIdLabel, boxSplit, openFeeders, sectionLabel } from './topology';
 
 const LINE_KINDS: { kind: CompositeLineKind; label: string }[] = [
   { kind: 'line', label: 'Overhead' },
@@ -39,13 +50,24 @@ const LINE_KINDS: { kind: CompositeLineKind; label: string }[] = [
   { kind: 'demand', label: 'Demand' }
 ];
 
-/** The integer bus id a box shows under its name (from the child's opaque meta.data). */
-function busLabel(child: ChildLayout): string | null {
-  const id = (child.instance.resolved?.meta.data as { busId?: number } | undefined)?.busId;
-  return id != null ? String(id) : null;
+/**
+ * The bus id(s) a box shows under its name, derived from the child's topology:
+ * each bar carries its own id, and bars joined through closed switches (e.g. a
+ * double bus with the coupler closed) share one box — `39770 / 39771`. A split
+ * child labels each section box with its own ids.
+ */
+function busLabel(child: ChildLayout, section?: BoxSection): string | null {
+  return sectionLabel(child.instance.resolved, section);
 }
 
-type Tool = 'select' | 'draw';
+
+/**
+ * - `operate`: interact with the network — click a substation to open it (box
+ *   view: expands in place; detail view: flies in), then click its switches.
+ * - `move`: arrange — drag substations, select/delete lines, pin feeder sides.
+ * - `draw`: add lines.
+ */
+type Tool = 'operate' | 'move' | 'draw';
 type Draft = { point: { x: number; y: number }; snap: { instanceId: string; connectionId: string } | null };
 
 export default function App() {
@@ -59,15 +81,39 @@ export default function App() {
 
   // The core engine's box mode resolves line endpoints to the active view's
   // frame (box perimeter vs SLD tip) and routes the bends via floating
-  // connectors, so box↔detail never strands or bends a line into a box.
-  const engine = useMemo(() => new CompositeLayoutEngine(), []);
+  // connectors, so box↔detail never strands or bends a line into a box. The
+  // `lineLabels` resolver formats each line's ratings (folded into `line.data`
+  // by the fixture) — placed by the core layout, so screen and export agree.
+  // The detail-view child engine labels each bar with its bus id, placed left of
+  // the bar so a long label never runs into a bay's stem. `boxSections` splits a
+  // substation into one box per bus section (e.g. a double bus with its coupler
+  // open), computed from live switch states in `topology.ts`.
+  const engine = useMemo(
+    () =>
+      new CompositeLayoutEngine(
+        new LayoutEngine({ ...SLD_LAYOUT, busBarLabelAnchor: 'center-left' }, { busBarLabel: barBusIdLabel }),
+        undefined,
+        undefined,
+        { lineLabels: ratingLabels, boxSections: boxSplit }
+      ),
+    []
+  );
+  const [tool, setTool] = useState<Tool>('move');
+  // Operate: the substation the user opened (box view: expanded in place;
+  // detail view: flown into). Its positions are live — a click toggles them.
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const operating = tool === 'operate';
+  // In box view an opened substation is expanded in place by the core layout
+  // (its detail drawing, centred on its box); everything else stays a box.
+  const expanded = operating && composite.meta.boxMode && focusedId ? [focusedId] : [];
+  const expandedKey = expanded.join();
+
   // `version` is the load-bearing dep: `composite` mutates in place.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const layout = useMemo(() => engine.layout(composite), [engine, composite, version]);
+  const layout = useMemo(() => engine.layout(composite, { expanded }), [engine, composite, version, expandedKey]);
 
   const canvasRef = useRef<CompositeCanvasHandle>(null);
 
-  const [tool, setTool] = useState<Tool>('select');
   const [lineKind, setLineKind] = useState<CompositeLineKind>('line');
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
@@ -87,6 +133,30 @@ export default function App() {
   const run = useCallback((cmd: Command<CompositeDocument>) => stack.execute(cmd, composite), [stack, composite]);
 
   const childColorClass = useCallback((c: ChildLayout) => voltageClass(c.instance.resolved?.meta.voltageKv), []);
+
+  // De-energised feeder connections (their bay is open, or cut off from every
+  // bar), by object identity — element ids can repeat across children.
+  const openConnections = useMemo(() => {
+    const out = new Set<SldElement>();
+    for (const c of layout.children) {
+      const doc = c.instance.resolved;
+      if (!doc) continue;
+      for (const id of openFeeders(doc)) {
+        const el = doc.getElement(id);
+        if (el) out.add(el);
+      }
+    }
+    return out;
+  }, [layout]);
+  // Core already greys + dashes every connection that *directly* touches an open
+  // position. This resolver only extends that look to feeders the topology cuts
+  // off further away (same format, so both read alike). Core applies it to the
+  // child's own connection (detail view) and to every composite line anchored to
+  // it (both views); the export gets the same function as its theme resolver.
+  const formatResolver = useCallback(
+    (el: SldElement): ElementFormat | undefined => (openConnections.has(el) ? SWITCH_OPEN_CONNECTION_FORMAT : undefined),
+    [openConnections]
+  );
   const lineColorClass = useCallback(
     (ln: CompositeLineLayout) => {
       const a = ln.line.vertices.find((v) => v.kind === 'anchor');
@@ -97,11 +167,15 @@ export default function App() {
     [layout]
   );
 
-  const chooseTool = (t: Tool) => {
+  const chooseTool = useCallback((t: Tool) => {
     setTool(t);
     setDraft([]);
-    if (t === 'draw') setSelectedLineId(null);
-  };
+    if (t !== 'operate') setFocusedId(null); // leaving operate closes the open substation
+    if (t !== 'move') {
+      setSelectedLineId(null);
+      setSelectedChildId(null);
+    }
+  }, []);
 
   const onCanvasPoint = useCallback(
     ({ point, snap }: Draft) => {
@@ -134,7 +208,7 @@ export default function App() {
 
   const handleChildDown = useCallback(
     ({ id, event }: { id: string; event: React.PointerEvent }) => {
-      if (tool !== 'select') return;
+      if (tool !== 'move') return;
       setSelectedChildId(id);
       setSelectedLineId(null);
       const child = composite.getChild(id);
@@ -187,7 +261,38 @@ export default function App() {
     setSelectedChildId(null);
   };
 
-  const toggleBoxMode = () => run(new SetBoxModeCommand(boxMode, !boxMode));
+  // ── Operate: open a substation, click its switches ─────────────────────────
+  // Reuses the adapter's explore mode (no new adapter API). The camera follows
+  // the focus *after* the re-layout, so in box view it flies onto the expanded
+  // drawing's real frame while the adapter morphs the box into it.
+  const focusChild = ({ id }: { id: string }) => setFocusedId(id);
+  const blur = useCallback(() => setFocusedId(null), []);
+  const flownRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (focusedId === flownRef.current) return;
+    flownRef.current = focusedId;
+    if (focusedId) {
+      const child = layout.children.find((c) => c.instance.id === focusedId);
+      if (child) canvasRef.current?.flyTo(child.worldBounds, { durationMs: 450 });
+    } else {
+      canvasRef.current?.flyToFit({ durationMs: 450 });
+    }
+  }, [focusedId, layout]);
+  // Toggle a position's first-class `state` as ONE step of the composite
+  // history (undo/redo work across the box↔detail toggle); the composite
+  // re-layouts, so the box view re-splits / merges from the new state.
+  const toggleSwitch = ({ instanceId, elementId }: { instanceId: string; elementId: string }) => {
+    const el = composite.getChild(instanceId)?.resolved?.getElement(elementId);
+    if (!(el instanceof Position)) return;
+    const before = el.toJSON();
+    const state = effectiveState(el) === 'open' ? 'closed' : 'open';
+    run(new ChildDocumentCommand(instanceId, new UpdateElementCommand(before, { ...before, state })));
+  };
+
+  const toggleBoxMode = () => {
+    setFocusedId(null);
+    run(new SetBoxModeCommand(boxMode, !boxMode));
+  };
   const toggleAutoFacing = () => run(new SetAutoFacingCommand(autoFacing, !autoFacing));
 
   // Pin a feeder's exit side (the canvas cycles it clockwise on click). The pin
@@ -210,12 +315,20 @@ export default function App() {
   // Escape cancels a draft; Delete removes the selected line.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setDraft([]);
+      if (e.key === 'Escape') {
+        setDraft([]);
+        blur();
+      }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedLineId) deleteSelected();
+      // Tool shortcuts (no modifiers): O operate, V move, L draw.
+      if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+        const next = ({ o: 'operate', v: 'move', l: 'draw' } as const)[e.key.toLowerCase() as 'o' | 'v' | 'l'];
+        if (next) chooseTool(next);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedLineId, deleteSelected]);
+  }, [selectedLineId, deleteSelected, blur, chooseTool]);
 
   const exportSvg = () => {
     // Export through the same engine the canvas uses, so the SVG carries the
@@ -223,7 +336,8 @@ export default function App() {
     const svg = new CompositeSvgExporter(engine).export(composite, {
       boxMode: true,
       boxFill: (c) => voltageFill(c.instance.resolved?.meta.voltageKv),
-      boxSubLabel: busLabel
+      boxSubLabel: busLabel,
+      theme: { resolveElementFormat: formatResolver }
     });
     downloadText(`${slugify(composite.meta.name)}.svg`, svg, 'image/svg+xml');
   };
@@ -277,24 +391,36 @@ export default function App() {
           selectedLineId={selectedLineId}
           childColorClass={childColorClass}
           lineColorClass={lineColorClass}
+          formatResolver={formatResolver}
           onChildDown={handleChildDown}
           onCanvasPoint={onCanvasPoint}
           onDrawCommit={commitDraw}
           onLineDown={({ id }) => {
+            if (tool !== 'move') return;
             setSelectedLineId(id);
             setSelectedChildId(null);
           }}
           onPortDirection={pinPortDirection}
-          onClearSelection={clearSelection}
+          explore={operating}
+          focusedId={operating ? focusedId : null}
+          onChildFocus={focusChild}
+          onElementActivate={toggleSwitch}
+          onClearSelection={() => {
+            clearSelection();
+            blur();
+          }}
         />
 
         {/* Minimal floating chrome — the app owns all orchestration; the canvas
             just emits semantic callbacks (see the adapter contract). */}
         <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 flex-wrap items-center gap-1 rounded-full border border-border bg-background/85 px-2 py-1 shadow-lg backdrop-blur-sm">
-          <ToolButton title="Select" active={tool === 'select'} onClick={() => chooseTool('select')}>
-            <MousePointer2 className="h-4 w-4" />
+          <ToolButton title="Operate (O) — open a substation, toggle its switches" active={tool === 'operate'} onClick={() => chooseTool('operate')}>
+            <Pointer className="h-4 w-4" />
           </ToolButton>
-          <ToolButton title="Draw line" active={tool === 'draw'} onClick={() => chooseTool('draw')}>
+          <ToolButton title="Move (V) — drag substations, edit lines" active={tool === 'move'} onClick={() => chooseTool('move')}>
+            <Move className="h-4 w-4" />
+          </ToolButton>
+          <ToolButton title="Draw line (L)" active={tool === 'draw'} onClick={() => chooseTool('draw')}>
             <PenLine className="h-4 w-4" />
           </ToolButton>
 
@@ -355,6 +481,13 @@ export default function App() {
         {tool === 'draw' && (
           <p className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs text-primary-foreground shadow">
             Click to add points (snap to a box terminal); double-click to finish · Esc to cancel
+          </p>
+        )}
+        {tool === 'operate' && (
+          <p className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs text-primary-foreground shadow">
+            {focusedId
+              ? 'Click a switch to open / close it · click outside or Esc to close'
+              : 'Click a substation to open it'}
           </p>
         )}
       </main>

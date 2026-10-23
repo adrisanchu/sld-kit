@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import type { ChildLayout } from '@sld-kit/core';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import type { BoxSection, ChildLayout, Rect } from '@sld-kit/core';
 import { BusBarView } from '../elements/BusBarView';
 import { PositionView } from '../elements/PositionView';
 import { ConnectionView } from '../elements/ConnectionView';
@@ -7,6 +7,10 @@ import { DEFAULT_POSITION_TOKENS, DEFAULT_CHILD_NOT_FOUND, type PositionTokens }
 import type { FormatResolver } from '../format';
 import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
 import { useSldAnimations } from '../styles';
+
+// Layout effect in the browser (no flash of the un-animated frame), plain effect
+// on the server (where it never runs, without the SSR warning).
+const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 export interface ChildDiagramViewProps {
   child: ChildLayout;
@@ -49,7 +53,8 @@ export interface ChildDiagramViewProps {
    */
   boxMode?: boolean;
   /** Secondary line under the box name (e.g. an integer bus ID). Box mode only. */
-  boxSubLabel?: (child: ChildLayout) => string | null;
+  /** Secondary line per box (e.g. bus ids); called with the box's `section` when the child is split. */
+  boxSubLabel?: (child: ChildLayout, section?: BoxSection) => string | null;
   /** Fallback text when a child diagram can't be resolved. */
   notFoundLabel?: string;
   onChildDown?: (detail: { id: string; event: React.PointerEvent }) => void;
@@ -57,6 +62,12 @@ export interface ChildDiagramViewProps {
   onChildFocus?: (detail: { id: string; event: React.PointerEvent }) => void;
   /** Explore mode: the user clicked an operable element inside the focused child. */
   onElementActivate?: (detail: { instanceId: string; elementId: string }) => void;
+  /**
+   * Animate a switch between box and detail display (an in-place expand, or the
+   * box↔detail toggle): the old frame morphs into the new one while the new
+   * content fades in. Default true; `prefers-reduced-motion` disables it.
+   */
+  animateMorph?: boolean;
 }
 
 /**
@@ -85,7 +96,8 @@ export function ChildDiagramView({
   notFoundLabel = DEFAULT_CHILD_NOT_FOUND,
   onChildDown,
   onChildFocus,
-  onElementActivate
+  onElementActivate,
+  animateMorph = true
 }: ChildDiagramViewProps) {
   useSldAnimations();
 
@@ -93,7 +105,23 @@ export function ChildDiagramView({
   const resolved = instance.resolved;
   // Box mode collapses the child to a single box — but a focused (flown-into)
   // child always renders detailed, so a box reveals its diagram on zoom-in.
-  const boxDisplay = boxMode && !!resolved && !!layout && !(explore && focused);
+  // An expanded child (core `layout(doc, { expanded })`) carries its detail layout.
+  const boxDisplay = boxMode && !!resolved && !!layout && !child.expanded && !(explore && focused);
+
+  // Box ↔ detail morph. When the display flips, remember the previous frame
+  // size: a ghost outline shrinks/grows from it to the new frame (same centre)
+  // while the new content fades in — the eye follows one shape throughout.
+  const display = boxDisplay ? 'box' : 'detail';
+  const prevRef = useRef<{ display: string; width: number; height: number } | null>(null);
+  const [morph, setMorph] = useState<{ sx: number; sy: number; key: number } | null>(null);
+  useIsoLayoutEffect(() => {
+    const prev = prevRef.current;
+    const { width, height } = child.frame;
+    if (animateMorph && prev && prev.display !== display && width > 0 && height > 0) {
+      setMorph({ sx: prev.width / width, sy: prev.height / height, key: Date.now() });
+    }
+    prevRef.current = { display, width, height };
+  }, [display, child.frame, animateMorph]);
   const box = {
     strokeWidth: style.composite.boxStrokeWidth,
     fillOpacity: style.composite.boxFillOpacity,
@@ -146,54 +174,101 @@ export function ChildDiagramView({
 
   return (
     <g transform={child.transform.toSvgTransform()} opacity={dimmed ? 0.3 : 1} className="sld-child">
+      {/* The morph ghost: the previous frame's outline scaling into the new one. */}
+      {morph && (
+        <rect
+          key={`ghost:${morph.key}`}
+          x={child.frame.x}
+          y={child.frame.y}
+          width={child.frame.width}
+          height={child.frame.height}
+          rx={8}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeDasharray="6 4"
+          vectorEffect="non-scaling-stroke"
+          className={`sld-morph-ghost pointer-events-none ${colorClass ?? 'text-primary'}`}
+          style={
+            {
+              color: colorClass ? 'var(--sld-pos)' : undefined,
+              '--sld-sx': morph.sx,
+              '--sld-sy': morph.sy
+            } as CSSProperties
+          }
+          data-sld-anim
+          onAnimationEnd={() => setMorph(null)}
+        />
+      )}
+      <g key={morph ? `content:${morph.key}` : 'content'} className={morph ? 'sld-morph-in' : undefined} data-sld-anim>
       {boxDisplay ? (
-        // Grid-level box: a saturated, colour-filled rounded rect with the name
-        // and bus id centred in the voltage colour — big and bold so the grid
-        // reads from afar (the reference look).
+        // Grid-level box(es): a saturated, colour-filled rounded rect with the
+        // name and bus id centred in the voltage colour — big and bold so the
+        // grid reads from afar (the reference look). A child split into bus
+        // sections draws one box per section, joined by muted dashed ties.
         (() => {
-          const cx = child.frame.x + child.frame.width / 2;
-          const cy = child.frame.y + child.frame.height / 2;
-          const sub = boxSubLabel?.(child) ?? null;
           const textFill = colorClass ? 'var(--sld-pos)' : undefined;
           const textClass = colorClass ? 'font-bold' : 'fill-foreground font-bold';
-          return (
-            <g className={colorClass ?? undefined}>
-              <rect
-                x={child.frame.x}
-                y={child.frame.y}
-                width={child.frame.width}
-                height={child.frame.height}
-                rx={8}
-                fill={colorClass ? 'var(--sld-pos)' : undefined}
-                fillOpacity={colorClass ? box.fillOpacity : undefined}
-                stroke={colorClass ? 'var(--sld-pos)' : undefined}
-                strokeWidth={box.strokeWidth}
-                className={colorClass ? undefined : 'fill-muted stroke-border'}
-              />
-              <g transform={labelAngleDeg ? `rotate(${labelAngleDeg} ${cx} ${cy})` : undefined}>
-                <text
-                  x={cx}
-                  y={cy + (sub ? -3 : box.nameFontSize * 0.35)}
-                  textAnchor="middle"
-                  fontSize={box.nameFontSize}
-                  fill={textFill}
-                  className={`pointer-events-none select-none ${textClass}`}
-                >
-                  {child.name}
-                </text>
-                {sub && (
+          const renderBox = (frame: Rect, sub: string | null, key: string) => {
+            const cx = frame.x + frame.width / 2;
+            const cy = frame.y + frame.height / 2;
+            return (
+              <g key={key}>
+                <rect
+                  x={frame.x}
+                  y={frame.y}
+                  width={frame.width}
+                  height={frame.height}
+                  rx={8}
+                  fill={colorClass ? 'var(--sld-pos)' : undefined}
+                  fillOpacity={colorClass ? box.fillOpacity : undefined}
+                  stroke={colorClass ? 'var(--sld-pos)' : undefined}
+                  strokeWidth={box.strokeWidth}
+                  className={colorClass ? undefined : 'fill-muted stroke-border'}
+                />
+                <g transform={labelAngleDeg ? `rotate(${labelAngleDeg} ${cx} ${cy})` : undefined}>
                   <text
                     x={cx}
-                    y={cy + box.idFontSize + 2}
+                    y={cy + (sub ? -3 : box.nameFontSize * 0.35)}
                     textAnchor="middle"
-                    fontSize={box.idFontSize}
+                    fontSize={box.nameFontSize}
                     fill={textFill}
                     className={`pointer-events-none select-none ${textClass}`}
                   >
-                    {sub}
+                    {child.name}
                   </text>
-                )}
+                  {sub && (
+                    <text
+                      x={cx}
+                      y={cy + box.idFontSize + 2}
+                      textAnchor="middle"
+                      fontSize={box.idFontSize}
+                      fill={textFill}
+                      className={`pointer-events-none select-none ${textClass}`}
+                    >
+                      {sub}
+                    </text>
+                  )}
+                </g>
               </g>
+            );
+          };
+          return (
+            <g className={colorClass ?? undefined}>
+              {(child.ties ?? []).map((tie) => (
+                <polyline
+                  key={`tie:${tie.a}:${tie.b}`}
+                  points={tie.points.map((p) => `${p.x},${p.y}`).join(' ')}
+                  fill="none"
+                  strokeWidth={box.strokeWidth}
+                  strokeDasharray="6 4"
+                  className="stroke-muted-foreground"
+                  strokeOpacity={0.6}
+                />
+              ))}
+              {child.boxes
+                ? child.boxes.map((b) => renderBox(b.frame, boxSubLabel?.(child, b.section) ?? null, b.key))
+                : renderBox(child.frame, boxSubLabel?.(child) ?? null, 'box')}
             </g>
           );
         })()
@@ -208,6 +283,7 @@ export function ChildDiagramView({
               labelAngleDeg={labelAngleDeg}
               colorClass={connColor}
               formatResolver={formatResolver}
+              doc={resolved}
               style={style}
               showLabel={showConnectionLabels}
             />
@@ -275,6 +351,7 @@ export function ChildDiagramView({
           </text>
         </>
       )}
+      </g>
 
       {/* Always-on diagram name at its chosen slot, larger + bold so it stands
           apart from element labels. Rides with the child's orientation plus the

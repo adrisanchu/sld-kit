@@ -16,6 +16,14 @@ export const STUB_LENGTH = 24;
  */
 export const ALIGN_TOLERANCE = 8;
 
+/**
+ * Uniform box-view frame. Every box in box mode gets this size regardless of how
+ * many feeders its child has, so grid-aligned boxes produce exactly straight
+ * ties (matching the reference drawings). Pass `boxSize: null` to the
+ * `CompositeLayoutEngine` to fall back to the content-derived compact frame.
+ */
+export const BOX_SIZE = { width: 200, height: 72 } as const;
+
 /** How far a demand's dangling lead hangs off its feeder, node-relative. */
 export const DEMAND_LEAD_LENGTH = 64;
 
@@ -25,3 +33,16 @@ export const CABLE_DASH_ARRAY = '6 4';
 /** `SymbolRegistry` keys the line adornments render through. */
 export const TRANSFORMER_SYMBOL = 'external:transformer';
 export const DEMAND_SYMBOL = 'external:demand';
+
+/** Numeric line labels (`lineLabels` resolver): font size and row pitch, world units. */
+export const LINE_LABEL_FONT_SIZE = 16;
+export const LINE_LABEL_LINE_HEIGHT = 19;
+
+/** Gap between a line and the edge of its label block. */
+export const LINE_LABEL_OFFSET = 8;
+
+/** Extra gap on `transformer` lines so the label clears the two-circle glyph. */
+export const LINE_LABEL_GLYPH_CLEARANCE = 14;
+
+/** Padding of the label's backing box around its text. */
+export const LINE_LABEL_PAD = 3;

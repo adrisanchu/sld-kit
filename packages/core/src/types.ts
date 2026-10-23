@@ -49,6 +49,36 @@ export type ExternalAssetKind = 'line' | 'transformer' | 'renewable' | 'storage'
 export type ExternalDirection = 'up' | 'down' | 'left' | 'right';
 
 /**
+ * One of eight discrete label slots, named `{vertical}-{horizontal}` relative
+ * to the labelled element's *own* frame (top = its top edge). Shared label
+ * vocabulary across the library: a composite child's name label snaps to any of
+ * them (so it rides with the child's rotation — "top-left" stays the diagram's
+ * own top-left corner whatever its `angleDeg`), and a bus bar's label uses a
+ * subset (see `BusBarLabelAnchor`). (`center-center` is intentionally omitted —
+ * a label over the element's body.)
+ */
+export type LabelAnchor =
+  | 'top-left'
+  | 'top-center'
+  | 'top-right'
+  | 'center-left'
+  | 'center-right'
+  | 'bottom-left'
+  | 'bottom-center'
+  | 'bottom-right';
+
+export const LABEL_ANCHORS: readonly LabelAnchor[] = [
+  'top-left',
+  'top-center',
+  'top-right',
+  'center-left',
+  'center-right',
+  'bottom-left',
+  'bottom-center',
+  'bottom-right'
+] as const;
+
+/**
  * One end of a Connection.
  *
  * External assets (a transmission line leaving the diagram, the low-voltage
@@ -81,6 +111,14 @@ export type Endpoint =
     };
 
 export type ElementKind = 'busbar' | 'position' | 'connection';
+
+/**
+ * Switching state of a position (bay): whether it conducts. Absent means
+ * `closed`. First-class (not in `data`) because it is part of the electrical
+ * model — it maps to CIM `Switch.open` — and core gives open bays a default
+ * look (`SldTheme.switchOpenFormat`). See ADR 0002.
+ */
+export type SwitchState = 'open' | 'closed';
 
 /**
  * Future sub-element of a position (breaker, disconnector, CT…).
@@ -125,6 +163,8 @@ export interface PositionJson<TData = unknown> {
   col: number;
   colSpan: number;
   subElements: SubElementJson[];
+  /** Switching state; absent = `closed`. Read it through `effectiveState`. */
+  state?: SwitchState;
   /** Opaque consumer metadata, roundtripped untouched. */
   data?: TData;
 }

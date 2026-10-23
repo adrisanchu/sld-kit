@@ -10,8 +10,30 @@ import { detectCrossings } from './crossings';
 export interface BusBarGeometry {
   kind: 'busbar';
   rect: Rect;
+  /** Label baseline anchor point. */
   labelAt: Point;
+  /** Resolved label text (`bar.label` unless a `busBarLabel` resolver overrides it); `''` = none. */
+  label: string;
+  /** SVG text anchor at `labelAt`: `start` for `top-left`, `end` for `center-left`. */
+  textAnchor: 'start' | 'end';
 }
+
+/**
+ * Consumer hook for the text a bus bar shows (e.g. a bus number from its
+ * `data`). Return `null`/`undefined` to keep the bar's own `label`, `''` to hide it.
+ */
+export type BusBarLabelResolver = (bar: BusBar, doc: SldDocument) => string | null | undefined;
+
+export interface LayoutEngineOptions {
+  /** Override each bar's label text; resolved in the layout so the view and the export agree. */
+  busBarLabel?: BusBarLabelResolver;
+}
+
+/** Gap between a `center-left` bar label and the bar's start. */
+const BAR_LABEL_GAP = 8;
+
+/** Estimated rendered width of a bar label (bold-ish sans; no DOM to measure in). */
+const barLabelWidth = (text: string, fontSize: number) => text.length * fontSize * 0.62;
 
 export interface PositionGeometry {
   kind: 'position';
@@ -60,7 +82,10 @@ export interface DiagramLayout {
  * document change and the exporter reuses the exact same geometry.
  */
 export class LayoutEngine {
-  constructor(private cfg: SldLayoutConfig = SLD_LAYOUT) {}
+  constructor(
+    private cfg: SldLayoutConfig = SLD_LAYOUT,
+    private options: LayoutEngineOptions = {}
+  ) {}
 
   layout(doc: SldDocument): DiagramLayout {
     const cfg = this.cfg;
@@ -92,12 +117,19 @@ export class LayoutEngine {
     // Extra space needed for a horizontal exit: beyond the bar overhang,
     // across the stem, past the arrowhead, plus room for the label text.
     const labelRoom = cfg.externalLabelRoom;
-    const leftShift = hasLeftExit
+    const exitShift = hasLeftExit
       ? Math.max(0, labelRoom + cfg.busBarOverhang + cfg.externalStemLength - cfg.margin)
       : 0;
     const extraRight = hasRightExit
       ? Math.max(0, labelRoom + cfg.busBarOverhang + cfg.externalStemLength + cfg.arrowSize - cfg.margin)
       : 0;
+    // Resolved bar labels; with `center-left` the margin grows to fit the longest.
+    const barLabels = new Map<ElementId, string>();
+    for (const bar of doc.busBars()) barLabels.set(bar.id, this.options.busBarLabel?.(bar, doc) ?? bar.label);
+    const labelLeft = cfg.busBarLabelAnchor === 'center-left';
+    const longestLabel = labelLeft ? Math.max(0, ...[...barLabels.values()].map((t) => barLabelWidth(t, cfg.busLabelFontSize))) : 0;
+    const labelShift = longestLabel > 0 ? Math.max(0, longestLabel + BAR_LABEL_GAP + cfg.busBarOverhang - cfg.margin + BAR_LABEL_GAP) : 0;
+    const leftShift = Math.max(exitShift, labelShift);
     const leftMargin = cfg.margin + leftShift;
 
     const size = {
@@ -145,10 +177,14 @@ export class LayoutEngine {
         width: innerWidth + 2 * cfg.busBarOverhang,
         height: cfg.busBarThickness
       };
+      const label = barLabels.get(bar.id) ?? bar.label;
       geometry.set(bar.id, {
         kind: 'busbar',
         rect,
-        labelAt: { x: rect.x, y: rect.y - 8 }
+        label,
+        ...(labelLeft
+          ? { labelAt: { x: rect.x - BAR_LABEL_GAP, y: centerY + cfg.busLabelFontSize * 0.35 }, textAnchor: 'end' as const }
+          : { labelAt: { x: rect.x, y: rect.y - 8 }, textAnchor: 'start' as const })
       });
     }
 

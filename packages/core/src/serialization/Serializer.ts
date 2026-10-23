@@ -1,9 +1,9 @@
 import type { SldDocumentJson } from '../types';
 import { SldDocument } from '../SldDocument';
 import { elementFromJson } from '../elements/factory';
-import { SLD_SCHEMA_VERSION, SldParseError, parseDocument, registerMigration, type Migration } from './validate';
+import { SLD_SCHEMA_VERSION, SldParseError, DuplicateIdError, parseDocument, registerMigration, type Migration } from './validate';
 
-export { SLD_SCHEMA_VERSION, SldParseError };
+export { SLD_SCHEMA_VERSION, SldParseError, DuplicateIdError };
 
 /**
  * JSON (de)serialization of diagrams — the interchange format of the

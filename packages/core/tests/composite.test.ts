@@ -5,6 +5,12 @@ import {
   COMPOSITE_SCHEMA_VERSION,
   CompositeLayoutEngine,
   CompositeSvgExporter,
+  OrthogonalRouter,
+  Position,
+  lineFormat,
+  SWITCH_OPEN_CONNECTION_FORMAT,
+  BOX_SIZE,
+  BOX_SECTION_GAP,
   CompositeLine,
   chordFrame,
   CommandStack,
@@ -12,6 +18,7 @@ import {
   SetChildLabelCommand,
   AddLineCommand,
   UpdateLineKindCommand,
+  SetLineDataCommand,
   SetBoxModeCommand,
   SetPortDirectionCommand,
   SetAutoFacingCommand,
@@ -31,6 +38,7 @@ import {
   type SldElement,
   type SldDocumentJson,
   type CompositeLayout,
+  type BoxSectionsResolver,
   type Point
 } from '../src';
 import {
@@ -804,6 +812,319 @@ describe('Box view — box mode', () => {
     expect(svg).toContain('stroke-dasharray="6 4"'); // the cable
     expect(svg).not.toContain('<marker');
     expect(svg).not.toContain('class=');
+  });
+});
+
+describe('Box view — uniform box size', () => {
+  // TOP has two bays (feeders down + right), BOTTOM one bay (feeder up): their
+  // content-derived frames differ in width, the uniform frames don't.
+  const columnDoc = () => {
+    const sub = (id: string, feeders: { id: string; dir: ExternalDirection }[]) =>
+      buildDocument({
+        meta: { id, name: id.toUpperCase(), substation: id, voltageKv: 220 },
+        busbars: [{ label: 'BB', row: 0 }],
+        bays: feeders.map((f, i) => ({
+          col: i,
+          positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: f.id, direction: f.dir, id: f.id } }]
+        }))
+      });
+    const res = new MapResolver(
+      new Map([
+        ['top', Serializer.toJSON(sub('top', [{ id: 't-b', dir: 'down' }, { id: 't-x', dir: 'right' }]))],
+        ['bot', Serializer.toJSON(sub('bot', [{ id: 'b-t', dir: 'up' }]))]
+      ])
+    );
+    const doc = new CompositeDocument({ id: 'c', name: 'c', boxMode: true, defaultRouting: 'orthogonal' });
+    doc.addChild(DiagramInstance.of({ id: 'top', libraryId: 'top', x: 0, y: 0 }));
+    doc.addChild(DiagramInstance.of({ id: 'bot', libraryId: 'bot', x: 0, y: 400 }));
+    doc.addLine(new CompositeLine('tie', [{ kind: 'anchor', instanceId: 'top', connectionId: 't-b' }, { kind: 'anchor', instanceId: 'bot', connectionId: 'b-t' }]));
+    doc.resolveChildren(res);
+    return doc;
+  };
+  const frames = (layout: CompositeLayout) => layout.children.map((c) => c.frame);
+
+  it('gives every box-mode child the same BOX_SIZE frame', () => {
+    const [top, bot] = frames(new CompositeLayoutEngine().layout(columnDoc()));
+    expect(top).toEqual({ x: 0, y: 0, width: BOX_SIZE.width, height: BOX_SIZE.height });
+    expect(bot).toEqual(top);
+  });
+
+  it('draws an exactly vertical tie between aligned boxes with the snap disabled', () => {
+    const engine = new CompositeLayoutEngine(undefined, undefined, new OrthogonalRouter(undefined, 0));
+    const tie = engine.layout(columnDoc()).lines[0].points;
+    expect(tie.length).toBe(2);
+    expect(tie[0].x).toBe(tie[1].x);
+  });
+
+  it('boxSize: null keeps the content-derived compact frames', () => {
+    const [top, bot] = frames(new CompositeLayoutEngine(undefined, undefined, undefined, { boxSize: null }).layout(columnDoc()));
+    expect(top.width).not.toBe(bot.width);
+  });
+
+  it('detail view ignores boxSize', () => {
+    const doc = columnDoc();
+    doc.updateMeta({ boxMode: false });
+    const [top] = frames(new CompositeLayoutEngine().layout(doc));
+    expect(top.width).not.toBe(BOX_SIZE.width);
+  });
+});
+
+describe('Box view — line labels', () => {
+  // NORTH above SOUTH (vertical tie), WEST left of NORTH (horizontal tie).
+  const gridDoc = (opts: { boxMode?: boolean; kind?: string } = {}) => {
+    const sub = (id: string, feeders: { id: string; dir: ExternalDirection }[]) =>
+      buildDocument({
+        meta: { id, name: id.toUpperCase(), substation: id, voltageKv: 220 },
+        busbars: [{ label: 'BB', row: 0 }],
+        bays: feeders.map((f, i) => ({
+          col: i,
+          positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: f.id, direction: f.dir, id: f.id } }]
+        }))
+      });
+    const res = new MapResolver(
+      new Map([
+        ['n', Serializer.toJSON(sub('n', [{ id: 'n-s', dir: 'down' }, { id: 'n-w', dir: 'left' }]))],
+        ['s', Serializer.toJSON(sub('s', [{ id: 's-n', dir: 'up' }]))],
+        ['w', Serializer.toJSON(sub('w', [{ id: 'w-n', dir: 'right' }]))]
+      ])
+    );
+    const doc = new CompositeDocument({ id: 'c', name: 'c', boxMode: opts.boxMode ?? true, defaultRouting: 'orthogonal' });
+    doc.addChild(DiagramInstance.of({ id: 'n', libraryId: 'n', x: 600, y: 0 }));
+    doc.addChild(DiagramInstance.of({ id: 's', libraryId: 's', x: 600, y: 400 }));
+    doc.addChild(DiagramInstance.of({ id: 'w', libraryId: 'w', x: 0, y: 0 }));
+    const anchor = (instanceId: string, connectionId: string) => ({ kind: 'anchor' as const, instanceId, connectionId });
+    doc.addLine(new CompositeLine('ns', [anchor('n', 'n-s'), anchor('s', 's-n')], opts.kind ?? 'line', undefined, { rows: ['1200/1500', '1100/1300'] }));
+    doc.addLine(new CompositeLine('wn', [anchor('w', 'w-n'), anchor('n', 'n-w')], 'line', undefined, { rows: ['80/80'] }));
+    doc.addLine(new CompositeLine('bare', [anchor('n', 'n-s'), { kind: 'point', x: 0, y: 900 }]));
+    doc.resolveChildren(res);
+    return doc;
+  };
+  const rowsOf = (line: CompositeLine) => (line.data as { rows?: string[] } | undefined)?.rows;
+  const engine = () => new CompositeLayoutEngine(undefined, undefined, undefined, { lineLabels: rowsOf });
+  const lineById = (layout: CompositeLayout, id: string) => layout.lines.find((l) => l.line.id === id)!;
+
+  it('roundtrips line.data (deep-copied) and omits it when unset', () => {
+    const doc = gridDoc();
+    const json = CompositeSerializer.toJSON(doc);
+    expect(json.lines.find((l) => l.id === 'ns')!.data).toEqual({ rows: ['1200/1500', '1100/1300'] });
+    expect('data' in json.lines.find((l) => l.id === 'bare')!).toBe(false);
+    const back = CompositeSerializer.fromJSON(cycle(json));
+    expect(back.getLine('ns')!.data).toEqual({ rows: ['1200/1500', '1100/1300'] });
+    expect(back.getLine('ns')!.data).not.toBe(doc.getLine('ns')!.data);
+    expect(CompositeSerializer.toJSON(back)).toEqual(json);
+  });
+
+  it('SetLineDataCommand do/undo replaces the data', () => {
+    const doc = gridDoc();
+    const stack = new CommandStack<CompositeDocument>();
+    const before = doc.getLine('wn')!.data;
+    stack.execute(new SetLineDataCommand('wn', before, { rows: ['90/90'] }), doc);
+    expect(rowsOf(doc.getLine('wn')!)).toEqual(['90/90']);
+    stack.undo(doc);
+    expect(rowsOf(doc.getLine('wn')!)).toEqual(['80/80']);
+  });
+
+  it('places stacked rows to the right of a vertical line', () => {
+    const layout = engine().layout(gridDoc());
+    const ns = lineById(layout, 'ns');
+    const x = ns.points[0].x;
+    expect(ns.label!.rows.map((r) => r.text)).toEqual(['1200/1500', '1100/1300']);
+    expect(ns.label!.textAnchor).toBe('start');
+    expect(ns.label!.box.x).toBeGreaterThan(x);
+    expect(ns.label!.rows[1].y).toBeGreaterThan(ns.label!.rows[0].y);
+  });
+
+  it('centres the label above a horizontal line', () => {
+    const wn = lineById(engine().layout(gridDoc()), 'wn');
+    const y = wn.points[0].y;
+    expect(wn.label!.textAnchor).toBe('middle');
+    expect(wn.label!.box.y + wn.label!.box.height).toBeLessThan(y);
+  });
+
+  it('pushes the label further out on a transformer line (clears the glyph)', () => {
+    const plain = lineById(engine().layout(gridDoc()), 'ns').label!.box.x;
+    const tx = lineById(engine().layout(gridDoc({ kind: 'transformer' })), 'ns').label!.box.x;
+    expect(tx).toBeGreaterThan(plain);
+  });
+
+  it('omits labels when the resolver returns nothing, or without a resolver', () => {
+    expect(lineById(engine().layout(gridDoc()), 'bare').label).toBeUndefined();
+    expect(lineById(new CompositeLayoutEngine().layout(gridDoc()), 'ns').label).toBeUndefined();
+  });
+
+  it('labels follow the line in detail view too', () => {
+    const ns = lineById(engine().layout(gridDoc({ boxMode: false })), 'ns');
+    expect(ns.label!.rows[0].text).toBe('1200/1500');
+  });
+
+  it('exports labels as office-safe text', () => {
+    const svg = new CompositeSvgExporter(engine()).export(gridDoc());
+    expect(svg).toContain('>1200/1500<');
+    expect(svg).toContain('>1100/1300<');
+    expect(svg).toContain('>80/80<');
+    expect(svg).not.toContain('class=');
+    expect(svg).not.toContain('<style');
+    expect(svg).not.toContain('currentColor');
+  });
+});
+
+describe('Box view — section boxes (boxSections)', () => {
+  // MID: a double bus — feeder m-w on BB1, m-e on BB2, coupler between the bars.
+  // WEST sits left of MID, EAST right of it; one line from each to MID.
+  const sectionDoc = (opts: { boxMode?: boolean } = {}) => {
+    const mid = buildDocument({
+      meta: { id: 'mid', name: 'MID', substation: 'MID', voltageKv: 220 },
+      busbars: [
+        { id: 'bb-1', label: 'BB1', row: 1 },
+        { id: 'bb-2', label: 'BB2', row: 3 }
+      ],
+      bays: [
+        { col: 0, positions: [{ id: 'p-w', type: 'line', row: 0, feeder: { asset: 'line', label: 'W', direction: 'up', id: 'm-w' } }] },
+        { col: 1, positions: [{ id: 'cpl', type: 'central', row: 2 }] },
+        { col: 2, positions: [{ id: 'p-e', type: 'line', row: 4, feeder: { asset: 'line', label: 'E', direction: 'down', id: 'm-e' } }] }
+      ]
+    });
+    const single = (id: string, feederId: string, dir: ExternalDirection) =>
+      buildDocument({
+        meta: { id, name: id.toUpperCase(), substation: id, voltageKv: 220 },
+        busbars: [{ label: 'BB', row: 0 }],
+        bays: [{ col: 0, positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'L', direction: dir, id: feederId } }] }]
+      });
+    const res = new MapResolver(
+      new Map([
+        ['mid', Serializer.toJSON(mid)],
+        ['west', Serializer.toJSON(single('west', 'w-m', 'right'))],
+        ['east', Serializer.toJSON(single('east', 'e-m', 'left'))]
+      ])
+    );
+    const doc = new CompositeDocument({ id: 'c', name: 'c', boxMode: opts.boxMode ?? true, defaultRouting: 'orthogonal', autoFacing: true });
+    doc.addChild(DiagramInstance.of({ id: 'mid', libraryId: 'mid', x: 0, y: 0 }));
+    doc.addChild(DiagramInstance.of({ id: 'west', libraryId: 'west', x: -600, y: 0 }));
+    doc.addChild(DiagramInstance.of({ id: 'east', libraryId: 'east', x: 900, y: 0 }));
+    const anchor = (instanceId: string, connectionId: string) => ({ kind: 'anchor' as const, instanceId, connectionId });
+    doc.addLine(new CompositeLine('lw', [anchor('mid', 'm-w'), anchor('west', 'w-m')]));
+    doc.addLine(new CompositeLine('le', [anchor('mid', 'm-e'), anchor('east', 'e-m')]));
+    doc.resolveChildren(res);
+    return doc;
+  };
+  const split = (inst: DiagramInstance) =>
+    inst.id === 'mid'
+      ? {
+          sections: [
+            { key: 'bb-1', connectionIds: ['m-w'], data: { ids: [1] } },
+            { key: 'bb-2', connectionIds: ['m-e'], data: { ids: [2] } }
+          ],
+          ties: [{ a: 'bb-1', b: 'bb-2' }]
+        }
+      : null;
+  const engine = (boxSections?: BoxSectionsResolver) =>
+    new CompositeLayoutEngine(undefined, undefined, undefined, { boxSections });
+  const childOf = (layout: CompositeLayout, id: string) => layout.children.find((c) => c.instance.id === id)!;
+  const lineOf = (layout: CompositeLayout, id: string) => layout.lines.find((l) => l.line.id === id)!;
+
+  it('without a resolver (or with null) a child stays one box', () => {
+    const mid = childOf(engine().layout(sectionDoc()), 'mid');
+    expect(mid.boxes).toBeUndefined();
+    expect(mid.frame).toEqual({ x: 0, y: 0, width: BOX_SIZE.width, height: BOX_SIZE.height });
+    expect(childOf(engine(split).layout(sectionDoc()), 'west').boxes).toBeUndefined();
+  });
+
+  it('a single section keeps the default frame but carries its section', () => {
+    const one = engine((i) => (i.id === 'mid' ? { sections: [{ key: 'all', connectionIds: ['m-w', 'm-e'] }] } : null));
+    const mid = childOf(one.layout(sectionDoc()), 'mid');
+    expect(mid.frame).toEqual({ x: 0, y: 0, width: BOX_SIZE.width, height: BOX_SIZE.height });
+    expect(mid.boxes!.map((b) => b.key)).toEqual(['all']);
+    expect(mid.boxes![0].frame).toEqual(mid.frame);
+  });
+
+  it('two sections lay two boxes side by side, joined by a tie', () => {
+    const mid = childOf(engine(split).layout(sectionDoc()), 'mid');
+    const [a, b] = mid.boxes!;
+    expect(a.frame).toEqual({ x: 0, y: 0, width: BOX_SIZE.width, height: BOX_SIZE.height });
+    expect(b.frame.x).toBe(BOX_SIZE.width + BOX_SECTION_GAP);
+    expect(mid.frame.width).toBe(2 * BOX_SIZE.width + BOX_SECTION_GAP);
+    expect(mid.ties).toEqual([
+      {
+        a: 'bb-1',
+        b: 'bb-2',
+        points: [
+          { x: BOX_SIZE.width, y: BOX_SIZE.height / 2 },
+          { x: BOX_SIZE.width + BOX_SECTION_GAP, y: BOX_SIZE.height / 2 }
+        ]
+      }
+    ]);
+  });
+
+  it("each feeder attaches to its own section's box, which faces its own peer", () => {
+    const layout = engine(split).layout(sectionDoc());
+    const [a, b] = childOf(layout, 'mid').boxes!;
+    const lw = lineOf(layout, 'lw').points[0];
+    const le = lineOf(layout, 'le').points[0];
+    // Box A (BB1) faces WEST: its line leaves A's left edge.
+    expect(lw.x).toBe(a.frame.x);
+    expect(lw.y).toBeGreaterThan(a.frame.y);
+    expect(lw.y).toBeLessThan(a.frame.y + a.frame.height);
+    // Box B (BB2) faces EAST: its line leaves B's right edge.
+    expect(le.x).toBe(b.frame.x + b.frame.width);
+  });
+
+  it("a line anchored to an open bay's feeder gets the open-connection look (screen + export)", () => {
+    const doc = sectionDoc();
+    const mid = doc.getChild('mid')!.resolved!;
+    (mid.getElement('p-e') as Position).state = 'open';
+    const layout = engine().layout(doc);
+    expect(lineFormat(lineOf(layout, 'le').line, layout.children)).toEqual(SWITCH_OPEN_CONNECTION_FORMAT);
+    expect(lineFormat(lineOf(layout, 'lw').line, layout.children)).toBeUndefined();
+    const svg = new CompositeSvgExporter(engine()).export(doc);
+    expect(svg).toContain('stroke="#94a3b8"');
+  });
+
+  it('expands one child in place (box view): detail drawing centred on its box, feeders at its tips', () => {
+    const doc = sectionDoc();
+    const plain = engine().layout(doc);
+    const open = engine(split).layout(doc, { expanded: ['mid'] });
+    const box = childOf(plain, 'mid');
+    const mid = childOf(open, 'mid');
+    expect(mid.expanded).toBe(true);
+    expect(mid.boxes).toBeUndefined(); // the split only applies to boxes
+    expect(mid.frame.width).toBeGreaterThan(BOX_SIZE.width); // the full drawing
+    const centre = (r: { x: number; y: number; width: number; height: number }) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+    expect(centre(mid.worldBounds).x).toBeCloseTo(centre(box.worldBounds).x);
+    expect(centre(mid.worldBounds).y).toBeCloseTo(centre(box.worldBounds).y);
+    // Others stay boxes.
+    expect(childOf(open, 'west').expanded).toBeUndefined();
+    expect(childOf(open, 'west').frame.width).toBe(BOX_SIZE.width);
+    // MID's line now leaves from inside its (big) frame — a drawing tip, not the perimeter.
+    const p = lineOf(open, 'lw').points[0];
+    const fb = mid.worldBounds;
+    expect(p.x).toBeGreaterThan(fb.x);
+    expect(p.x).toBeLessThan(fb.x + fb.width);
+  });
+
+  it('ignores `expanded` in detail view', () => {
+    const doc = sectionDoc({ boxMode: false });
+    expect(childOf(engine().layout(doc, { expanded: ['mid'] }), 'mid').expanded).toBeUndefined();
+  });
+
+  it('detail view ignores the split', () => {
+    const mid = childOf(engine(split).layout(sectionDoc({ boxMode: false })), 'mid');
+    expect(mid.boxes).toBeUndefined();
+    expect(mid.ties).toBeUndefined();
+  });
+
+  it('exports one box per section with its own sub-label, a muted tie, and a format-stroked line', () => {
+    const svg = new CompositeSvgExporter(engine(split)).export(sectionDoc(), {
+      boxSubLabel: (child, section) => (section ? `#${(section.data as { ids: number[] }).ids.join('/')}` : child.name),
+      // Lines are styled through the one seam: the anchored child connection's format.
+      theme: { resolveElementFormat: (el) => (el.id === 'm-e' ? { stroke: '#999999' } : undefined) }
+    });
+    expect(svg).toContain('>#1<');
+    expect(svg).toContain('>#2<');
+    expect(svg.match(/>MID</g)).toHaveLength(2); // the name on both boxes
+    expect(svg).toContain('stroke-opacity="0.45"');
+    expect(svg).toContain('stroke="#999999"');
+    expect(svg).not.toContain('class=');
+    expect(svg).not.toContain('<style');
   });
 });
 

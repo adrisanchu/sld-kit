@@ -14,6 +14,9 @@ import { useEffect } from 'react';
  *   Svelte adapter: `.sld-child` (composite focus dim/undim) and `.sld-flow-dot`
  *   (the travelling-dot `stroke-dashoffset` march in `FlowOverlay`). Classes are
  *   `sld-`-prefixed because they're injected globally, not scoped.
+ * - **Box ↔ detail morph** (React box view): `.sld-morph-ghost` (the old frame's
+ *   outline scaling into the new one), `.sld-morph-in` (new content fades +
+ *   settles in, a beat behind) and `.sld-line-in` (re-routed lines fade in).
  *
  * A `prefers-reduced-motion` rule disables every one of them.
  */
@@ -22,13 +25,24 @@ const ANIM_CSS = `
 @keyframes sld-fade-in { from { opacity: 0 } to { opacity: 1 } }
 @keyframes sld-slide-up-in { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
 @keyframes sld-flow-dash { to { stroke-dashoffset: calc(-1 * var(--sld-flow-period)) } }
+@keyframes sld-morph-ghost {
+  from { transform: scale(var(--sld-sx, 1), var(--sld-sy, 1)); opacity: 0.85 }
+  65% { opacity: 0.85 }
+  to { transform: scale(1, 1); opacity: 0 }
+}
+@keyframes sld-morph-content { from { opacity: 0; transform: scale(0.94) } to { opacity: 1; transform: scale(1) } }
+@keyframes sld-line-in { from { opacity: 0 } to { opacity: 1 } }
 .sld-child { transition: opacity 0.3s ease; }
 .sld-flow-dot { animation-name: sld-flow-dash; animation-timing-function: linear; animation-iteration-count: infinite; }
 .sld-flow-dot.sld-paused { animation-play-state: paused; }
+.sld-morph-ghost { transform-box: fill-box; transform-origin: center; animation: sld-morph-ghost 440ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.sld-morph-in { transform-box: fill-box; transform-origin: center; animation: sld-morph-content 360ms cubic-bezier(0.2, 0.8, 0.2, 1) 140ms both; }
+.sld-line-in { animation: sld-line-in 260ms ease-out 180ms both; }
 @media (prefers-reduced-motion: reduce) {
   [data-sld-anim] { animation: none !important; }
   .sld-child { transition: none; }
   .sld-flow-dot { animation: none; }
+  .sld-morph-ghost { display: none; }
 }
 `;
 

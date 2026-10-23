@@ -160,8 +160,27 @@ pass a `label`; supply `prefixes` to rename the counters. Feeders are
 what leaves the diagram, and a column can carry several feeders (e.g. one off the
 top position toward the top bar and one off the bottom). Give a feeder an `id`
 for a stable, shareable connection id — e.g. a tie-line a composite auto-links by
-matching the same id across two diagrams. Anything the spec can't express stays
-reachable through the explicit element/command API.
+matching the same id across two diagrams. Busbars and positions also accept an
+optional `id` (to address them later, e.g. switch state) and an opaque `data`
+value (e.g. a bus number). A position between two bars wires to both, which is
+how you express a double bus with a coupler. Anything the spec can't express
+stays reachable through the explicit element/command API.
+
+Start without ids or data (ids are generated) and add them as you enrich the
+model. Explicit ids must be unique, and core catches clashes where they happen:
+
+- `buildDocument` checks the whole spec first. It throws one `DuplicateIdError`
+  listing every clash and where it is (e.g.
+  `duplicate id "p" (position col 0 row 1, feeder "F3")`) before building
+  anything.
+- At runtime, `SldDocument.addElement` and `CompositeDocument.addChild` /
+  `addLine` reject an id that is already taken. The document is left
+  unchanged, and a failed command never enters undo history.
+
+`DuplicateIdError` extends `SldParseError` and carries the clashing `ids`, so a
+Node script or an editor can catch it and point at the offending element.
+`data` passed to `buildDocument` is deep-copied, so elements never share an
+object.
 
 ## Theming
 
@@ -193,8 +212,10 @@ seam**: `resolveElementFormat(el) => ElementFormat`. The core never reads `data`
 or knows any domain concept — **the consumer** supplies a function that inspects
 whatever it wants (a `data` field, a CIM class, a commissioning date) and returns
 a generic `ElementFormat`, layered on top of the per-type color. `ElementFormat`
-fields — `strokeWidth`, `dashArray`, `fillOpacity`, `fill` — are all office-safe
-presentation attributes, so exports still paste into PowerPoint.
+fields — `strokeWidth`, `dashArray`, `fillOpacity`, `fill`, and `stroke` (the
+colour of a connection or composite line, e.g. grey for a de-energised one) —
+are all office-safe presentation attributes, so exports still paste into
+PowerPoint.
 
 ```ts
 // Consumer policy: dash + ghost anything the app considers "future".
@@ -212,6 +233,34 @@ first backing connection the resolver formats — so tagging **either** diagram 
 enough, still with zero domain knowledge in the core. A worked commissioning
 example (a `data.sld.commissioning` reader mapped to formats) lives in the Svelte
 example app, not in the library.
+
+### Switching state (`Position.state`)
+
+A position (bay) has an optional first-class `state: 'open' | 'closed'`. When
+it's absent, the bay is closed. Switching state is part of the electrical model
+(CIM `Switch.open`), so it lives on the element, not in `data` (see
+[ADR 0002](../../docs/adr/0002-switch-state.md)).
+
+- **Reading it:** use `effectiveState(pos)`. Today it returns `pos.state ?? 'closed'`.
+  Once sub-element breakers carry state, it will derive the bay's state from
+  them, and callers won't notice.
+- **Setting it:** pass it to `Position.of({ state })` or `buildDocument`'s
+  position spec, and toggle it undoably with `UpdateElementCommand`
+  (`{ ...before, state: 'open' }`).
+- **Default look:** open bays render faded and dashed, from the theme's
+  `switchOpenFormat` (default `SWITCH_OPEN_FORMAT`). Every connection *directly*
+  touching an open bay renders grey and dashed: its stems to the bars, its
+  feeder, and any composite link or line anchored to it. That comes from
+  `switchOpenConnectionFormat` (default `SWITCH_OPEN_CONNECTION_FORMAT`).
+  - Both adapters and the exporters apply these looks. Your
+    `resolveElementFormat` / `formatResolver` still wins when it returns a
+    format.
+  - `resolveFormat(el, resolver, { doc })` is the shared rule. A connection
+    needs its `doc` to know its endpoints' state.
+  - `linkFormat` and `lineFormat` resolve composite links and lines.
+  - Deeper de-energisation (lines cut off further away) is topology, left to
+    your resolver.
+  - Diagrams without `state` render exactly as before.
 
 ## Open position types
 
@@ -266,6 +315,23 @@ database. `data` travels inside the diagram JSON and is not queryable. For
 DB-backed metadata, keep your own table keyed by the element's stable
 `ElementId` and join at render time (the "sidecar" pattern). Use `data` for
 attributes that must travel _with_ the exported file.
+
+**Showing `data` on bus bars.** A bar's label defaults to its own `label`
+(`BB1`). To show something else, such as a bus number kept in `data`, pass a
+`busBarLabel` resolver to the `LayoutEngine`. The layout resolves the text, so
+the live view and the SVG export always agree. Where the label sits uses the
+same `LabelAnchor` slot names as a composite child's name label, relative to
+the bar. `top-left` (the default) puts it above the bar's left end. Long labels
+can run into the first bay's stem there, so you can opt into `center-left`
+instead, which places it beside the bar's start and widens the left margin to
+fit:
+
+```ts
+const engine = new LayoutEngine(
+  { ...SLD_LAYOUT, busBarLabelAnchor: 'center-left' }, // default 'top-left'
+  { busBarLabel: (bar) => getElementData<{ busId?: number }>(bar)?.busId?.toString() } // null/undefined keeps bar.label
+);
+```
 
 ### Reserved `data` namespaces (`sld`, `cim`)
 

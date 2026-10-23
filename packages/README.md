@@ -74,7 +74,7 @@ Status legend: ✅ complete · 🚧 in progress · ⬜ pending
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------: | :---: |
 | `SldCanvas`      | The `<svg>` host of a single diagram. Owns the pan/zoom viewBox and renders every element view in z-order (connections → bars → positions).<br>Emits selection, drag and raw canvas-point events; takes overlay slots above and below the elements. |    ✅    |  ✅   |
 | `PositionView`   | Draws one `Position` as a rounded, type-colored box with a centred label and an optional dashed selection halo.<br>Emits `select` / `dragstart` on pointerdown and `editlabel` on double-click; dims while being dragged.                           |    ✅    |  ✅   |
-| `BusBarView`     | Draws one `BusBar` as a thick filled bar spanning its row, with a bold label at the left overhang.<br>Colors via `currentColor` so a `colorClass` (e.g. a voltage bucket) can retint it; no drag.                                                   |    ✅    |  ✅   |
+| `BusBarView`     | Draws one `BusBar` as a thick filled bar spanning its row, with a bold label at `busBarLabelAnchor` (`top-left`, the default, or `center-left` beside the bar).<br>Draws the layout-resolved `geo.label`, so a core `busBarLabel` resolver can override the text. Colors via `currentColor` so a `colorClass` (e.g. a voltage bucket) can retint it; no drag.                                                   |    ✅    |  ✅   |
 | `ConnectionView` | Draws one `Connection`: the orthogonal path with hop arcs, plus optional arrowhead, junction dot, asset glyph and label.<br>Carries an invisible fat hit stroke so thin lines stay easy to click.                                                   |    ✅    |  ✅   |
 | `GhostPreview`   | Translucent snapped preview of the position being placed or dragged, centred in the target slot.<br>Green outline when the drop is valid, dashed red when rejected.                                                                                 |    ✅    |  ✅   |
 | `GridOverlay`    | Edit-mode layer outlining every free slot with a dashed rounded rect.<br>Tints the drop target green/red and the cells a reflow would displace amber; draws the bus-bar insertion boundary line.                                                    |    ✅    |  ✅   |
@@ -128,6 +128,13 @@ Try it: [live demo](https://adrisanchu.github.io/sld-kit/box/) (React, from
 | Floating-connector router (`layout.snapTips`)    | core `CompositeLayoutEngine`; `snapTargets` prop            |    ⬜    |  ✅   |
 | Port-direction override (`onPortDirection`)      | `CompositeCanvas` feeder handle → `SetPortDirectionCommand` |    ⬜    |  ✅   |
 | Auto-facing policy (`meta.autoFacing`)           | core-derived; `SetAutoFacingCommand` (no adapter surface)   |    ⬜    |  ✅   |
+| Uniform box size (`boxSize`, default `BOX_SIZE`) | core `CompositeLayoutEngine` option (no adapter surface)    |    ⬜    |  ✅   |
+| Line labels (`CompositeLine.data` + `lineLabels`) | core layout places `ln.label`; `CompositeCanvas` draws it   |    ⬜    |  ✅   |
+| Section boxes (`boxSections` → `child.boxes`/`ties`) | core layout; `ChildDiagramView` box branch, `boxSubLabel(child, section)` |    ⬜    |  ✅   |
+| Expand in place (`layout(doc, { expanded })`) + box ↔ detail morph | `ChildDiagramView` (`animateMorph`), `CompositeCanvas` (expanded drawn last, re-routed lines fade in) |    ⬜    |  ✅   |
+| Open-bay default look (`Position.state` → `resolveFormat`) | `PositionView`                                           |    ✅    |  ✅   |
+| Open-bay connections grey + dashed (`switchOpenConnectionFormat`) | `ConnectionView` (`doc` prop), `CompositeCanvas` via `linkFormat`/`lineFormat` |    ✅    |  ✅   |
+| `ElementFormat.stroke` (line colour)              | `ConnectionView`, `CompositeCanvas` links + lines           |    ✅    |  ✅   |
 
 ### Flow overlays (generic, domain-agnostic)
 

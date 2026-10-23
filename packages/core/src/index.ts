@@ -6,22 +6,28 @@
 
 export * from './types';
 export { newId } from './ids';
-export { SLD_LAYOUT, type SldLayoutConfig } from './layout';
+export { SLD_LAYOUT, type SldLayoutConfig, type BusBarLabelAnchor } from './layout';
 export {
   DEFAULT_THEME,
   positionColors,
   elementFormat,
+  resolveFormat,
+  touchesOpenPosition,
+  SWITCH_OPEN_FORMAT,
+  SWITCH_OPEN_CONNECTION_FORMAT,
   firstFormat,
   resolveTheme,
   type SldTheme,
   type PositionTypeColors,
-  type ElementFormat
+  type ElementFormat,
+  type ElementFormatResolver,
+  type FormatContext
 } from './theme';
 export { getElementData } from './data';
 
 export { SldElement } from './elements/Element';
 export { BusBar, type BusBarOptions } from './elements/BusBar';
-export { Position, type PositionOptions } from './elements/Position';
+export { Position, effectiveState, type PositionOptions } from './elements/Position';
 export { Connection, type ConnectionOptions } from './elements/Connection';
 export { element, external } from './elements/endpoints';
 export { elementFromJson } from './elements/factory';
@@ -34,6 +40,7 @@ export {
   type BuildDocumentSpec,
   type BaySpec,
   type BayPositionSpec,
+  type BusBarSpec,
   type FeederSpec
 } from './buildDocument';
 export { nextPositionLabel, nextExternalLabel, POSITION_LABEL_PREFIX, EXTERNAL_LABEL_PREFIX } from './naming';
@@ -46,6 +53,8 @@ export {
   type DiagramLayout,
   type ElementGeometry,
   type BusBarGeometry,
+  type BusBarLabelResolver,
+  type LayoutEngineOptions,
   type PositionGeometry,
   type ConnectionGeometry
 } from './layout/LayoutEngine';
@@ -65,7 +74,7 @@ export {
   type LaneKind
 } from './commands/commands';
 
-export { Serializer, SldParseError, SLD_SCHEMA_VERSION } from './serialization/Serializer';
+export { Serializer, SldParseError, DuplicateIdError, SLD_SCHEMA_VERSION } from './serialization/Serializer';
 
 export { SymbolRegistry, type SymbolDef, type SymbolShape } from './symbols/SymbolRegistry';
 export { registerDefaultSymbols, createDefaultSymbolRegistry } from './symbols/defaults';
@@ -107,6 +116,9 @@ export { segmentAngleDeg, simplify, arcMidpoint } from './composite/polyline';
 export {
   STUB_LENGTH,
   ALIGN_TOLERANCE,
+  BOX_SIZE,
+  LINE_LABEL_FONT_SIZE,
+  LINE_LABEL_LINE_HEIGHT,
   DEMAND_LEAD_LENGTH,
   CABLE_DASH_ARRAY,
   TRANSFORMER_SYMBOL,
@@ -119,14 +131,21 @@ export {
   labelFlipDeg,
   linkConnections,
   lineConnections,
+  linkFormat,
+  lineFormat,
   resolveNameLabelLayout,
   PLACEHOLDER_FRAME,
   NAME_LABEL_PAD,
   NAME_LABEL_FONT_SIZE,
   type ChildLayout,
+  type CompositeLayoutOptions,
+  type CompositeLayoutRequest,
   type NameLabelLayout,
   type CompositeLink,
   type CompositeLineLayout,
+  type LineLabelLayout,
+  type LineLabelResolver,
+  placeLineLabel,
   type LineGlyph,
   type ExternalConnectionTip,
   type CompositeLayout
@@ -138,6 +157,15 @@ export {
 } from './composite/CompositeSerializer';
 export { CompositeSvgExporter, type CompositeSvgExportOptions } from './composite/CompositeSvgExporter';
 export {
+  BOX_SECTION_GAP,
+  layoutSectionBoxes,
+  type BoxSection,
+  type BoxSectionSplit,
+  type BoxSectionsResolver,
+  type SectionBox,
+  type SectionTie
+} from './composite/sections';
+export {
   AddChildCommand,
   RemoveChildCommand,
   TransformChildCommand,
@@ -146,7 +174,9 @@ export {
   RemoveLineCommand,
   UpdateLineCommand,
   UpdateLineKindCommand,
+  SetLineDataCommand,
   SetBoxModeCommand,
   SetPortDirectionCommand,
+  ChildDocumentCommand,
   SetAutoFacingCommand
 } from './composite/commands';
