@@ -160,6 +160,14 @@ const opMerged = opBoxes();
 opStack.undo(operated);
 const opUndone = opBoxes();
 
+// Operate in box view: CHARLIE expanded in place (detail drawing, centred on its
+// box) while every other substation stays a box.
+const expandedLayout = splitEngine.layout(fixture, { expanded: ['lib-charlie'] });
+const expandedHtml = renderToStaticMarkup(
+  h(CompositeCanvas, { layout: expandedLayout, boxMode: true, boxSubLabel, explore: true, focusedId: 'lib-charlie' })
+);
+const expChild = expandedLayout.children.find((c) => c.instance.id === 'lib-charlie');
+
 const checks = [
   ['renders an <svg>', /<svg/.test(html)],
   ['renders box names', html.includes('ALPHA') && html.includes('BETA') && html.includes('GAMMA')],
@@ -195,6 +203,14 @@ const checks = [
   [
     'operate: closing the coupler via a composite command merges CHARLIE; undo splits it again',
     opSplit === 2 && opMerged === 1 && opUndone === 2 && opNotified === 2
+  ],
+  [
+    'operate (box view): the opened substation expands in place, the rest stay boxes',
+    expChild.expanded === true &&
+      expChild.frame.width > 200 &&
+      expandedHtml.includes('>BC<') && // CHARLIE's coupler position is drawn
+      expandedHtml.includes('>DELTA<') && // neighbours still render as boxes
+      !expandedHtml.includes('sld-morph-ghost') // no animation on first render / SSR
   ],
   ['auto-facing derives the exit side from live positions', facingRight === 'right' && facingLeft === 'left']
 ];

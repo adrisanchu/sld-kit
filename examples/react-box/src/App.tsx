@@ -39,7 +39,7 @@ import {
   useSldDocument,
   type CompositeCanvasHandle
 } from '@sld-kit/react';
-import { ArrowLeft, Boxes, Layers, Magnet, Maximize, PenLine, MousePointer2, Redo2, Trash2, Undo2 } from 'lucide-react';
+import { ArrowLeft, Boxes, Layers, Magnet, Maximize, Move, PenLine, Pointer, Redo2, Trash2, Undo2 } from 'lucide-react';
 import { buildBoxComposite, ratingLabels, voltageClass, voltageFill } from './fixture';
 import { barBusIdLabel, boxSplit, openFeeders, sectionLabel } from './topology';
 
@@ -61,7 +61,13 @@ function busLabel(child: ChildLayout, section?: BoxSection): string | null {
 }
 
 
-type Tool = 'select' | 'draw';
+/**
+ * - `operate`: interact with the network — click a substation to open it (box
+ *   view: expands in place; detail view: flies in), then click its switches.
+ * - `move`: arrange — drag substations, select/delete lines, pin feeder sides.
+ * - `draw`: add lines.
+ */
+type Tool = 'operate' | 'move' | 'draw';
 type Draft = { point: { x: number; y: number }; snap: { instanceId: string; connectionId: string } | null };
 
 export default function App() {
@@ -92,19 +98,25 @@ export default function App() {
       ),
     []
   );
+  const [tool, setTool] = useState<Tool>('move');
+  // Operate: the substation the user opened (box view: expanded in place;
+  // detail view: flown into). Its positions are live — a click toggles them.
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const operating = tool === 'operate';
+  // In box view an opened substation is expanded in place by the core layout
+  // (its detail drawing, centred on its box); everything else stays a box.
+  const expanded = operating && composite.meta.boxMode && focusedId ? [focusedId] : [];
+  const expandedKey = expanded.join();
+
   // `version` is the load-bearing dep: `composite` mutates in place.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const layout = useMemo(() => engine.layout(composite), [engine, composite, version]);
+  const layout = useMemo(() => engine.layout(composite, { expanded }), [engine, composite, version, expandedKey]);
 
   const canvasRef = useRef<CompositeCanvasHandle>(null);
 
-  const [tool, setTool] = useState<Tool>('select');
   const [lineKind, setLineKind] = useState<CompositeLineKind>('line');
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
-  // Detail view = operate mode (the adapter's explore mode): the substation the
-  // user flew into; its positions are live (click toggles open/closed).
-  const [focusedId, setFocusedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft[]>([]);
   const [dark, setDark] = useState(false);
 
@@ -155,14 +167,15 @@ export default function App() {
     [layout]
   );
 
-  const chooseTool = (t: Tool) => {
+  const chooseTool = useCallback((t: Tool) => {
     setTool(t);
     setDraft([]);
-    if (t === 'draw') {
+    if (t !== 'operate') setFocusedId(null); // leaving operate closes the open substation
+    if (t !== 'move') {
       setSelectedLineId(null);
-      setFocusedId(null); // drawing leaves operate mode
+      setSelectedChildId(null);
     }
-  };
+  }, []);
 
   const onCanvasPoint = useCallback(
     ({ point, snap }: Draft) => {
@@ -195,7 +208,7 @@ export default function App() {
 
   const handleChildDown = useCallback(
     ({ id, event }: { id: string; event: React.PointerEvent }) => {
-      if (tool !== 'select') return;
+      if (tool !== 'move') return;
       setSelectedChildId(id);
       setSelectedLineId(null);
       const child = composite.getChild(id);
@@ -248,22 +261,23 @@ export default function App() {
     setSelectedChildId(null);
   };
 
-  // ── Operate (detail view): fly into a substation, click its switches ────────
-  // Box view is a read-only projection of switch state; only the detail view
-  // operates. Reuses the adapter's explore mode — no new adapter API.
-  const operating = !boxMode && tool === 'select';
-  const focusChild = ({ id }: { id: string }) => {
-    const child = layout.children.find((c) => c.instance.id === id);
-    if (!child) return;
-    setFocusedId(id);
-    canvasRef.current?.flyTo(child.worldBounds, { durationMs: 450 });
-  };
-  const blur = useCallback(() => {
-    setFocusedId((prev) => {
-      if (prev !== null) canvasRef.current?.flyToFit({ durationMs: 450 });
-      return null;
-    });
-  }, []);
+  // ── Operate: open a substation, click its switches ─────────────────────────
+  // Reuses the adapter's explore mode (no new adapter API). The camera follows
+  // the focus *after* the re-layout, so in box view it flies onto the expanded
+  // drawing's real frame while the adapter morphs the box into it.
+  const focusChild = ({ id }: { id: string }) => setFocusedId(id);
+  const blur = useCallback(() => setFocusedId(null), []);
+  const flownRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (focusedId === flownRef.current) return;
+    flownRef.current = focusedId;
+    if (focusedId) {
+      const child = layout.children.find((c) => c.instance.id === focusedId);
+      if (child) canvasRef.current?.flyTo(child.worldBounds, { durationMs: 450 });
+    } else {
+      canvasRef.current?.flyToFit({ durationMs: 450 });
+    }
+  }, [focusedId, layout]);
   // Toggle a position's first-class `state` as ONE step of the composite
   // history (undo/redo work across the box↔detail toggle); the composite
   // re-layouts, so the box view re-splits / merges from the new state.
@@ -306,10 +320,15 @@ export default function App() {
         blur();
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedLineId) deleteSelected();
+      // Tool shortcuts (no modifiers): O operate, V move, L draw.
+      if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+        const next = ({ o: 'operate', v: 'move', l: 'draw' } as const)[e.key.toLowerCase() as 'o' | 'v' | 'l'];
+        if (next) chooseTool(next);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedLineId, deleteSelected, blur]);
+  }, [selectedLineId, deleteSelected, blur, chooseTool]);
 
   const exportSvg = () => {
     // Export through the same engine the canvas uses, so the SVG carries the
@@ -377,6 +396,7 @@ export default function App() {
           onCanvasPoint={onCanvasPoint}
           onDrawCommit={commitDraw}
           onLineDown={({ id }) => {
+            if (tool !== 'move') return;
             setSelectedLineId(id);
             setSelectedChildId(null);
           }}
@@ -394,10 +414,13 @@ export default function App() {
         {/* Minimal floating chrome — the app owns all orchestration; the canvas
             just emits semantic callbacks (see the adapter contract). */}
         <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 flex-wrap items-center gap-1 rounded-full border border-border bg-background/85 px-2 py-1 shadow-lg backdrop-blur-sm">
-          <ToolButton title="Select" active={tool === 'select'} onClick={() => chooseTool('select')}>
-            <MousePointer2 className="h-4 w-4" />
+          <ToolButton title="Operate (O) — open a substation, toggle its switches" active={tool === 'operate'} onClick={() => chooseTool('operate')}>
+            <Pointer className="h-4 w-4" />
           </ToolButton>
-          <ToolButton title="Draw line" active={tool === 'draw'} onClick={() => chooseTool('draw')}>
+          <ToolButton title="Move (V) — drag substations, edit lines" active={tool === 'move'} onClick={() => chooseTool('move')}>
+            <Move className="h-4 w-4" />
+          </ToolButton>
+          <ToolButton title="Draw line (L)" active={tool === 'draw'} onClick={() => chooseTool('draw')}>
             <PenLine className="h-4 w-4" />
           </ToolButton>
 
@@ -458,6 +481,13 @@ export default function App() {
         {tool === 'draw' && (
           <p className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs text-primary-foreground shadow">
             Click to add points (snap to a box terminal); double-click to finish · Esc to cancel
+          </p>
+        )}
+        {tool === 'operate' && (
+          <p className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs text-primary-foreground shadow">
+            {focusedId
+              ? 'Click a switch to open / close it · click outside or Esc to close'
+              : 'Click a substation to open it'}
           </p>
         )}
       </main>

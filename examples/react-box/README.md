@@ -55,10 +55,17 @@ pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
   with its bus id instead of `BB1`/`BB2`. The child `LayoutEngine` gets a
   `busBarLabel` resolver and `busBarLabelAnchor: 'center-left'`, so the id sits
   beside the bar and never runs into a stem.
-- **Operate in the detail view** — with the Select tool, the detail view
-  reuses the adapter's explore mode (`explore`, `focusedId`, `onChildFocus`,
-  `onElementActivate`). Click a substation to fly into it, then click a
-  position to open or close it. Escape or a background click flies out.
+- **Three tools** in the toolbar: **Operate** (`O`), **Move** (`V`, the
+  default) and **Draw** (`L`).
+  - **Operate** reuses the adapter's explore mode (`explore`, `focusedId`,
+    `onChildFocus`, `onElementActivate`). In box view, clicking a substation
+    *expands it in place* (core `layout(doc, { expanded })`): the box morphs
+    into its drawing while the camera flies in. In detail view it just flies
+    in. Then click a position to open or close it. A click outside or Escape
+    collapses back.
+  - **Move** drags substations (in both views), selects and deletes lines,
+    and pins feeder sides.
+  - **Draw** adds lines.
   - Each toggle is a core `ChildDocumentCommand` wrapping an
     `UpdateElementCommand` on `Position.state`, so it's one step in the same
     undo/redo history as box moves and line edits.
