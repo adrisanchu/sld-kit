@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AddChildCommand,
+  RemoveChildCommand,
   CommandStack,
+  CompositeDocument,
   CompositeLayoutEngine,
+  DiagramInstance,
   CompositeSerializer,
   CompositeSvgExporter,
   LayoutEngine,
+  BatchCommand,
   RemoveLineCommand,
+  Serializer,
+  SnapshotCommand,
   ChildDocumentCommand,
   Position,
   UpdateElementCommand,
@@ -14,7 +21,9 @@ import {
   SLD_LAYOUT,
   SetAutoFacingCommand,
   SetBoxModeCommand,
+  SetLineDataCommand,
   SetPortDirectionCommand,
+  UpdateLineKindCommand,
   TransformChildCommand,
   newId,
   type BoxSection,
@@ -22,13 +31,14 @@ import {
   type Command,
   type ElementFormat,
   type SldElement,
-  type CompositeDocument,
+  type SldDocument,
   type CompositeLineKind,
   type CompositeLineLayout,
   type ExternalDirection,
   type Point
 } from '@sld-kit/core';
 import {
+  ChildDiagramView,
   CompositeCanvas,
   downloadText,
   slugify,
@@ -36,10 +46,13 @@ import {
   useSldDocument,
   type CompositeCanvasHandle
 } from '@sld-kit/react';
-import { ArrowLeft, Boxes, Layers, Magnet, Maximize, Move, PenLine, Pointer, Redo2, Trash2, Undo2 } from 'lucide-react';
+import { ArrowLeft, Boxes, Layers, Magnet, Maximize, Move, PenLine, Plus, Pointer, Redo2, SquarePen, Trash2, Undo2 } from 'lucide-react';
 import { buildBoxComposite, ratingLabels, voltageClass, voltageFill } from './fixture';
 import { barBusIdLabel, boxSplit, openFeeders, sectionLabel } from './topology';
 import { BayPicker } from './editor/BayPicker';
+import { LinePopover } from './editor/LinePopover';
+import type { LineRatingData } from './fixture';
+import { SubstationDialog, type SubstationEditTarget } from './editor/SubstationDialog';
 import {
   barFor,
   boxAt,
@@ -79,6 +92,10 @@ function busLabel(child: ChildLayout, section?: BoxSection): string | null {
 type Tool = 'operate' | 'move' | 'draw';
 /** The bay picker opened by a drawn end landing on a box body. */
 type Picker = { x: number; y: number; point: Point; instanceId: string; sectionKey: string | null };
+
+/** Placement grid for a new substation (composite units). */
+const PLACE_SNAP = 20;
+const snap = (v: number) => Math.round(v / PLACE_SNAP) * PLACE_SNAP;
 
 export default function App() {
   const [composite] = useState(buildBoxComposite);
@@ -139,6 +156,23 @@ export default function App() {
   // Last pointer position over the canvas (container px), to anchor popovers.
   const lastPointer = useRef({ x: 0, y: 0 });
   const mainRef = useRef<HTMLElement>(null);
+  const canvasWrapRef = useRef<HTMLDivElement>(null);
+
+  // The substation editor (create mode here; edit mode arrives with phase 3),
+  // then placement: the finished substation follows the pointer as a ghost
+  // until a click drops it. Nothing touches the composite until that click.
+  const [editor, setEditor] = useState<SubstationEditTarget | null>(null);
+  const [placing, setPlacing] = useState<SldDocument | null>(null);
+  const [ghostAt, setGhostAt] = useState<Point | null>(null);
+  const [lastKv, setLastKv] = useState(220);
+  // Where the selected line's editor popover sits (container px); null = closed.
+  const [lineEditAt, setLineEditAt] = useState<{ x: number; y: number } | null>(null);
+  const lastChildDown = useRef<{ id: string; t: number } | null>(null);
+  // `openEdit` is declared further down; the drag handler reaches it through a ref.
+  const openEditRef = useRef<(id: string) => void>(() => {});
+  // The click trailing a placing pointer-down must not reach the canvas (Draw
+  // would read it as a line point).
+  const swallowClick = useRef(false);
   const [dark, setDark] = useState(false);
 
   // Box drag: transient setChildTransform during the gesture, one undoable
@@ -192,6 +226,8 @@ export default function App() {
     setTool(t);
     setDraft([]);
     setPicker(null);
+    setPlacing(null);
+    setGhostAt(null);
     if (t !== 'operate') setFocusedId(null); // leaving operate closes the open substation
     if (t !== 'move') {
       setSelectedLineId(null);
@@ -272,17 +308,47 @@ export default function App() {
     addVertex({ kind: 'newBay', point: picker.point, instanceId: picker.instanceId, barId: pickerBar });
   };
 
+  /**
+   * Delete the selected line, or the selected substation together with every
+   * line anchored to it — ONE undoable step either way (undo restores the box,
+   * its resolved diagram and its lines).
+   */
   const deleteSelected = useCallback(() => {
-    if (!selectedLineId) return;
-    run(new RemoveLineCommand(selectedLineId));
-    setSelectedLineId(null);
-  }, [selectedLineId, run]);
+    if (selectedLineId) {
+      run(new RemoveLineCommand(selectedLineId));
+      setSelectedLineId(null);
+      return;
+    }
+    if (!selectedChildId) return;
+    const id = selectedChildId;
+    run(
+      new BatchCommand('Delete substation', [
+        ...composite.linesAt(id).map((l) => new RemoveLineCommand(l.id)),
+        new RemoveChildCommand(id)
+      ])
+    );
+    setSelectedChildId(null);
+    if (focusedId === id) setFocusedId(null);
+    // A draft anchored to the deleted box can't finish.
+    setDraft((d) => (d.some((v) => v.kind !== 'point' && v.instanceId === id) ? [] : d));
+  }, [selectedLineId, selectedChildId, focusedId, composite, run]);
 
   const handleChildDown = useCallback(
     ({ id, event }: { id: string; event: React.PointerEvent }) => {
       if (tool !== 'move') return;
       setSelectedChildId(id);
       setSelectedLineId(null);
+      // A second press on the same box within the double-click window opens
+      // its editor instead of starting another drag (the canvas emits presses
+      // only, so the app times them).
+      const last = lastChildDown.current;
+      lastChildDown.current = { id, t: event.timeStamp };
+      if (last && last.id === id && event.timeStamp - last.t < 350) {
+        lastChildDown.current = null;
+        dragRef.current = null;
+        openEditRef.current(id);
+        return;
+      }
       const child = composite.getChild(id);
       const handle = canvasRef.current;
       if (!child || !handle) return;
@@ -331,6 +397,20 @@ export default function App() {
   const clearSelection = () => {
     setSelectedLineId(null);
     setSelectedChildId(null);
+    setLineEditAt(null);
+  };
+
+  const editedLine = selectedLineId ? composite.getLine(selectedLineId) : undefined;
+
+  /** Kind + ratings of the selected line as ONE undoable step (no-op when unchanged). */
+  const applyLineEdit = (kind: CompositeLineKind, data: LineRatingData | undefined) => {
+    const line = selectedLineId ? composite.getLine(selectedLineId) : undefined;
+    if (!line) return;
+    const steps: Command<CompositeDocument>[] = [];
+    if (kind !== line.kind) steps.push(new UpdateLineKindCommand(line.id, line.kind, kind));
+    if (JSON.stringify(data) !== JSON.stringify(line.data)) steps.push(new SetLineDataCommand(line.id, line.data, data));
+    if (steps.length) run(new BatchCommand('Edit line', steps));
+    setLineEditAt(null);
   };
 
   // ── Operate: open a substation, click its switches ─────────────────────────
@@ -384,17 +464,110 @@ export default function App() {
     document.documentElement.classList.toggle('dark', next);
   };
 
+  // ── New substation: design it, then place it ───────────────────────────────
+  const openCreate = () => {
+    setDraft([]);
+    setPicker(null);
+    setEditor({ mode: 'create', voltageKv: lastKv });
+  };
+  /** Open an existing substation's detailed SLD in the editor dialog. */
+  const openEdit = (instanceId: string) => {
+    const doc = composite.getChild(instanceId)?.resolved;
+    if (!doc) return;
+    setPicker(null);
+    setEditor({ mode: 'edit', instanceId, doc });
+  };
+  openEditRef.current = openEdit;
+
+  const onEditorSave = (doc: SldDocument, droppedFeeders: string[]) => {
+    if (editor?.mode === 'create') {
+      if (doc.meta.voltageKv != null) setLastKv(doc.meta.voltageKv);
+      setPlacing(doc);
+      setGhostAt(null);
+      if (tool === 'operate') chooseTool('move');
+    } else if (editor?.mode === 'edit') {
+      // ONE composite step: drop the lines whose feeder was removed, then swap
+      // the child's contents for the edited copy. Undo restores both. Note:
+      // instances sharing a library id share this document (see #18).
+      const { instanceId } = editor;
+      const child = composite.getChild(instanceId)?.resolved;
+      if (child) {
+        const lineIds = new Set(droppedFeeders.flatMap((id) => composite.linesAt(instanceId, id).map((l) => l.id)));
+        run(
+          new BatchCommand('Edit substation', [
+            ...[...lineIds].map((id) => new RemoveLineCommand(id)),
+            new ChildDocumentCommand(
+              instanceId,
+              new SnapshotCommand('Edit substation', Serializer.toJSON(child), Serializer.toJSON(doc))
+            )
+          ])
+        );
+        if (selectedLineId && lineIds.has(selectedLineId)) setSelectedLineId(null);
+        // A draft anchored to a dropped feeder can't finish: start over.
+        if (draft.some((v) => v.kind === 'anchor' && v.instanceId === instanceId && droppedFeeders.includes(v.connectionId))) {
+          setDraft([]);
+        }
+      }
+    }
+    setEditor(null);
+  };
+
+  /**
+   * Lay the substation being placed out alone, with the canvas's own engine
+   * and display flags, so the ghost is exactly what the click will drop.
+   */
+  const layoutGhost = useCallback(
+    (doc: SldDocument, x: number, y: number): ChildLayout | null => {
+      const tmp = new CompositeDocument({ boxMode, defaultRouting: composite.meta.defaultRouting, autoFacing });
+      const inst = new DiagramInstance('ghost', 'ghost', x, y, 0);
+      inst.resolved = doc;
+      inst.resolveAttempted = true;
+      tmp.addChild(inst);
+      return engine.layout(tmp).children[0] ?? null;
+    },
+    [engine, boxMode, autoFacing, composite]
+  );
+  // The child-local centre, so the pointer holds the ghost by its middle.
+  const ghostCentre = useMemo(() => {
+    const c = placing ? layoutGhost(placing, 0, 0) : null;
+    return c ? { x: c.worldBounds.x + c.worldBounds.width / 2, y: c.worldBounds.y + c.worldBounds.height / 2 } : null;
+  }, [placing, layoutGhost]);
+  const ghostPos = placing && ghostAt && ghostCentre ? { x: snap(ghostAt.x - ghostCentre.x), y: snap(ghostAt.y - ghostCentre.y) } : null;
+  const ghost = useMemo(
+    () => (placing && ghostPos ? layoutGhost(placing, ghostPos.x, ghostPos.y) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [placing, ghostPos?.x, ghostPos?.y, layoutGhost]
+  );
+
+  /** Drop the ghost: ONE undoable step adds the substation where it stands. */
+  const place = () => {
+    if (!placing || !ghostPos) return;
+    // A fresh library id: this substation exists only in this composition.
+    const inst = new DiagramInstance(newId(), newId(), ghostPos.x, ghostPos.y, 0);
+    inst.resolved = placing;
+    inst.resolveAttempted = true;
+    run(new AddChildCommand(inst));
+    setPlacing(null);
+    setGhostAt(null);
+    if (tool === 'move') setSelectedChildId(inst.id);
+  };
+  const isOnCanvas = (target: EventTarget) => target instanceof Node && !!canvasWrapRef.current?.contains(target);
+
   // Escape cancels a draft; Delete removes the selected line.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+      if (editor) return; // the dialog owns the keyboard while open
       if (e.key === 'Escape') {
         setDraft([]);
         setPicker(null);
+        setLineEditAt(null);
+        setPlacing(null);
+        setGhostAt(null);
         blur();
       }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedLineId) deleteSelected();
+      if ((e.key === 'Delete' || e.key === 'Backspace') && (selectedLineId || selectedChildId)) deleteSelected();
       // Tool shortcuts (no modifiers): O operate, V move, L draw.
       if (!e.metaKey && !e.ctrlKey && !e.altKey) {
         const next = ({ o: 'operate', v: 'move', l: 'draw' } as const)[e.key.toLowerCase() as 'o' | 'v' | 'l'];
@@ -403,7 +576,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedLineId, deleteSelected, blur, chooseTool]);
+  }, [selectedLineId, selectedChildId, deleteSelected, blur, chooseTool, editor]);
 
   const exportSvg = () => {
     // Export through the same engine the canvas uses, so the SVG carries the
@@ -457,8 +630,25 @@ export default function App() {
         onPointerDownCapture={(e) => {
           const r = mainRef.current?.getBoundingClientRect();
           if (r) lastPointer.current = { x: e.clientX - r.left, y: e.clientY - r.top };
+          // Placing: a primary click on the canvas drops the ghost — and goes no
+          // further, so it neither grabs a box nor starts a pan.
+          if (placing && e.button === 0 && isOnCanvas(e.target)) {
+            e.stopPropagation();
+            e.preventDefault();
+            swallowClick.current = true;
+            place();
+          }
+        }}
+        onClickCapture={(e) => {
+          if (!swallowClick.current) return;
+          swallowClick.current = false;
+          e.stopPropagation();
+        }}
+        onPointerMoveCapture={(e) => {
+          if (placing && isOnCanvas(e.target)) setGhostAt(canvasRef.current?.clientToSvg(e.clientX, e.clientY) ?? null);
         }}
       >
+        <div ref={canvasWrapRef} className="absolute inset-0">
         <CompositeCanvas
           ref={canvasRef}
           layout={layout}
@@ -481,6 +671,7 @@ export default function App() {
             if (tool !== 'move') return;
             setSelectedLineId(id);
             setSelectedChildId(null);
+            setLineEditAt({ ...lastPointer.current });
           }}
           onPortDirection={pinPortDirection}
           explore={operating}
@@ -491,7 +682,32 @@ export default function App() {
             clearSelection();
             blur();
           }}
-        />
+        >
+          {ghost && placing && (
+            <g opacity={0.6} pointerEvents="none">
+              <rect
+                x={ghost.worldBounds.x - 6}
+                y={ghost.worldBounds.y - 6}
+                width={ghost.worldBounds.width + 12}
+                height={ghost.worldBounds.height + 12}
+                rx={6}
+                fill="none"
+                className="stroke-primary"
+                strokeWidth={1.5}
+                strokeDasharray="6 4"
+              />
+              <ChildDiagramView
+                child={ghost}
+                interactive={false}
+                boxMode={boxMode}
+                boxSubLabel={busLabel}
+                colorClass={voltageClass(placing.meta.voltageKv)}
+                animateMorph={false}
+              />
+            </g>
+          )}
+        </CompositeCanvas>
+        </div>
 
         {/* Minimal floating chrome — the app owns all orchestration; the canvas
             just emits semantic callbacks (see the adapter contract). */}
@@ -506,8 +722,32 @@ export default function App() {
             <PenLine className="h-4 w-4" />
           </ToolButton>
 
+          {tool === 'move' && selectedChildId && (
+            <div className="mx-1 flex items-center rounded-md border border-border p-0.5 text-xs">
+              <button
+                type="button"
+                title="Edit substation (or double-click it)"
+                onClick={() => openEdit(selectedChildId)}
+                className="flex items-center gap-1 rounded px-2 py-0.5 text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <SquarePen className="h-3.5 w-3.5" /> Edit
+              </button>
+            </div>
+          )}
+
           {tool === 'draw' && (
-            <div className="mx-1 flex rounded-md border border-border p-0.5 text-xs">
+            <div className="mx-1 flex items-center rounded-md border border-border p-0.5 text-xs">
+              <button
+                type="button"
+                title="New substation"
+                onClick={openCreate}
+                className={`flex items-center gap-1 rounded px-2 py-0.5 transition-colors ${
+                  placing ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Plus className="h-3.5 w-3.5" /> Substation
+              </button>
+              <span className="mx-1 h-4 w-px bg-border" />
               {LINE_KINDS.map((k) => (
                 <button
                   key={k.kind}
@@ -536,7 +776,11 @@ export default function App() {
           >
             <Magnet className="h-4 w-4" />
           </ToolButton>
-          <ToolButton title="Delete line" disabled={!selectedLineId} onClick={deleteSelected}>
+          <ToolButton
+            title={selectedChildId && !selectedLineId ? 'Delete substation (and its lines)' : 'Delete line'}
+            disabled={!selectedLineId && !selectedChildId}
+            onClick={deleteSelected}
+          >
             <Trash2 className="h-4 w-4" />
           </ToolButton>
 
@@ -560,7 +804,12 @@ export default function App() {
           </button>
         </div>
 
-        {tool === 'draw' && (
+        {placing && (
+          <p className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs text-primary-foreground shadow">
+            Click to place {placing.meta.name} · Esc to cancel
+          </p>
+        )}
+        {tool === 'draw' && !placing && (
           <p
             className={`pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full px-3 py-1 text-xs shadow ${
               hint ? 'bg-amber-500 text-white' : 'bg-primary text-primary-foreground'
@@ -581,7 +830,27 @@ export default function App() {
             canAutoBay={!!pickerBar}
             onPick={pickTerminal}
             onNewBay={pickNewBay}
+            onDesign={() => openEdit(picker.instanceId)}
             onCancel={() => setPicker(null)}
+          />
+        )}
+        {tool === 'move' && lineEditAt && editedLine && (
+          <LinePopover
+            key={editedLine.id}
+            x={lineEditAt.x}
+            y={lineEditAt.y}
+            line={editedLine}
+            kinds={LINE_KINDS}
+            onApply={applyLineEdit}
+            onClose={() => setLineEditAt(null)}
+          />
+        )}
+        {editor && (
+          <SubstationDialog
+            target={editor}
+            composite={composite}
+            onSave={onEditorSave}
+            onCancel={() => setEditor(null)}
           />
         )}
         {tool === 'operate' && (

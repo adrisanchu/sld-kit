@@ -63,9 +63,11 @@ pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
     into its drawing while the camera flies in. In detail view it just flies
     in. Then click a position to open or close it. A click outside or Escape
     collapses back.
-  - **Move** drags substations (in both views), selects and deletes lines,
-    and pins feeder sides.
-  - **Draw** adds lines.
+  - **Move** drags substations (in both views), selects lines, and pins
+    feeder sides. With a box selected, **Edit** (or a double-click) opens it in
+    the substation editor; Delete removes it **with every line anchored to it**.
+    A selected line opens a popover to change its kind and ratings.
+  - **Draw** adds lines and substations (see *Authoring* below).
   - Each toggle is a core `ChildDocumentCommand` wrapping an
     `UpdateElementCommand` on `Position.state`, so it's one step in the same
     undo/redo history as box moves and line edits.
@@ -73,6 +75,26 @@ pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
     lines grey out when their bay is open.
   - The box view stays a read-only projection of switch state; you drag boxes
     and draw lines there.
+- **Authoring** (`src/editor/`) — the grid is editable, bay by bay:
+  - **Lines join bays, not boxes.** An anchor is a child's external feeder
+    (`instanceId`, `connectionId`), and each feeder takes **one** line: only free
+    feeders are snap targets (`freeTips`, via core's `CompositeDocument.linesAt`).
+    Ending on a box body opens a **bay picker**: a free feeder, a **new bay**
+    (grown on commit by `AutoBayCommand`, wrapped in `ChildDocumentCommand`), or
+    **Design bay…**. The new bays and the line are one core `BatchCommand`, so a
+    single undo removes them all.
+  - **+ Substation** (in the Draw tool's group) opens `SubstationDialog`: a
+    modal editor for the detailed SLD — grid, bars (with their bus id), bays and
+    feeders (connection tool: bay → margin), plus name and kV — on a throwaway
+    working copy with its own undo stack. **Done** turns it into a ghost that
+    follows the pointer (laid out by the canvas's own engine); a click places it
+    as one `AddChildCommand`.
+  - **Editing** an existing box reuses the dialog; Save is one composite step —
+    a `SnapshotCommand` on the child plus the removal of lines on deleted
+    feeders (the footer warns first).
+  - **Line popover** (`LinePopover`) edits kind (`UpdateLineKindCommand`) and
+    ratings in `data` (`SetLineDataCommand`) as one step; labels re-place
+    through the same `ratingLabels` resolver.
 - **Office-safe export** — `CompositeSvgExporter` with `boxMode`, `boxFill` and
   `boxSubLabel` produces a PowerPoint-pasteable SVG.
 
@@ -94,5 +116,5 @@ Because routing happens in the layout engine, `CompositeSvgExporter` exports the
 same geometry the canvas draws.
 
 Everything the app decides — voltage colours, the bus-id label, the active line
-kind, dialogs — lives here, not in the package: the components only emit semantic
+kind, the editor dialog and pickers — lives here, not in the package: the components only emit semantic
 callbacks (the adapter contract).

@@ -110,6 +110,52 @@
   --sld-pos: var(--sld-volt-unknown);
 }
 
+/*
+  Position-type tokens for the substation editor's "by type" colour mode
+  (complete colours, as @sld-kit/react expects — same palette as examples/react).
+*/
+:root {
+  --sld-pos-line: hsl(217 91% 60%);
+  --sld-pos-transformer: hsl(38 92% 50%);
+  --sld-pos-central: hsl(258 90% 66%);
+  --sld-pos-renewable: hsl(142 71% 45%);
+  --sld-pos-reserve: hsl(215 20% 65%);
+  --sld-pos-storage: hsl(173 80% 40%);
+  --sld-pos-demand: hsl(0 84% 60%);
+}
+
+.dark {
+  --sld-pos-line: hsl(217 91% 68%);
+  --sld-pos-transformer: hsl(38 92% 58%);
+  --sld-pos-central: hsl(258 90% 74%);
+  --sld-pos-renewable: hsl(142 69% 58%);
+  --sld-pos-reserve: hsl(215 16% 57%);
+  --sld-pos-storage: hsl(173 66% 55%);
+  --sld-pos-demand: hsl(0 90% 68%);
+}
+
+.sld-pos-line {
+  --sld-pos: var(--sld-pos-line);
+}
+.sld-pos-transformer {
+  --sld-pos: var(--sld-pos-transformer);
+}
+.sld-pos-central {
+  --sld-pos: var(--sld-pos-central);
+}
+.sld-pos-renewable {
+  --sld-pos: var(--sld-pos-renewable);
+}
+.sld-pos-reserve {
+  --sld-pos: var(--sld-pos-reserve);
+}
+.sld-pos-storage {
+  --sld-pos: var(--sld-pos-storage);
+}
+.sld-pos-demand {
+  --sld-pos: var(--sld-pos-demand);
+}
+
 @layer base {
   * {
     border-color: var(--border);
