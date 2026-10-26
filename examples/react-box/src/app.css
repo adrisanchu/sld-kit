@@ -156,6 +156,132 @@
   --sld-pos: var(--sld-pos-demand);
 }
 
+/*
+  Hover affordances (`src/editor/TargetFx.tsx`): game-style "target lock".
+  A box/bay gets corner brackets that snap in over a marching-ants frame and a
+  faint wash; a bus bar gets a soft halo that swells around it. Tinted by the
+  target's own `--sld-pos` (voltage bucket), else the lock accent. Entry is a
+  keyframe (replayed per target); exit is a transition on `data-on="false"`.
+*/
+:root {
+  --sld-fx-accent: oklch(0.7 0.15 222);
+}
+.dark {
+  --sld-fx-accent: oklch(0.8 0.13 212);
+}
+.sld-fx-primary {
+  --sld-pos: var(--sld-fx-accent);
+}
+.sld-fx {
+  color: var(--sld-pos, var(--sld-fx-accent));
+  transition: opacity 180ms ease-out;
+}
+.sld-fx[data-on='false'] {
+  opacity: 0;
+}
+.sld-fx > * {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Lock-on (boxes, bays). */
+.sld-fx-wash {
+  fill: currentColor;
+  fill-opacity: 0.07;
+  stroke: none;
+  animation: sld-fx-fade 220ms ease-out backwards;
+}
+.sld-fx-ants {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-opacity: 0.7;
+  stroke-dasharray: 7 5;
+  animation:
+    sld-fx-fade 200ms ease-out backwards,
+    sld-fx-march 900ms linear infinite;
+}
+.sld-fx-corners {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: sld-fx-lock 260ms cubic-bezier(0.2, 1.4, 0.4, 1) backwards;
+}
+.sld-fx-lock[data-on='false'] .sld-fx-corners {
+  transform: scale(1.12);
+  transition: transform 180ms ease-in;
+}
+
+/* Glow (bus bars). */
+.sld-fx-halo {
+  fill: currentColor;
+  fill-opacity: 0.22;
+  filter: blur(5px);
+  animation: sld-fx-swell 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
+}
+.sld-fx-edge {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-opacity: 0.85;
+  animation: sld-fx-fade 160ms ease-out backwards;
+}
+.sld-fx-glow[data-on='true'] .sld-fx-halo {
+  animation:
+    sld-fx-swell 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards,
+    sld-fx-breathe 1.6s ease-in-out 280ms infinite;
+}
+
+@keyframes sld-fx-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes sld-fx-march {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+@keyframes sld-fx-lock {
+  from {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+@keyframes sld-fx-swell {
+  from {
+    opacity: 0;
+    transform: scaleY(0.4);
+  }
+}
+@keyframes sld-fx-breathe {
+  50% {
+    fill-opacity: 0.32;
+  }
+}
+
+/* Popovers (`Floating`): a quick pop from the anchor side. */
+.sld-pop {
+  animation: sld-pop-in 140ms cubic-bezier(0.2, 1.2, 0.4, 1);
+}
+@keyframes sld-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sld-fx,
+  .sld-fx *,
+  .sld-pop {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 @layer base {
   * {
     border-color: var(--border);

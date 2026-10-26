@@ -35,7 +35,8 @@ import {
   type CompositeLineKind,
   type CompositeLineLayout,
   type ExternalDirection,
-  type Point
+  type Point,
+  type Rect
 } from '@sld-kit/core';
 import {
   ChildDiagramView,
@@ -46,11 +47,26 @@ import {
   useSldDocument,
   type CompositeCanvasHandle
 } from '@sld-kit/react';
-import { ArrowLeft, Boxes, Layers, Magnet, Maximize, Move, PenLine, Plus, Pointer, Redo2, SquarePen, Trash2, Undo2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  Boxes,
+  Layers,
+  Magnet,
+  Maximize,
+  Move,
+  PenLine,
+  Plus,
+  Pointer,
+  Redo2,
+  SquarePen,
+  Trash2,
+  Undo2
+} from 'lucide-react';
 import { buildBoxComposite, ratingLabels, voltageClass, voltageFill } from './fixture';
 import { barBusIdLabel, boxSplit, openFeeders, sectionLabel } from './topology';
 import { BayPicker } from './editor/BayPicker';
 import { LinePopover } from './editor/LinePopover';
+import { TargetFx, type Target } from './editor/TargetFx';
 import type { LineRatingData } from './fixture';
 import { SubstationDialog, type SubstationEditTarget } from './editor/SubstationDialog';
 import {
@@ -82,7 +98,6 @@ function busLabel(child: ChildLayout, section?: BoxSection): string | null {
   return sectionLabel(child.instance.resolved, section);
 }
 
-
 /**
  * - `operate`: interact with the network — click a substation to open it (box
  *   view: expands in place; detail view: flies in), then click its switches.
@@ -92,6 +107,8 @@ function busLabel(child: ChildLayout, section?: BoxSection): string | null {
 type Tool = 'operate' | 'move' | 'draw';
 /** The bay picker opened by a drawn end landing on a box body. */
 type Picker = { x: number; y: number; point: Point; instanceId: string; sectionKey: string | null };
+
+const sameRect = (a: Rect, b: Rect) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 
 /** Placement grid for a new substation (composite units). */
 const PLACE_SNAP = 20;
@@ -153,8 +170,10 @@ export default function App() {
     const t = setTimeout(() => setHint(null), 2500);
     return () => clearTimeout(t);
   }, [hint]);
-  // Last pointer position over the canvas (container px), to anchor popovers.
+  // Last pointer-down position (viewport px), to anchor popovers.
   const lastPointer = useRef({ x: 0, y: 0 });
+  // The box under the pointer (Operate / Move): drawn as a lock-on frame.
+  const [hover, setHover] = useState<Target | null>(null);
   const mainRef = useRef<HTMLElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
 
@@ -209,7 +228,8 @@ export default function App() {
   // child's own connection (detail view) and to every composite line anchored to
   // it (both views); the export gets the same function as its theme resolver.
   const formatResolver = useCallback(
-    (el: SldElement): ElementFormat | undefined => (openConnections.has(el) ? SWITCH_OPEN_CONNECTION_FORMAT : undefined),
+    (el: SldElement): ElementFormat | undefined =>
+      openConnections.has(el) ? SWITCH_OPEN_CONNECTION_FORMAT : undefined,
     [openConnections]
   );
   const lineColorClass = useCallback(
@@ -279,7 +299,13 @@ export default function App() {
       if (snap) return addVertex({ kind: 'anchor', point, ...snap });
       const hit = boxAt(layout, point, boxMode);
       if (hit) {
-        setPicker({ ...lastPointer.current, point, instanceId: hit.child.instance.id, sectionKey: hit.sectionKey });
+        setPicker({
+          x: lastPointer.current.x,
+          y: lastPointer.current.y,
+          point,
+          instanceId: hit.child.instance.id,
+          sectionKey: hit.sectionKey
+        });
         return;
       }
       addVertex({ kind: 'point', point });
@@ -294,7 +320,8 @@ export default function App() {
 
   const pickerChild = picker ? layout.children.find((c) => c.instance.id === picker.instanceId) : undefined;
   const pickerTerminals = pickerChild && picker ? freeTerminals(composite, pickerChild, picker.sectionKey) : [];
-  const pickerBar = pickerChild?.instance.resolved && picker ? barFor(pickerChild.instance.resolved, picker.sectionKey) : null;
+  const pickerBar =
+    pickerChild?.instance.resolved && picker ? barFor(pickerChild.instance.resolved, picker.sectionKey) : null;
 
   const pickTerminal = (connectionId: string) => {
     if (!picker) return;
@@ -408,7 +435,8 @@ export default function App() {
     if (!line) return;
     const steps: Command<CompositeDocument>[] = [];
     if (kind !== line.kind) steps.push(new UpdateLineKindCommand(line.id, line.kind, kind));
-    if (JSON.stringify(data) !== JSON.stringify(line.data)) steps.push(new SetLineDataCommand(line.id, line.data, data));
+    if (JSON.stringify(data) !== JSON.stringify(line.data))
+      steps.push(new SetLineDataCommand(line.id, line.data, data));
     if (steps.length) run(new BatchCommand('Edit line', steps));
     setLineEditAt(null);
   };
@@ -504,7 +532,11 @@ export default function App() {
         );
         if (selectedLineId && lineIds.has(selectedLineId)) setSelectedLineId(null);
         // A draft anchored to a dropped feeder can't finish: start over.
-        if (draft.some((v) => v.kind === 'anchor' && v.instanceId === instanceId && droppedFeeders.includes(v.connectionId))) {
+        if (
+          draft.some(
+            (v) => v.kind === 'anchor' && v.instanceId === instanceId && droppedFeeders.includes(v.connectionId)
+          )
+        ) {
           setDraft([]);
         }
       }
@@ -532,7 +564,10 @@ export default function App() {
     const c = placing ? layoutGhost(placing, 0, 0) : null;
     return c ? { x: c.worldBounds.x + c.worldBounds.width / 2, y: c.worldBounds.y + c.worldBounds.height / 2 } : null;
   }, [placing, layoutGhost]);
-  const ghostPos = placing && ghostAt && ghostCentre ? { x: snap(ghostAt.x - ghostCentre.x), y: snap(ghostAt.y - ghostCentre.y) } : null;
+  const ghostPos =
+    placing && ghostAt && ghostCentre
+      ? { x: snap(ghostAt.x - ghostCentre.x), y: snap(ghostAt.y - ghostCentre.y) }
+      : null;
   const ghost = useMemo(
     () => (placing && ghostPos ? layoutGhost(placing, ghostPos.x, ghostPos.y) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -551,6 +586,30 @@ export default function App() {
     setGhostAt(null);
     if (tool === 'move') setSelectedChildId(inst.id);
   };
+  /**
+   * Hover affordance for Operate / Move: lock onto the box (or section box)
+   * under the pointer. Off while a button is held (dragging / panning), and on
+   * the substation already opened in Operate (its switches are the targets).
+   */
+  const trackHover = (e: React.PointerEvent) => {
+    const handle = canvasRef.current;
+    const hit =
+      (tool === 'operate' || tool === 'move') && e.buttons === 0 && handle
+        ? boxAt(layout, handle.clientToSvg(e.clientX, e.clientY), boxMode)
+        : null;
+    const next: Target | null =
+      hit && !(operating && hit.child.instance.id === focusedId)
+        ? {
+            key: `${hit.child.instance.id}:${hit.sectionKey ?? ''}`,
+            rect: hit.rect,
+            colorClass: voltageClass(hit.child.instance.resolved?.meta.voltageKv),
+            variant: 'lock'
+          }
+        : null;
+    // Same box, same place → keep the object, so nothing re-renders per move.
+    setHover((prev) => (prev && next && prev.key === next.key && sameRect(prev.rect, next.rect) ? prev : next));
+  };
+
   const isOnCanvas = (target: EventTarget) => target instanceof Node && !!canvasWrapRef.current?.contains(target);
 
   // Escape cancels a draft; Delete removes the selected line.
@@ -628,8 +687,7 @@ export default function App() {
         ref={mainRef}
         className="relative min-h-0 flex-1"
         onPointerDownCapture={(e) => {
-          const r = mainRef.current?.getBoundingClientRect();
-          if (r) lastPointer.current = { x: e.clientX - r.left, y: e.clientY - r.top };
+          lastPointer.current = { x: e.clientX, y: e.clientY };
           // Placing: a primary click on the canvas drops the ghost — and goes no
           // further, so it neither grabs a box nor starts a pan.
           if (placing && e.button === 0 && isOnCanvas(e.target)) {
@@ -645,77 +703,89 @@ export default function App() {
           e.stopPropagation();
         }}
         onPointerMoveCapture={(e) => {
-          if (placing && isOnCanvas(e.target)) setGhostAt(canvasRef.current?.clientToSvg(e.clientX, e.clientY) ?? null);
+          if (!isOnCanvas(e.target)) return;
+          if (placing) return setGhostAt(canvasRef.current?.clientToSvg(e.clientX, e.clientY) ?? null);
+          trackHover(e);
         }}
+        onPointerLeave={() => setHover(null)}
       >
         <div ref={canvasWrapRef} className="absolute inset-0">
-        <CompositeCanvas
-          ref={canvasRef}
-          layout={layout}
-          interactive
-          boxMode={boxMode}
-          boxSubLabel={busLabel}
-          drawMode={tool === 'draw'}
-          orthogonal
-          snapTargets={snapTargets}
-          draftPoints={draft.map((d) => d.point)}
-          selectedId={selectedChildId}
-          selectedLineId={selectedLineId}
-          childColorClass={childColorClass}
-          lineColorClass={lineColorClass}
-          formatResolver={formatResolver}
-          onChildDown={handleChildDown}
-          onCanvasPoint={onCanvasPoint}
-          onDrawCommit={commitDraw}
-          onLineDown={({ id }) => {
-            if (tool !== 'move') return;
-            setSelectedLineId(id);
-            setSelectedChildId(null);
-            setLineEditAt({ ...lastPointer.current });
-          }}
-          onPortDirection={pinPortDirection}
-          explore={operating}
-          focusedId={operating ? focusedId : null}
-          onChildFocus={focusChild}
-          onElementActivate={toggleSwitch}
-          onClearSelection={() => {
-            clearSelection();
-            blur();
-          }}
-        >
-          {ghost && placing && (
-            <g opacity={0.6} pointerEvents="none">
-              <rect
-                x={ghost.worldBounds.x - 6}
-                y={ghost.worldBounds.y - 6}
-                width={ghost.worldBounds.width + 12}
-                height={ghost.worldBounds.height + 12}
-                rx={6}
-                fill="none"
-                className="stroke-primary"
-                strokeWidth={1.5}
-                strokeDasharray="6 4"
-              />
-              <ChildDiagramView
-                child={ghost}
-                interactive={false}
-                boxMode={boxMode}
-                boxSubLabel={busLabel}
-                colorClass={voltageClass(placing.meta.voltageKv)}
-                animateMorph={false}
-              />
-            </g>
-          )}
-        </CompositeCanvas>
+          <CompositeCanvas
+            ref={canvasRef}
+            layout={layout}
+            interactive
+            boxMode={boxMode}
+            boxSubLabel={busLabel}
+            drawMode={tool === 'draw'}
+            orthogonal
+            snapTargets={snapTargets}
+            draftPoints={draft.map((d) => d.point)}
+            selectedId={selectedChildId}
+            selectedLineId={selectedLineId}
+            childColorClass={childColorClass}
+            lineColorClass={lineColorClass}
+            formatResolver={formatResolver}
+            onChildDown={handleChildDown}
+            onCanvasPoint={onCanvasPoint}
+            onDrawCommit={commitDraw}
+            onLineDown={({ id }) => {
+              if (tool !== 'move') return;
+              setSelectedLineId(id);
+              setSelectedChildId(null);
+              setLineEditAt({ ...lastPointer.current });
+            }}
+            onPortDirection={pinPortDirection}
+            explore={operating}
+            focusedId={operating ? focusedId : null}
+            onChildFocus={focusChild}
+            onElementActivate={toggleSwitch}
+            onClearSelection={() => {
+              clearSelection();
+              blur();
+            }}
+          >
+            {(tool === 'operate' || tool === 'move') && !placing && <TargetFx target={hover} />}
+            {ghost && placing && (
+              <g opacity={0.6} pointerEvents="none">
+                <rect
+                  x={ghost.worldBounds.x - 6}
+                  y={ghost.worldBounds.y - 6}
+                  width={ghost.worldBounds.width + 12}
+                  height={ghost.worldBounds.height + 12}
+                  rx={6}
+                  fill="none"
+                  className="stroke-primary"
+                  strokeWidth={1.5}
+                  strokeDasharray="6 4"
+                />
+                <ChildDiagramView
+                  child={ghost}
+                  interactive={false}
+                  boxMode={boxMode}
+                  boxSubLabel={busLabel}
+                  colorClass={voltageClass(placing.meta.voltageKv)}
+                  animateMorph={false}
+                />
+              </g>
+            )}
+          </CompositeCanvas>
         </div>
 
         {/* Minimal floating chrome — the app owns all orchestration; the canvas
             just emits semantic callbacks (see the adapter contract). */}
         <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 flex-wrap items-center gap-1 rounded-full border border-border bg-background/85 px-2 py-1 shadow-lg backdrop-blur-sm">
-          <ToolButton title="Operate (O) — open a substation, toggle its switches" active={tool === 'operate'} onClick={() => chooseTool('operate')}>
+          <ToolButton
+            title="Operate (O) — open a substation, toggle its switches"
+            active={tool === 'operate'}
+            onClick={() => chooseTool('operate')}
+          >
             <Pointer className="h-4 w-4" />
           </ToolButton>
-          <ToolButton title="Move (V) — drag substations, edit lines" active={tool === 'move'} onClick={() => chooseTool('move')}>
+          <ToolButton
+            title="Move (V) — drag substations, edit lines"
+            active={tool === 'move'}
+            onClick={() => chooseTool('move')}
+          >
             <Move className="h-4 w-4" />
           </ToolButton>
           <ToolButton title="Draw line (L)" active={tool === 'draw'} onClick={() => chooseTool('draw')}>
@@ -823,8 +893,8 @@ export default function App() {
         )}
         {picker && pickerChild && (
           <BayPicker
-            x={picker.x}
-            y={picker.y}
+            clientX={picker.x}
+            clientY={picker.y}
             name={pickerChild.name}
             terminals={pickerTerminals}
             canAutoBay={!!pickerBar}
@@ -837,8 +907,8 @@ export default function App() {
         {tool === 'move' && lineEditAt && editedLine && (
           <LinePopover
             key={editedLine.id}
-            x={lineEditAt.x}
-            y={lineEditAt.y}
+            clientX={lineEditAt.x}
+            clientY={lineEditAt.y}
             line={editedLine}
             kinds={LINE_KINDS}
             onApply={applyLineEdit}

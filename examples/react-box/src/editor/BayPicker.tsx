@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
 import { Plus, SquarePen } from 'lucide-react';
+import { Floating } from './Floating';
 import type { Terminal } from './terminals';
 
 export interface BayPickerProps {
-  /** Screen position (px, relative to the canvas container). */
-  x: number;
-  y: number;
+  /** Anchor in viewport coordinates (the click that opened it). */
+  clientX: number;
+  clientY: number;
   /** Substation name, for the heading. */
   name: string;
   /** The box's free feeders. */
@@ -24,7 +25,17 @@ export interface BayPickerProps {
  * to one of the box's free feeders, grow a new bay for it, or open the
  * substation editor to design one. Lines join bays, never whole boxes.
  */
-export function BayPicker({ x, y, name, terminals, canAutoBay, onPick, onNewBay, onDesign, onCancel }: BayPickerProps) {
+export function BayPicker({
+  clientX,
+  clientY,
+  name,
+  terminals,
+  canAutoBay,
+  onPick,
+  onNewBay,
+  onDesign,
+  onCancel
+}: BayPickerProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -37,13 +48,10 @@ export function BayPicker({ x, y, name, terminals, canAutoBay, onPick, onNewBay,
   }, [onCancel]);
 
   return (
-    <div
-      className="absolute z-20 w-56 rounded-lg border border-border bg-background p-1 text-sm shadow-lg"
-      style={{ left: x + 8, top: y + 8 }}
-      // Keep canvas clicks/double-clicks from reaching the draw handlers.
-      onClick={(e) => e.stopPropagation()}
-      onDoubleClick={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
+    <Floating
+      clientX={clientX}
+      clientY={clientY}
+      className="w-56 rounded-lg border border-border bg-background p-1 text-sm shadow-lg"
     >
       <p className="px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground">Connect to {name}</p>
       {terminals.length === 0 ? (
@@ -81,6 +89,6 @@ export function BayPicker({ x, y, name, terminals, canAutoBay, onPick, onNewBay,
           <SquarePen className="h-3.5 w-3.5" /> Design bay…
         </button>
       )}
-    </div>
+    </Floating>
   );
 }

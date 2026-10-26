@@ -47,6 +47,7 @@ import { X } from 'lucide-react';
 import { voltageClass } from '../fixture';
 import { barBusIdLabel } from '../topology';
 import { terminalsOf } from './terminals';
+import { TargetFx, type Target } from './TargetFx';
 
 /** Map the toolbar's label-visibility mode to the canvas's three toggles. */
 const LABELS: Record<LabelMode, { pos: boolean; conn: boolean; bar: boolean }> = {
@@ -56,8 +57,7 @@ const LABELS: Record<LabelMode, { pos: boolean; conn: boolean; bar: boolean }> =
 };
 
 export type SubstationEditTarget =
-  | { mode: 'create'; voltageKv: number }
-  | { mode: 'edit'; instanceId: string; doc: SldDocument };
+  { mode: 'create'; voltageKv: number } | { mode: 'edit'; instanceId: string; doc: SldDocument };
 
 export interface SubstationDialogProps {
   target: SubstationEditTarget;
@@ -105,10 +105,9 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
   const [name, setName] = useState(doc.meta.name ?? '');
   const [kv, setKv] = useState(doc.meta.voltageKv != null ? String(doc.meta.voltageKv) : '');
 
-  const engine = useMemo(
-    () => new LayoutEngine({ ...SLD_LAYOUT, busBarLabelAnchor: 'center-left' }, { busBarLabel: barBusIdLabel }),
-    []
-  );
+  // Bar labels sit top-left (the default anchor) here: the editor's row
+  // selectors occupy the left margin, where `center-left` would overlap them.
+  const engine = useMemo(() => new LayoutEngine(SLD_LAYOUT, { busBarLabel: barBusIdLabel }), []);
   // `version` is the load-bearing dep: `doc` mutates in place.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const layout = useMemo(() => engine.layout(doc), [engine, doc, version]);
@@ -130,6 +129,8 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
   const [cursor, setCursor] = useState<Point | null>(null);
   const [external, setExternal] = useState<{ x: number; y: number; point: Point } | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
+  // What a click would hit (Select / Connection tools): bars glow, bays lock on.
+  const [hover, setHover] = useState<Target | null>(null);
 
   useEffect(() => {
     const d = dialogRef.current;
@@ -176,7 +177,9 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
     // A connection always involves a position; never wire the same pair twice.
     if (a.kind === 'busbar' && b.kind === 'busbar') return;
     if (doc.connectionsOf(pendingFrom).some((c) => c.elementIds().includes(id))) return;
-    run(new AddElementCommand(new Connection(newId(), '', { kind: 'element', id: pendingFrom }, { kind: 'element', id })));
+    run(
+      new AddElementCommand(new Connection(newId(), '', { kind: 'element', id: pendingFrom }, { kind: 'element', id }))
+    );
     setPendingFrom(null);
     setCursor(null);
   };
@@ -219,7 +222,10 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
     });
   };
 
-  const handleCanvasMove = ({ point }: { point: Point }) => {
+  const handleCanvasMove = ({ point, event }: { point: Point; event: React.PointerEvent }) => {
+    const next =
+      editMode && (tool === 'select' || tool === 'connection') && event.buttons === 0 ? targetAt(point) : null;
+    setHover((prev) => (prev?.key === next?.key ? prev : next));
     if (tool === 'position') {
       const cell = layout.cellAt(point);
       setGhost(cell && layout.rowKind(cell.row) === 'slots' ? { cell, valid: grid.isFree(cell) } : null);
@@ -236,7 +242,12 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
       if (cell && layout.rowKind(cell.row) === 'slots' && grid.isFree(cell)) {
         run(
           new AddPositionCommand(
-            Position.of({ label: nextPositionLabel(doc, positionType), type: positionType, row: cell.row, col: cell.col })
+            Position.of({
+              label: nextPositionLabel(doc, positionType),
+              type: positionType,
+              row: cell.row,
+              col: cell.col
+            })
           )
         );
       }
@@ -272,6 +283,20 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
     chooseTool('select');
     // The canvas fitted the empty grid on mount; frame the new one.
     requestAnimationFrame(() => canvasRef.current?.zoomToFit());
+  };
+
+  /** The bay or bar under a point (bays win; a bar's hit band is widened, it's thin). */
+  const targetAt = (p: Point): Target | null => {
+    let bar: Target | null = null;
+    for (const [id, geo] of layout.geometry) {
+      const r = geo.kind === 'position' || geo.kind === 'busbar' ? geo.rect : null;
+      if (!r) continue;
+      const slop = geo.kind === 'busbar' ? 8 : 0;
+      if (p.x < r.x || p.x > r.x + r.width || p.y < r.y - slop || p.y > r.y + r.height + slop) continue;
+      if (geo.kind === 'position') return { key: id, rect: r, variant: 'lock' };
+      bar = { key: id, rect: r, variant: 'glow' };
+    }
+    return bar;
   };
 
   // ── Selected element: label + (bars) bus number ─────────────────────────────
@@ -338,7 +363,9 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
     >
       <div className="flex h-full flex-col">
         <header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2">
-          <h2 className="mr-2 text-sm font-semibold">{target.mode === 'create' ? 'New substation' : 'Edit substation'}</h2>
+          <h2 className="mr-2 text-sm font-semibold">
+            {target.mode === 'create' ? 'New substation' : 'Edit substation'}
+          </h2>
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             Name
             <input
@@ -401,6 +428,7 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
             }}
             onCanvasDown={handleCanvasDown}
             onCanvasMove={handleCanvasMove}
+            onCanvasUp={() => setHover(null)}
             background={
               editMode && (
                 <LaneOverlay
@@ -421,6 +449,7 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
             {tool === 'position' && ghost && (
               <GhostPreview rect={layout.cellRect(ghost.cell)} valid={ghost.valid} type={positionType} />
             )}
+            <TargetFx target={hover} />
             {rubberFrom && cursor && (
               <line
                 x1={rubberFrom.x}
@@ -436,7 +465,9 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
 
           {empty && (
             <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
-              <p className="mb-2 text-sm text-muted-foreground">Pick the grid size to start (a bus bar is added on top).</p>
+              <p className="mb-2 text-sm text-muted-foreground">
+                Pick the grid size to start (a bus bar is added on top).
+              </p>
               <div className="inline-block text-left">
                 <MatrixCreatorFlyout onCreate={resetGrid} />
               </div>
@@ -494,7 +525,11 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
             </ul>
           )}
           <div className="ml-auto flex gap-2">
-            <button type="button" onClick={onCancel} className="rounded-md border border-border px-3 py-1.5 hover:bg-accent">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-md border border-border px-3 py-1.5 hover:bg-accent"
+            >
               Cancel
             </button>
             <button
@@ -569,7 +604,9 @@ function anchorOf(geo: ElementGeometry | undefined, cursor: Point | null): Point
   if (!geo) return null;
   if (geo.kind === 'position') return { x: geo.rect.x + geo.rect.width / 2, y: geo.rect.y + geo.rect.height / 2 };
   if (geo.kind === 'busbar') {
-    const cx = cursor ? Math.min(Math.max(cursor.x, geo.rect.x), geo.rect.x + geo.rect.width) : geo.rect.x + geo.rect.width / 2;
+    const cx = cursor
+      ? Math.min(Math.max(cursor.x, geo.rect.x), geo.rect.x + geo.rect.width)
+      : geo.rect.x + geo.rect.width / 2;
     return { x: cx, y: geo.rect.y + geo.rect.height / 2 };
   }
   return null;

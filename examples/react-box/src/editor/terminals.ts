@@ -63,11 +63,7 @@ export function terminalsOf(doc: SldDocument): Terminal[] {
 }
 
 /** The free terminals of a child (optionally only those drawn from one section box). */
-export function freeTerminals(
-  composite: CompositeDocument,
-  child: ChildLayout,
-  sectionKey: string | null
-): Terminal[] {
+export function freeTerminals(composite: CompositeDocument, child: ChildLayout, sectionKey: string | null): Terminal[] {
   const doc = child.instance.resolved;
   if (!doc) return [];
   let terms = terminalsOf(doc);
@@ -105,15 +101,17 @@ export function boxAt(
   layout: CompositeLayout,
   point: Point,
   boxMode: boolean
-): { child: ChildLayout; sectionKey: string | null } | null {
+): { child: ChildLayout; sectionKey: string | null; rect: Rect } | null {
   for (let i = layout.children.length - 1; i >= 0; i--) {
     const child = layout.children[i];
     if (boxMode && !child.expanded && child.boxes && child.boxes.length > 1) {
-      const box = child.boxes.find((b) => contains(worldRect(child, b.frame), point));
-      if (box) return { child, sectionKey: box.key };
+      for (const b of child.boxes) {
+        const rect = worldRect(child, b.frame);
+        if (contains(rect, point)) return { child, sectionKey: b.key, rect };
+      }
       continue;
     }
-    if (contains(child.worldBounds, point)) return { child, sectionKey: null };
+    if (contains(child.worldBounds, point)) return { child, sectionKey: null, rect: child.worldBounds };
   }
   return null;
 }
@@ -124,7 +122,10 @@ export function barFor(doc: SldDocument, sectionKey: string | null): string | nu
     const section = busTopology(doc).sections.find((s) => s.key === sectionKey);
     if (section?.busbarIds.length) return section.busbarIds[0];
   }
-  const bars = doc.busBars().slice().sort((a, b) => a.row - b.row);
+  const bars = doc
+    .busBars()
+    .slice()
+    .sort((a, b) => a.row - b.row);
   return bars[0]?.id ?? null;
 }
 
@@ -233,7 +234,8 @@ export type DraftVertex =
 export function sameVertex(a: DraftVertex, b: DraftVertex): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === 'point' && b.kind === 'point') return a.point.x === b.point.x && a.point.y === b.point.y;
-  if (a.kind === 'anchor' && b.kind === 'anchor') return a.instanceId === b.instanceId && a.connectionId === b.connectionId;
+  if (a.kind === 'anchor' && b.kind === 'anchor')
+    return a.instanceId === b.instanceId && a.connectionId === b.connectionId;
   return false; // two new bays are always two different bays
 }
 
@@ -261,11 +263,14 @@ class AddDraftLineCommand implements Command<CompositeDocument> {
     if (!this.inner) {
       const vertices: LineVertexJson[] = [];
       this.draft.forEach((v, i) => {
-        if (v.kind === 'anchor') vertices.push({ kind: 'anchor', instanceId: v.instanceId, connectionId: v.connectionId });
+        if (v.kind === 'anchor')
+          vertices.push({ kind: 'anchor', instanceId: v.instanceId, connectionId: v.connectionId });
         else if (v.kind === 'newBay') {
           const feederId = this.bays.get(i)?.feederId;
           vertices.push(
-            feederId ? { kind: 'anchor', instanceId: v.instanceId, connectionId: feederId } : { kind: 'point', ...v.point }
+            feederId
+              ? { kind: 'anchor', instanceId: v.instanceId, connectionId: feederId }
+              : { kind: 'point', ...v.point }
           );
         } else vertices.push({ kind: 'point', x: v.point.x, y: v.point.y });
       });
