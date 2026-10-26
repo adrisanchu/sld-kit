@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AddLineCommand,
   CommandStack,
   CompositeLayoutEngine,
-  CompositeLine,
   CompositeSerializer,
   CompositeSvgExporter,
   LayoutEngine,
@@ -28,7 +26,6 @@ import {
   type CompositeLineKind,
   type CompositeLineLayout,
   type ExternalDirection,
-  type LineVertexJson,
   type Point
 } from '@sld-kit/core';
 import {
@@ -42,6 +39,18 @@ import {
 import { ArrowLeft, Boxes, Layers, Magnet, Maximize, Move, PenLine, Pointer, Redo2, Trash2, Undo2 } from 'lucide-react';
 import { buildBoxComposite, ratingLabels, voltageClass, voltageFill } from './fixture';
 import { barBusIdLabel, boxSplit, openFeeders, sectionLabel } from './topology';
+import { BayPicker } from './editor/BayPicker';
+import {
+  barFor,
+  boxAt,
+  dedupe,
+  draftCommand,
+  draftProblem,
+  freeTerminals,
+  freeTips,
+  sameVertex,
+  type DraftVertex
+} from './editor/terminals';
 
 const LINE_KINDS: { kind: CompositeLineKind; label: string }[] = [
   { kind: 'line', label: 'Overhead' },
@@ -68,7 +77,8 @@ function busLabel(child: ChildLayout, section?: BoxSection): string | null {
  * - `draw`: add lines.
  */
 type Tool = 'operate' | 'move' | 'draw';
-type Draft = { point: { x: number; y: number }; snap: { instanceId: string; connectionId: string } | null };
+/** The bay picker opened by a drawn end landing on a box body. */
+type Picker = { x: number; y: number; point: Point; instanceId: string; sectionKey: string | null };
 
 export default function App() {
   const [composite] = useState(buildBoxComposite);
@@ -117,7 +127,18 @@ export default function App() {
   const [lineKind, setLineKind] = useState<CompositeLineKind>('line');
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Draft[]>([]);
+  const [draft, setDraft] = useState<DraftVertex[]>([]);
+  const [picker, setPicker] = useState<Picker | null>(null);
+  // Transient draw feedback (e.g. "that feeder already has a line").
+  const [hint, setHint] = useState<string | null>(null);
+  useEffect(() => {
+    if (!hint) return;
+    const t = setTimeout(() => setHint(null), 2500);
+    return () => clearTimeout(t);
+  }, [hint]);
+  // Last pointer position over the canvas (container px), to anchor popovers.
+  const lastPointer = useRef({ x: 0, y: 0 });
+  const mainRef = useRef<HTMLElement>(null);
   const [dark, setDark] = useState(false);
 
   // Box drag: transient setChildTransform during the gesture, one undoable
@@ -170,6 +191,7 @@ export default function App() {
   const chooseTool = useCallback((t: Tool) => {
     setTool(t);
     setDraft([]);
+    setPicker(null);
     if (t !== 'operate') setFocusedId(null); // leaving operate closes the open substation
     if (t !== 'move') {
       setSelectedLineId(null);
@@ -177,28 +199,78 @@ export default function App() {
     }
   }, []);
 
-  const onCanvasPoint = useCallback(
-    ({ point, snap }: Draft) => {
-      if (tool !== 'draw') return;
-      setDraft((d) => [...d, { point, snap }]);
+  // ── Draw: lines join bays (feeder terminals), one line per terminal ───────
+  // Only free terminals are snap targets. Ending on a box body opens the bay
+  // picker (a free feeder, or a new bay grown on commit). An anchored end after
+  // the start finishes the line; a double-click finishes a free lead (demand).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const snapTargets = useMemo(() => freeTips(layout, composite), [layout, composite, version]);
+
+  /** Commit a draft as ONE undoable step (new bays + the line), or explain why not. */
+  const commit = useCallback(
+    (vertices: DraftVertex[]) => {
+      const d = dedupe(vertices);
+      if (d.length < 2) return setDraft([]);
+      const problem = draftProblem(composite, d);
+      if (problem) {
+        setHint(problem);
+        setDraft(d.slice(0, -1)); // drop the offending end, keep drawing
+        return;
+      }
+      // Store the raw clicked path; the composite's `defaultRouting: 'orthogonal'`
+      // makes the core layout render it axis-aligned — as the draft preview shows.
+      run(draftCommand(d, lineKind, newId(), (id, cmd) => new ChildDocumentCommand(id, cmd)));
+      setDraft([]);
     },
-    [tool]
+    [composite, lineKind, run]
+  );
+
+  const addVertex = useCallback(
+    (v: DraftVertex) => {
+      const last = draft[draft.length - 1];
+      if (last && sameVertex(last, v)) return; // the 2nd click of a double-click
+      const next = [...draft, v];
+      if (v.kind !== 'point' && draft.length >= 1) commit(next);
+      else setDraft(next);
+    },
+    [draft, commit]
+  );
+
+  const onCanvasPoint = useCallback(
+    ({ point, snap }: { point: Point; snap: { instanceId: string; connectionId: string } | null }) => {
+      if (tool !== 'draw') return;
+      if (picker) return setPicker(null); // a click away dismisses the picker
+      if (snap) return addVertex({ kind: 'anchor', point, ...snap });
+      const hit = boxAt(layout, point, boxMode);
+      if (hit) {
+        setPicker({ ...lastPointer.current, point, instanceId: hit.child.instance.id, sectionKey: hit.sectionKey });
+        return;
+      }
+      addVertex({ kind: 'point', point });
+    },
+    [tool, picker, layout, boxMode, addVertex]
   );
 
   const commitDraw = useCallback(() => {
-    if (draft.length >= 2) {
-      // Store the raw clicked path (endpoints anchored to a box terminal when
-      // snapped); the composite's `defaultRouting: 'orthogonal'` makes the core
-      // layout render it axis-aligned — the same result the draft preview shows.
-      const vertices: LineVertexJson[] = draft.map((d, i) =>
-        d.snap && (i === 0 || i === draft.length - 1)
-          ? { kind: 'anchor', instanceId: d.snap.instanceId, connectionId: d.snap.connectionId }
-          : { kind: 'point', x: d.point.x, y: d.point.y }
-      );
-      run(new AddLineCommand(new CompositeLine(newId(), vertices, lineKind)));
-    }
-    setDraft([]);
-  }, [draft, lineKind, run]);
+    if (picker) return; // the picker decides how this end connects
+    commit(draft);
+  }, [picker, draft, commit]);
+
+  const pickerChild = picker ? layout.children.find((c) => c.instance.id === picker.instanceId) : undefined;
+  const pickerTerminals = pickerChild && picker ? freeTerminals(composite, pickerChild, picker.sectionKey) : [];
+  const pickerBar = pickerChild?.instance.resolved && picker ? barFor(pickerChild.instance.resolved, picker.sectionKey) : null;
+
+  const pickTerminal = (connectionId: string) => {
+    if (!picker) return;
+    const tip = layout.snapTips.find((t) => t.instanceId === picker.instanceId && t.connectionId === connectionId);
+    setPicker(null);
+    addVertex({ kind: 'anchor', point: tip?.point ?? picker.point, instanceId: picker.instanceId, connectionId });
+  };
+  const pickNewBay = () => {
+    if (!picker || !pickerBar) return;
+    setPicker(null);
+    addVertex({ kind: 'newBay', point: picker.point, instanceId: picker.instanceId, barId: pickerBar });
+  };
 
   const deleteSelected = useCallback(() => {
     if (!selectedLineId) return;
@@ -315,8 +387,11 @@ export default function App() {
   // Escape cancels a draft; Delete removes the selected line.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
       if (e.key === 'Escape') {
         setDraft([]);
+        setPicker(null);
         blur();
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedLineId) deleteSelected();
@@ -376,7 +451,14 @@ export default function App() {
         </button>
       </header>
 
-      <main className="relative min-h-0 flex-1">
+      <main
+        ref={mainRef}
+        className="relative min-h-0 flex-1"
+        onPointerDownCapture={(e) => {
+          const r = mainRef.current?.getBoundingClientRect();
+          if (r) lastPointer.current = { x: e.clientX - r.left, y: e.clientY - r.top };
+        }}
+      >
         <CompositeCanvas
           ref={canvasRef}
           layout={layout}
@@ -385,7 +467,7 @@ export default function App() {
           boxSubLabel={busLabel}
           drawMode={tool === 'draw'}
           orthogonal
-          snapTargets={layout.snapTips}
+          snapTargets={snapTargets}
           draftPoints={draft.map((d) => d.point)}
           selectedId={selectedChildId}
           selectedLineId={selectedLineId}
@@ -479,9 +561,28 @@ export default function App() {
         </div>
 
         {tool === 'draw' && (
-          <p className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs text-primary-foreground shadow">
-            Click to add points (snap to a box terminal); double-click to finish · Esc to cancel
+          <p
+            className={`pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full px-3 py-1 text-xs shadow ${
+              hint ? 'bg-amber-500 text-white' : 'bg-primary text-primary-foreground'
+            }`}
+          >
+            {hint ??
+              (draft.length === 0
+                ? 'Click a free feeder dot or a substation to start a line · Esc to cancel'
+                : 'Click a feeder dot or a substation to finish · click to bend · double-click ends a free lead')}
           </p>
+        )}
+        {picker && pickerChild && (
+          <BayPicker
+            x={picker.x}
+            y={picker.y}
+            name={pickerChild.name}
+            terminals={pickerTerminals}
+            canAutoBay={!!pickerBar}
+            onPick={pickTerminal}
+            onNewBay={pickNewBay}
+            onCancel={() => setPicker(null)}
+          />
         )}
         {tool === 'operate' && (
           <p className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs text-primary-foreground shadow">

@@ -33,6 +33,7 @@ import {
   Position,
   CommandStack,
   AddPositionCommand,
+  BatchCommand,
   Serializer,
   SvgExporter
 } from '@sld-kit/core';
@@ -49,6 +50,15 @@ stack.execute(new AddPositionCommand(new Position('p1', 'L1', 'line', 1, 1)), do
 
 stack.undo(doc); // removes the bay + its connections
 stack.redo(doc); // puts them back
+
+// Several commands as ONE undo step: do in order, undo in reverse.
+stack.execute(
+  new BatchCommand('Two bays', [
+    new AddPositionCommand(Position.of({ label: 'L2', type: 'line', row: 1, col: 0 })),
+    new AddPositionCommand(Position.of({ label: 'L3', type: 'line', row: 1, col: 2 }))
+  ]),
+  doc
+);
 
 // 3. Persist as JSON (validated, versioned) …
 const json = Serializer.toJSON(doc);
@@ -408,7 +418,7 @@ Everything is exported from the package root: document + elements
 (`SldDocument`, `BusBar`, `Position`, `Connection` — each with an `.of({...})`
 options factory — and the `element` / `external` endpoint helpers), `Grid`,
 `LayoutEngine`,
-the `CommandStack` and command classes, the batch-authoring helpers `autoWire`
+the `CommandStack` and command classes (plus `BatchCommand`, which groups several into one undo step), the batch-authoring helpers `autoWire`
 and `buildDocument`, `Serializer` / `SldParseError`,
 `SvgExporter` / `SvgBuilder`, the `SymbolRegistry` and default symbols, the
 theme (`SldTheme`, `DEFAULT_THEME`, `resolveTheme`, `positionColors`, and the
