@@ -17,6 +17,36 @@ export interface Command<D = SldDocument> {
 }
 
 /**
+ * Several commands run as ONE undo step: `do` runs them in order, `undo` in
+ * reverse. The building block for compound edits (e.g. remove a child together
+ * with every line anchored to it) without a full-document snapshot. Generic over
+ * the document type, like `Command`.
+ */
+export class BatchCommand<D = SldDocument> implements Command<D> {
+  private readonly commands: readonly Command<D>[];
+
+  constructor(
+    readonly label: string,
+    commands: readonly Command<D>[]
+  ) {
+    this.commands = [...commands];
+  }
+
+  /** True when the batch holds no commands (running it would be a no-op). */
+  get isEmpty(): boolean {
+    return this.commands.length === 0;
+  }
+
+  do(doc: D): void {
+    for (const cmd of this.commands) cmd.do(doc);
+  }
+
+  undo(doc: D): void {
+    for (let i = this.commands.length - 1; i >= 0; i--) this.commands[i].undo(doc);
+  }
+}
+
+/**
  * Classic undo/redo stack. `subscribe` notifies on every history change so
  * a UI can derive its undo/redo disabled states.
  */

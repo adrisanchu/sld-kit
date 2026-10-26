@@ -59,7 +59,7 @@ export {
   type ConnectionGeometry
 } from './layout/LayoutEngine';
 
-export { type Command, CommandStack } from './commands/Command';
+export { type Command, CommandStack, BatchCommand } from './commands/Command';
 export {
   AddElementCommand,
   AddPositionCommand,
