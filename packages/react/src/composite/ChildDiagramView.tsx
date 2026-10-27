@@ -58,6 +58,12 @@ export interface ChildDiagramViewProps {
   /** Fallback text when a child diagram can't be resolved. */
   notFoundLabel?: string;
   onChildDown?: (detail: { id: string; event: React.PointerEvent }) => void;
+  /**
+   * The pointer entered (`{ id, section? }`) or left (`null`) this child's hit
+   * area. In box view a split child reports which section box it is over.
+   * `CompositeCanvas` uses it to track hover; see its `onChildHover`.
+   */
+  onChildHover?: (detail: { id: string; section?: string } | null) => void;
   /** Explore mode: the user clicked this (non-focused) child to fly into it. */
   onChildFocus?: (detail: { id: string; event: React.PointerEvent }) => void;
   /** Explore mode: the user clicked an operable element inside the focused child. */
@@ -95,6 +101,7 @@ export function ChildDiagramView({
   boxSubLabel,
   notFoundLabel = DEFAULT_CHILD_NOT_FOUND,
   onChildDown,
+  onChildHover,
   onChildFocus,
   onElementActivate,
   animateMorph = true
@@ -164,6 +171,8 @@ export function ChildDiagramView({
         : [],
     [layout, resolved]
   );
+
+  const captureClass = interactive ? (explore ? 'cursor-pointer' : 'cursor-move') : '';
 
   function handleDown(e: React.PointerEvent) {
     if (!interactive) return;
@@ -382,10 +391,34 @@ export function ChildDiagramView({
           width={child.frame.width}
           height={child.frame.height}
           fill="transparent"
-          className={interactive ? (explore ? 'cursor-pointer' : 'cursor-move') : ''}
+          className={captureClass}
           onPointerDown={handleDown}
+          onPointerEnter={() => onChildHover?.({ id: instance.id })}
+          onPointerLeave={() => onChildHover?.(null)}
         />
       )}
+      {/* Split box view: one capture rect per section box on top, so hover can
+          tell which section the pointer is over (the gaps between boxes still
+          hit the whole-frame rect underneath). */}
+      {!(explore && focused) &&
+        boxDisplay &&
+        onChildHover &&
+        child.boxes &&
+        child.boxes.length > 1 &&
+        child.boxes.map((b) => (
+          <rect
+            key={`hit:${b.key}`}
+            x={b.frame.x}
+            y={b.frame.y}
+            width={b.frame.width}
+            height={b.frame.height}
+            fill="transparent"
+            className={captureClass}
+            onPointerDown={handleDown}
+            onPointerEnter={() => onChildHover({ id: instance.id, section: b.key })}
+            onPointerLeave={() => onChildHover(null)}
+          />
+        ))}
     </g>
   );
 }

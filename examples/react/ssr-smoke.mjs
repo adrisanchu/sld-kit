@@ -136,6 +136,30 @@ const styled = renderToStaticMarkup(
   })
 );
 const unselected = renderToStaticMarkup(h(CompositeCanvas, { layout: clayout }));
+// Adapter-tracked hover (#69, phase 2). Pointer tracking can't run in SSR, so
+// these drive the same frames through the controlled `hoveredChild` prop.
+function hoverChecks() {
+  const [a, b] = clayout.children.map((c) => c.instance.id);
+  const render = (props) => renderToStaticMarkup(h(CompositeCanvas, { layout: clayout, selectedId: a, ...props }));
+  const off = render({ hoveredChild: { id: b } });
+  const other = render({ hoverFrame: true, hoveredChild: { id: b } });
+  const same = render({ hoverFrame: true, hoveredChild: { id: a, section: 's1' } });
+  const onlyHover = renderToStaticMarkup(h(CompositeCanvas, { layout: clayout, hoverFrame: true, hoveredChild: { id: b } }));
+  return [
+    ['hover: no frame unless `hoverFrame` is on', count(off, 'class="sld-selection ') === 1 && !off.includes('data-state="hover"')],
+    [
+      'hover: an unselected child gets a faded hover frame without a rotate handle',
+      count(other, 'class="sld-selection ') === 2 &&
+        other.includes('data-state="hover" data-hover="true" opacity="0.55"') &&
+        count(other, 'sld-selection-rotate') === 1
+    ],
+    [
+      'hover: over the selected child it marks that frame instead of stacking one',
+      count(same, 'class="sld-selection ') === 1 && same.includes('data-state="selected" data-hover="true" data-section="s1"')
+    ],
+    ['hover: works without a selection', count(onlyHover, 'class="sld-selection ') === 1 && !onlyHover.includes('sld-selection-rotate')]
+  ];
+}
 const tl = firstChild.worldCorners[0];
 checks.push(
   ['selection frame: root hook + state', cc.includes('class="sld-selection text-primary pointer-events-none" data-state="selected"')],
@@ -151,6 +175,8 @@ checks.push(
   ['selection frame: `style.composite.selection` overrides width + corner size', styled.includes('--sld-selection-width, 3') && styled.includes('r="5"')],
   ['selection frame: padding pushes the corners out along the edges', styled.includes(`cx="${tl.x - 10}" cy="${tl.y - 10}"`)],
   ['selection frame: none without a selection', !unselected.includes('sld-selection')],
+  ['selection frame: no hover markup by default', !cc.includes('data-hover') && count(cc, 'class="sld-selection ') === 1],
+  ...hoverChecks(),
   ['resolveViewStyle keeps unspecified selection numbers', resolveViewStyle({ composite: { selection: { padding: 2 } } }).composite.selection.dashArray === '6 4']
 );
 

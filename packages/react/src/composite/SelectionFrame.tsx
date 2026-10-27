@@ -7,6 +7,16 @@ export interface SelectionFrameProps {
   child: ChildLayout;
   interactive?: boolean;
   /**
+   * `selected` (default) draws the full chrome with the rotation handle;
+   * `hover` draws the same frame without it, faded (`opacity` 0.55 — a
+   * presentation attribute, so any CSS rule overrides it). Exposed as `data-state`.
+   */
+  state?: 'selected' | 'hover';
+  /** The selected child is also under the pointer: adds `data-hover="true"`. */
+  hovered?: boolean;
+  /** Section box under the pointer (box view, split child): `data-section`. */
+  section?: string;
+  /**
    * The child's colour class (e.g. a voltage bucket setting `--sld-pos`), put on
    * the root so a stylesheet can tint the frame — e.g.
    * `.sld-selection { --sld-selection-stroke: var(--sld-pos) }`. Paint is
@@ -27,7 +37,8 @@ export interface SelectionFrameProps {
  * offset from the top-edge midpoint along the rotated "up" direction.
  *
  * Styleable from the app (headless chrome):
- * - classes `sld-selection` (root, with `data-state="selected"`),
+ * - classes `sld-selection` (root, with `data-state="selected" | "hover"`,
+ *   plus `data-hover="true"` / `data-section` while the pointer is over it),
  *   `sld-selection-outline`, `sld-selection-corner`, `sld-selection-rotate`;
  * - CSS custom properties `--sld-selection-stroke` (colour, default the
  *   `text-primary` currentColor), `--sld-selection-width`, `--sld-selection-dash`
@@ -36,6 +47,9 @@ export interface SelectionFrameProps {
 export function SelectionFrame({
   child,
   interactive = true,
+  state = 'selected',
+  hovered = false,
+  section,
   colorClass = null,
   className,
   style = DEFAULT_VIEW_STYLE,
@@ -61,7 +75,13 @@ export function SelectionFrame({
   const rootClass = ['sld-selection text-primary pointer-events-none', colorClass, className].filter(Boolean).join(' ');
 
   return (
-    <g className={rootClass} data-state="selected">
+    <g
+      className={rootClass}
+      data-state={state}
+      data-hover={hovered ? 'true' : undefined}
+      data-section={section}
+      opacity={state === 'hover' ? 0.55 : undefined}
+    >
       <polygon points={points} fill="none" className="sld-selection-outline" style={outlineStyle} />
       {corners.map((c, i) => (
         <circle
@@ -75,26 +95,28 @@ export function SelectionFrame({
         />
       ))}
 
-      {/* Rotation handle */}
-      <g className="sld-selection-rotate">
-        <line
-          x1={topMid.x}
-          y1={topMid.y}
-          x2={handle.x}
-          y2={handle.y}
-          style={{ stroke }}
-          strokeWidth={sel.strokeWidth}
-        />
-        <circle
-          cx={handle.x}
-          cy={handle.y}
-          r={sel.rotateHandleRadius}
-          className={`fill-background${interactive ? ' pointer-events-auto cursor-grab' : ''}`}
-          style={{ stroke }}
-          strokeWidth={sel.strokeWidth}
-          onPointerDown={handleRotateDown}
-        />
-      </g>
+      {/* Rotation handle (selected only) */}
+      {state === 'selected' && (
+        <g className="sld-selection-rotate">
+          <line
+            x1={topMid.x}
+            y1={topMid.y}
+            x2={handle.x}
+            y2={handle.y}
+            style={{ stroke }}
+            strokeWidth={sel.strokeWidth}
+          />
+          <circle
+            cx={handle.x}
+            cy={handle.y}
+            r={sel.rotateHandleRadius}
+            className={`fill-background${interactive ? ' pointer-events-auto cursor-grab' : ''}`}
+            style={{ stroke }}
+            strokeWidth={sel.strokeWidth}
+            onPointerDown={handleRotateDown}
+          />
+        </g>
+      )}
     </g>
   );
 }

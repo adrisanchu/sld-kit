@@ -44,3 +44,48 @@ export function frameGeometry(src: readonly Point[], padding: number, handleOffs
     handle: { x: topMid.x + up.x * handleOffset, y: topMid.y + up.y * handleOffset }
   };
 }
+
+/**
+ * The child under the pointer, as tracked by `CompositeCanvas` (or supplied by
+ * the app to drive hover from elsewhere, e.g. a list). `section` is the box key
+ * when a box-view child is split into section boxes.
+ */
+export interface ChildHover {
+  id: string;
+  section?: string;
+}
+
+/** One frame to draw: the selected child's, or a hovered (unselected) child's. */
+export interface FrameSpec {
+  id: string;
+  state: 'selected' | 'hover';
+  /** The pointer is over this frame's child (only reported when hover frames are on). */
+  hovered: boolean;
+  section?: string;
+}
+
+/**
+ * Which frames to draw for a selection + hover. Hover never stacks a second
+ * frame on the selected child: it marks the selected frame `hovered` instead.
+ */
+export function frameSpecs(selectedId: string | null, hover: ChildHover | null, hoverFrame: boolean): FrameSpec[] {
+  const out: FrameSpec[] = [];
+  const onSelected = hoverFrame && !!hover && hover.id === selectedId;
+  if (selectedId) {
+    out.push({
+      id: selectedId,
+      state: 'selected',
+      hovered: onSelected,
+      section: onSelected ? hover?.section : undefined
+    });
+  }
+  if (hoverFrame && hover && hover.id !== selectedId) {
+    out.push({ id: hover.id, state: 'hover', hovered: true, section: hover.section });
+  }
+  return out;
+}
+
+/** Stable identity of a hover, for change detection. */
+export function hoverKey(h: ChildHover | null): string {
+  return h ? `${h.id}\u0000${h.section ?? ''}` : '';
+}

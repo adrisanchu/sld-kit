@@ -11,7 +11,8 @@
    * circle offset from the top-edge midpoint along the rotated "up" direction.
    *
    * Styleable from the app (headless chrome):
-   * - classes `sld-selection` (root, with `data-state="selected"`),
+   * - classes `sld-selection` (root, with `data-state="selected" | "hover"`,
+   *   plus `data-hover="true"` / `data-section` while the pointer is over it),
    *   `sld-selection-outline`, `sld-selection-corner`, `sld-selection-rotate`;
    * - CSS custom properties `--sld-selection-stroke` (colour, default the
    *   `text-primary` currentColor), `--sld-selection-width`, `--sld-selection-dash`
@@ -20,6 +21,16 @@
    */
   export let child: ChildLayout;
   export let interactive: boolean = true;
+  /**
+   * `selected` (default) draws the full chrome with the rotation handle;
+   * `hover` draws the same frame without it, faded (`opacity` 0.55 — a
+   * presentation attribute, so any CSS rule overrides it). Exposed as `data-state`.
+   */
+  export let state: 'selected' | 'hover' = 'selected';
+  /** The selected child is also under the pointer: adds `data-hover="true"`. */
+  export let hovered: boolean = false;
+  /** Section box under the pointer (box view, split child): `data-section`. */
+  export let section: string | undefined = undefined;
   /**
    * The child's colour class (e.g. a voltage bucket setting `--sld-pos`), put on
    * the root so a stylesheet can tint the frame — e.g.
@@ -50,7 +61,13 @@
   }
 </script>
 
-<g class={rootClass} data-state="selected">
+<g
+  class={rootClass}
+  data-state={state}
+  data-hover={hovered ? 'true' : undefined}
+  data-section={section}
+  opacity={state === 'hover' ? 0.55 : undefined}
+>
   <polygon points={geo.points} fill="none" class="sld-selection-outline" style={outlineStyle} />
   {#each geo.corners as c}
     <circle
@@ -63,27 +80,29 @@
     />
   {/each}
 
-  <!-- Rotation handle -->
-  <g class="sld-selection-rotate">
-    <line
-      x1={geo.topMid.x}
-      y1={geo.topMid.y}
-      x2={geo.handle.x}
-      y2={geo.handle.y}
-      style={stroke}
-      stroke-width={sel.strokeWidth}
-    />
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <circle
-      cx={geo.handle.x}
-      cy={geo.handle.y}
-      r={sel.rotateHandleRadius}
-      class="fill-background"
-      class:pointer-events-auto={interactive}
-      class:cursor-grab={interactive}
-      style={stroke}
-      stroke-width={sel.strokeWidth}
-      on:pointerdown={handleRotateDown}
-    />
-  </g>
+  <!-- Rotation handle (selected only) -->
+  {#if state === 'selected'}
+    <g class="sld-selection-rotate">
+      <line
+        x1={geo.topMid.x}
+        y1={geo.topMid.y}
+        x2={geo.handle.x}
+        y2={geo.handle.y}
+        style={stroke}
+        stroke-width={sel.strokeWidth}
+      />
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <circle
+        cx={geo.handle.x}
+        cy={geo.handle.y}
+        r={sel.rotateHandleRadius}
+        class="fill-background"
+        class:pointer-events-auto={interactive}
+        class:cursor-grab={interactive}
+        style={stroke}
+        stroke-width={sel.strokeWidth}
+        on:pointerdown={handleRotateDown}
+      />
+    </g>
+  {/if}
 </g>

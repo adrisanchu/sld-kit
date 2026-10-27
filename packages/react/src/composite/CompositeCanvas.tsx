@@ -1,4 +1,13 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, type ReactNode } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode
+} from 'react';
 import {
   SLD_LAYOUT,
   connectionPath,
@@ -22,6 +31,7 @@ import type { FormatResolver } from '../format';
 import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
 import { ChildDiagramView } from './ChildDiagramView';
 import { SelectionFrame } from './SelectionFrame';
+import { frameSpecs, hoverKey, type ChildHover } from './frameGeometry';
 import { SymbolGlyph } from './SymbolGlyph';
 import { orthogonalizePolyline } from './routing';
 
@@ -36,6 +46,19 @@ export interface CompositeCanvasProps {
   selectedId?: string | null;
   /** Currently selected manual line (shows its draggable bend handles). */
   selectedLineId?: string | null;
+  /**
+   * Draw a frame around the child under the pointer: the same `SelectionFrame`
+   * with `data-state="hover"` (no rotation handle). Over the selected child it
+   * never stacks a second frame; the selected one gets `data-hover="true"`.
+   * Default `false` (hover is still reported through `onChildHover`).
+   */
+  hoverFrame?: boolean;
+  /**
+   * Controlled hover: when given (including `null`), it is drawn instead of the
+   * canvas's own pointer tracking — e.g. to highlight a child from a list.
+   * `onChildHover` keeps reporting the pointer either way.
+   */
+  hoveredChild?: ChildHover | null;
   interactive?: boolean;
   /**
    * Explore mode: children's transforms are read-only, but a click flies into a
@@ -95,6 +118,12 @@ export interface CompositeCanvasProps {
   children?: ReactNode;
 
   onChildDown?: (detail: { id: string; event: React.PointerEvent }) => void;
+  /**
+   * The child (and, in a split box view, the section box) under the pointer
+   * changed; `null` when it leaves every child. Tracked by the canvas and
+   * cleared while a button is held (drag, pan), while panning and in draw mode.
+   */
+  onChildHover?: (detail: ChildHover | null) => void;
   onChildFocus?: (detail: { id: string; event: React.PointerEvent }) => void;
   onElementActivate?: (detail: { instanceId: string; elementId: string }) => void;
   onRotateStart?: (detail: { event: React.PointerEvent }) => void;
@@ -143,6 +172,8 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     layout,
     selectedId = null,
     selectedLineId = null,
+    hoverFrame = false,
+    hoveredChild,
     interactive = true,
     explore = false,
     focusedId = null,
@@ -165,6 +196,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     notFoundLabel = DEFAULT_CHILD_NOT_FOUND,
     children,
     onChildDown,
+    onChildHover,
     onChildFocus,
     onElementActivate,
     onRotateStart,
@@ -201,6 +233,42 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
   const viewBox = useStore(pz.viewBox);
   const spaceDown = useStore(pz.spaceDown);
   const panning = useStore(pz.panning);
+
+  // ── Hover ─────────────────────────────────────────────────────────────────
+  // Children report pointer enter/leave on their hit rects; the canvas masks it
+  // while a button is down (dragging / panning) and in draw mode.
+  const [rawHover, setRawHover] = useState<ChildHover | null>(null);
+  const [pressed, setPressed] = useState(false);
+  const reportHover = useCallback(
+    (h: ChildHover | null) => setRawHover((prev) => (hoverKey(prev) === hoverKey(h) ? prev : h)),
+    []
+  );
+  useEffect(() => {
+    const up = () => setPressed(false);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    return () => {
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
+  }, []);
+  const trackedHover =
+    rawHover && !drawMode && !panning && !pressed && layout.children.some((c) => c.instance.id === rawHover.id)
+      ? rawHover
+      : null;
+  const shownHover = hoveredChild !== undefined ? hoveredChild : trackedHover;
+
+  // Report changes (not the initial "nothing hovered").
+  const onChildHoverRef = useRef(onChildHover);
+  onChildHoverRef.current = onChildHover;
+  const lastHoverKey = useRef('');
+  const trackedKey = hoverKey(trackedHover);
+  useEffect(() => {
+    if (trackedKey === lastHoverKey.current) return;
+    lastHoverKey.current = trackedKey;
+    onChildHoverRef.current?.(trackedHover);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the hover's identity
+  }, [trackedKey]);
 
   const selectedChild = selectedId ? (layout.children.find((c) => c.instance.id === selectedId) ?? null) : null;
   const selectedLine = selectedLineId ? (layout.lines.find((l) => l.line.id === selectedLineId) ?? null) : null;
@@ -380,6 +448,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
       className={`h-full w-full touch-none ${cursorClass}`}
       viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
       onPointerDown={handlePointerDown}
+      onPointerDownCapture={() => setPressed(true)}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
@@ -478,6 +547,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
           boxSubLabel={boxSubLabel}
           notFoundLabel={notFoundLabel}
           onChildDown={onChildDown}
+          onChildHover={reportHover}
           onChildFocus={onChildFocus}
           onElementActivate={onElementActivate}
         />
@@ -521,17 +591,27 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         );
       })}
 
-      {/* Selection + rotation chrome on top. Styleable through its classes and
-          CSS variables (see SelectionFrame); hide it with `.sld-selection { display: none }`. */}
-      {selectedChild && (
-        <SelectionFrame
-          child={selectedChild}
-          interactive={interactive}
-          colorClass={childColorClass(selectedChild)}
-          style={style}
-          onRotateStart={onRotateStart}
-        />
-      )}
+      {/* Selection (+ rotation) and hover chrome on top: one frame per child, its
+          state in `data-state`. Styleable through its classes and CSS variables
+          (see SelectionFrame); hide it with `.sld-selection { display: none }`.
+          Keyed by state so CSS entry animations replay on a state change. */}
+      {frameSpecs(selectedId, shownHover, hoverFrame).map((f) => {
+        const child = f.id === selectedId ? selectedChild : layout.children.find((c) => c.instance.id === f.id);
+        if (!child) return null;
+        return (
+          <SelectionFrame
+            key={`${f.id}:${f.state}`}
+            child={child}
+            state={f.state}
+            hovered={f.hovered}
+            section={f.section}
+            interactive={interactive && f.state === 'selected'}
+            colorClass={childColorClass(child)}
+            style={style}
+            onRotateStart={f.state === 'selected' ? onRotateStart : undefined}
+          />
+        );
+      })}
 
       {/* Manual-line chrome on top: hit targets for selection. */}
       {!drawMode &&

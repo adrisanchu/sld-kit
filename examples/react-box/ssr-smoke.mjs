@@ -151,6 +151,7 @@ setState(COUPLER_ID, 'closed');
 const closedSections = busTopology(charlie).sections;
 const mergedChild = charlieBoxes();
 const mergedHtml = renderFixture();
+const count = (str, needle) => str.split(needle).length - 1;
 const sectionFeeders = (sections) => sections.map((s) => [...s.connectionIds].sort().join(',')).join(' | ');
 
 // Phase 5 operate loop on the real fixture: toggle the coupler from a composite
@@ -224,6 +225,11 @@ const checks = [
       !expandedHtml.includes('sld-morph-ghost') // no animation on first render / SSR
   ],
   ['auto-facing derives the exit side from live positions', facingRight === 'right' && facingLeft === 'left'],
+  [
+    'split box view: one hover hit rect per section box',
+    // every child's whole-frame rect, plus one per section box of the split CHARLIE
+    count(splitHtml, 'class="cursor-move"') === fixture.allChildren().length + splitChild.boxes.length
+  ],
   ['selection frame carries the child\'s colour class', selectedHtml.includes('class="sld-selection text-primary pointer-events-none sld-volt-400" data-state="selected"')]
 ];
 
