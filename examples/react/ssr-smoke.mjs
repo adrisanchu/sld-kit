@@ -136,6 +136,25 @@ const styled = renderToStaticMarkup(
   })
 );
 const unselected = renderToStaticMarkup(h(CompositeCanvas, { layout: clayout }));
+// Corner treatment (#69, phase 3): dots (default) / brackets / none.
+function cornerChecks() {
+  const render = (selectionCorners) =>
+    renderToStaticMarkup(h(CompositeCanvas, { layout: clayout, selectedId: firstChild.instance.id, selectionCorners }));
+  const brackets = render('brackets');
+  const none = render('none');
+  return [
+    [
+      'corners: brackets draw 4 L-paths and name the choice',
+      count(brackets, '<path') - count(cc, '<path') === 4 &&
+        count(brackets, 'sld-selection-corner') === 4 &&
+        count(brackets, '<circle') === count(cc, '<circle') - 4 && // the dots are gone
+        brackets.includes('data-corners="brackets"')
+    ],
+    ['corners: none draws no corner marks', count(none, 'sld-selection-corner') === 0 && none.includes('data-corners="none"')],
+    ['corners: the default stays dots, no data-corners', !cc.includes('data-corners')]
+  ];
+}
+
 // Adapter-tracked hover (#69, phase 2). Pointer tracking can't run in SSR, so
 // these drive the same frames through the controlled `hoveredChild` prop.
 function hoverChecks() {
@@ -177,6 +196,7 @@ checks.push(
   ['selection frame: none without a selection', !unselected.includes('sld-selection')],
   ['selection frame: no hover markup by default', !cc.includes('data-hover') && count(cc, 'class="sld-selection ') === 1],
   ...hoverChecks(),
+  ...cornerChecks(),
   ['resolveViewStyle keeps unspecified selection numbers', resolveViewStyle({ composite: { selection: { padding: 2 } } }).composite.selection.dashArray === '6 4']
 );
 

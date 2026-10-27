@@ -31,7 +31,7 @@ export { default as CompositeExplorer } from './composite/CompositeExplorer.svel
 export { default as CompositeToolbar } from './composite/CompositeToolbar.svelte';
 export { default as ChildDiagramView } from './composite/ChildDiagramView.svelte';
 export { default as SelectionFrame } from './composite/SelectionFrame.svelte';
-export type { ChildHover } from './composite/frameGeometry';
+export type { ChildHover, FrameCorners } from './composite/frameGeometry';
 
 // ── Flow overlay (generic animated lines; domain-agnostic) ────────────────
 export { default as FlowOverlay } from './flow/FlowOverlay.svelte';

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { ChildLayout } from '@sld-kit/core';
+  import type { ChildLayout, Point } from '@sld-kit/core';
   import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
-  import { frameGeometry } from './frameGeometry';
+  import { bracketPaths, frameGeometry, type FrameCorners } from './frameGeometry';
 
   /**
    * Selection chrome for the active child, drawn in world coordinates (OUTSIDE
@@ -32,6 +32,17 @@
   /** Section box under the pointer (box view, split child): `data-section`. */
   export let section: string | undefined = undefined;
   /**
+   * World corners to frame [TL, TR, BR, BL]; default `child.worldCorners`. Pass a
+   * section box's (core `sectionWorldCorners`) to frame just that section.
+   */
+  export let frameCorners: readonly Point[] | undefined = undefined;
+  /**
+   * Corner treatment: `dots` (default), `brackets` (L-shaped arms of
+   * `style.composite.selection.cornerArm`) or `none`. Both shapes carry
+   * `sld-selection-corner`; `data-corners` on the root names the choice.
+   */
+  export let cornerStyle: FrameCorners = 'dots';
+  /**
    * The child's colour class (e.g. a voltage bucket setting `--sld-pos`), put on
    * the root so a stylesheet can tint the frame — e.g.
    * `.sld-selection { --sld-selection-stroke: hsl(var(--sld-pos)) }`. Paint is
@@ -49,7 +60,7 @@
   const stroke = 'stroke: var(--sld-selection-stroke, currentColor)';
 
   $: sel = style.composite.selection;
-  $: geo = frameGeometry(child.worldCorners, sel.padding, sel.rotateHandleOffset);
+  $: geo = frameGeometry(frameCorners ?? child.worldCorners, sel.padding, sel.rotateHandleOffset);
   $: outlineStyle = `${stroke}; stroke-width: var(--sld-selection-width, ${sel.strokeWidth}); stroke-dasharray: var(--sld-selection-dash, ${sel.dashArray})`;
   $: rootClass = ['sld-selection text-primary pointer-events-none', colorClass, className].filter(Boolean).join(' ');
 
@@ -66,19 +77,34 @@
   data-state={state}
   data-hover={hovered ? 'true' : undefined}
   data-section={section}
+  data-corners={cornerStyle === 'dots' ? undefined : cornerStyle}
   opacity={state === 'hover' ? 0.55 : undefined}
 >
   <polygon points={geo.points} fill="none" class="sld-selection-outline" style={outlineStyle} />
-  {#each geo.corners as c}
-    <circle
-      cx={c.x}
-      cy={c.y}
-      r={sel.cornerRadius}
-      class="sld-selection-corner fill-background"
-      style={stroke}
-      stroke-width={sel.strokeWidth}
-    />
-  {/each}
+  {#if cornerStyle === 'brackets'}
+    {#each bracketPaths(geo.corners, sel.cornerArm) as d}
+      <path
+        {d}
+        fill="none"
+        class="sld-selection-corner"
+        style={stroke}
+        stroke-width={sel.strokeWidth * 2}
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    {/each}
+  {:else if cornerStyle === 'dots'}
+    {#each geo.corners as c}
+      <circle
+        cx={c.x}
+        cy={c.y}
+        r={sel.cornerRadius}
+        class="sld-selection-corner fill-background"
+        style={stroke}
+        stroke-width={sel.strokeWidth}
+      />
+    {/each}
+  {/if}
 
   <!-- Rotation handle (selected only) -->
   {#if state === 'selected'}

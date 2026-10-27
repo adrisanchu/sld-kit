@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
-import type { ChildLayout } from '@sld-kit/core';
+import type { ChildLayout, Point } from '@sld-kit/core';
 import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
-import { frameGeometry } from './frameGeometry';
+import { bracketPaths, frameGeometry, type FrameCorners } from './frameGeometry';
 
 export interface SelectionFrameProps {
   child: ChildLayout;
@@ -16,6 +16,17 @@ export interface SelectionFrameProps {
   hovered?: boolean;
   /** Section box under the pointer (box view, split child): `data-section`. */
   section?: string;
+  /**
+   * World corners to frame [TL, TR, BR, BL]; default `child.worldCorners`. Pass a
+   * section box's (core `sectionWorldCorners`) to frame just that section.
+   */
+  frameCorners?: readonly Point[];
+  /**
+   * Corner treatment: `dots` (default), `brackets` (L-shaped arms of
+   * `style.composite.selection.cornerArm`) or `none`. Both shapes carry
+   * `sld-selection-corner`; `data-corners` on the root names the choice.
+   */
+  cornerStyle?: FrameCorners;
   /**
    * The child's colour class (e.g. a voltage bucket setting `--sld-pos`), put on
    * the root so a stylesheet can tint the frame — e.g.
@@ -50,13 +61,19 @@ export function SelectionFrame({
   state = 'selected',
   hovered = false,
   section,
+  frameCorners,
+  cornerStyle = 'dots',
   colorClass = null,
   className,
   style = DEFAULT_VIEW_STYLE,
   onRotateStart
 }: SelectionFrameProps) {
   const sel = style.composite.selection;
-  const { corners, points, topMid, handle } = frameGeometry(child.worldCorners, sel.padding, sel.rotateHandleOffset);
+  const { corners, points, topMid, handle } = frameGeometry(
+    frameCorners ?? child.worldCorners,
+    sel.padding,
+    sel.rotateHandleOffset
+  );
 
   const stroke = 'var(--sld-selection-stroke, currentColor)';
   const outlineStyle: CSSProperties = {
@@ -80,20 +97,35 @@ export function SelectionFrame({
       data-state={state}
       data-hover={hovered ? 'true' : undefined}
       data-section={section}
+      data-corners={cornerStyle === 'dots' ? undefined : cornerStyle}
       opacity={state === 'hover' ? 0.55 : undefined}
     >
       <polygon points={points} fill="none" className="sld-selection-outline" style={outlineStyle} />
-      {corners.map((c, i) => (
-        <circle
-          key={i}
-          cx={c.x}
-          cy={c.y}
-          r={sel.cornerRadius}
-          className="sld-selection-corner fill-background"
-          style={{ stroke }}
-          strokeWidth={sel.strokeWidth}
-        />
-      ))}
+      {cornerStyle === 'brackets' &&
+        bracketPaths(corners, sel.cornerArm).map((d, i) => (
+          <path
+            key={i}
+            d={d}
+            fill="none"
+            className="sld-selection-corner"
+            style={{ stroke }}
+            strokeWidth={sel.strokeWidth * 2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
+      {cornerStyle === 'dots' &&
+        corners.map((c, i) => (
+          <circle
+            key={i}
+            cx={c.x}
+            cy={c.y}
+            r={sel.cornerRadius}
+            className="sld-selection-corner fill-background"
+            style={{ stroke }}
+            strokeWidth={sel.strokeWidth}
+          />
+        ))}
 
       {/* Rotation handle (selected only) */}
       {state === 'selected' && (

@@ -38,7 +38,7 @@ export {
 export { CompositeToolbar, type CompositeToolbarProps } from './composite/CompositeToolbar';
 export { ChildDiagramView, type ChildDiagramViewProps } from './composite/ChildDiagramView';
 export { SelectionFrame, type SelectionFrameProps } from './composite/SelectionFrame';
-export type { ChildHover } from './composite/frameGeometry';
+export type { ChildHover, FrameCorners } from './composite/frameGeometry';
 export { SymbolGlyph, type SymbolGlyphProps } from './composite/SymbolGlyph';
 export { orthogonalizePolyline } from './composite/routing';
 

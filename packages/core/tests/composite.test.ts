@@ -11,6 +11,7 @@ import {
   SWITCH_OPEN_CONNECTION_FORMAT,
   BOX_SIZE,
   BOX_SECTION_GAP,
+  sectionWorldCorners,
   CompositeLine,
   chordFrame,
   CommandStack,
@@ -1053,6 +1054,29 @@ describe('Box view — section boxes (boxSections)', () => {
         ]
       }
     ]);
+  });
+
+  it('sectionWorldCorners maps a section box through the child transform (rotation included)', () => {
+    const flat = childOf(engine(split).layout(sectionDoc()), 'mid');
+    const [, b] = flat.boxes!;
+    expect(sectionWorldCorners(flat, 'bb-2')).toEqual(flat.transform.applyRect(b.frame));
+    expect(sectionWorldCorners(flat, 'bb-2')![0]).toEqual({ x: b.frame.x, y: b.frame.y });
+    expect(sectionWorldCorners(flat, 'nope')).toBeNull();
+    expect(sectionWorldCorners(childOf(engine().layout(sectionDoc()), 'mid'), 'bb-1')).toBeNull();
+
+    const doc = sectionDoc();
+    doc.getChild('mid')!.angleDeg = 90;
+    const turned = childOf(engine(split).layout(doc), 'mid');
+    const corners = sectionWorldCorners(turned, 'bb-1')!;
+    // A quarter turn: the section's top edge (TL→TR) now runs vertically.
+    expect(corners[0].x).toBeCloseTo(corners[1].x);
+    expect(Math.abs(corners[1].y - corners[0].y)).toBeCloseTo(BOX_SIZE.width);
+    // The section boxes tile the child: every section corner lies inside the child's world bounds.
+    const wb = turned.worldBounds;
+    for (const p of corners) {
+      expect(p.x).toBeGreaterThanOrEqual(wb.x - 1e-6);
+      expect(p.x).toBeLessThanOrEqual(wb.x + wb.width + 1e-6);
+    }
   });
 
   it("each feeder attaches to its own section's box, which faces its own peer", () => {

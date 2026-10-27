@@ -89,3 +89,27 @@ export function frameSpecs(selectedId: string | null, hover: ChildHover | null, 
 export function hoverKey(h: ChildHover | null): string {
   return h ? `${h.id}\u0000${h.section ?? ''}` : '';
 }
+
+/** Corner treatment of a frame: dots (default), L-shaped brackets, or nothing. */
+export type FrameCorners = 'dots' | 'brackets' | 'none';
+
+/**
+ * One L-shaped bracket per corner, as SVG path data: each arm runs `arm` along
+ * the corner's two (rotated) edges, clamped to a third of the edge so short
+ * frames keep a visible gap between brackets.
+ */
+export function bracketPaths(corners: readonly Point[], arm: number): string[] {
+  const n = corners.length;
+  return corners.map((p, i) => {
+    const toward = (q: Point) => {
+      const dx = q.x - p.x;
+      const dy = q.y - p.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const a = Math.min(arm, len / 3);
+      return { x: p.x + (dx / len) * a, y: p.y + (dy / len) * a };
+    };
+    const a = toward(corners[(i + n - 1) % n]);
+    const b = toward(corners[(i + 1) % n]);
+    return `M${a.x},${a.y} L${p.x},${p.y} L${b.x},${b.y}`;
+  });
+}

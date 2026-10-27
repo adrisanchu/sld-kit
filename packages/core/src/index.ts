@@ -159,6 +159,7 @@ export { CompositeSvgExporter, type CompositeSvgExportOptions } from './composit
 export {
   BOX_SECTION_GAP,
   layoutSectionBoxes,
+  sectionWorldCorners,
   type BoxSection,
   type BoxSectionSplit,
   type BoxSectionsResolver,

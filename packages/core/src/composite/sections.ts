@@ -90,3 +90,18 @@ export function feederBoxCenter(
   const f = sectionBoxOf(child.boxes, connectionId)?.frame ?? child.frame;
   return child.transform.apply({ x: f.x + f.width / 2, y: f.y + f.height / 2 });
 }
+
+/**
+ * World-space corners [TL, TR, BR, BL] of one section box of a laid-out child
+ * (`ChildLayout.boxes`), through the child's transform — the section's
+ * counterpart of `ChildLayout.worldCorners`, rotation included. `null` when the
+ * child has no section box with that key. Used by the adapters to frame a
+ * hovered section.
+ */
+export function sectionWorldCorners(
+  child: { transform: Transform2D; boxes?: readonly SectionBox[] },
+  key: string
+): Point[] | null {
+  const box = child.boxes?.find((b) => b.key === key);
+  return box ? child.transform.applyRect(box.frame) : null;
+}

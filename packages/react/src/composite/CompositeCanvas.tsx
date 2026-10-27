@@ -14,6 +14,7 @@ import {
   linkFormat,
   lineFormat,
   rotateSide,
+  sectionWorldCorners,
   type CompositeLayout,
   type ChildLayout,
   type CompositeLineLayout,
@@ -31,7 +32,7 @@ import type { FormatResolver } from '../format';
 import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
 import { ChildDiagramView } from './ChildDiagramView';
 import { SelectionFrame } from './SelectionFrame';
-import { frameSpecs, hoverKey, type ChildHover } from './frameGeometry';
+import { frameSpecs, hoverKey, type ChildHover, type FrameCorners } from './frameGeometry';
 import { SymbolGlyph } from './SymbolGlyph';
 import { orthogonalizePolyline } from './routing';
 
@@ -59,6 +60,11 @@ export interface CompositeCanvasProps {
    * `onChildHover` keeps reporting the pointer either way.
    */
   hoveredChild?: ChildHover | null;
+  /**
+   * Corner treatment of the selection / hover frames: `dots` (default),
+   * `brackets` (L-shaped, `style.composite.selection.cornerArm` long) or `none`.
+   */
+  selectionCorners?: FrameCorners;
   interactive?: boolean;
   /**
    * Explore mode: children's transforms are read-only, but a click flies into a
@@ -174,6 +180,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     selectedLineId = null,
     hoverFrame = false,
     hoveredChild,
+    selectionCorners = 'dots',
     interactive = true,
     explore = false,
     focusedId = null,
@@ -605,6 +612,12 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
             state={f.state}
             hovered={f.hovered}
             section={f.section}
+            // A hovered section of a split box gets its own frame; the selection
+            // always frames the whole child.
+            frameCorners={
+              f.state === 'hover' && f.section ? (sectionWorldCorners(child, f.section) ?? undefined) : undefined
+            }
+            cornerStyle={selectionCorners}
             interactive={interactive && f.state === 'selected'}
             colorClass={childColorClass(child)}
             style={style}

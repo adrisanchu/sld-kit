@@ -4,6 +4,7 @@
     SLD_LAYOUT,
     linkFormat,
     lineFormat,
+    sectionWorldCorners,
     type CompositeLayout,
     type ChildLayout,
     type CompositeLineLayout,
@@ -16,7 +17,7 @@
   import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
   import ChildDiagramView from './ChildDiagramView.svelte';
   import SelectionFrame from './SelectionFrame.svelte';
-  import { frameSpecs, hoverKey, type ChildHover } from './frameGeometry';
+  import { frameSpecs, hoverKey, type ChildHover, type FrameCorners } from './frameGeometry';
 
   /**
    * SVG host of the composite. A sibling of `SldCanvas`, sharing only the
@@ -41,6 +42,11 @@
    * `childhover` keeps reporting the pointer either way.
    */
   export let hoveredChild: ChildHover | null | undefined = undefined;
+  /**
+   * Corner treatment of the selection / hover frames: `dots` (default),
+   * `brackets` (L-shaped, `style.composite.selection.cornerArm` long) or `none`.
+   */
+  export let selectionCorners: FrameCorners = 'dots';
   export let interactive: boolean = true;
   /**
    * Explore mode: children's transforms are read-only, but a click flies into a
@@ -211,7 +217,11 @@
   }
   $: frames = frameSpecs(selectedId, shownHover, hoverFrame).flatMap((f) => {
     const child = layout.children.find((c) => c.instance.id === f.id);
-    return child ? [{ ...f, child }] : [];
+    if (!child) return [];
+    // A hovered section of a split box gets its own frame; the selection always
+    // frames the whole child.
+    const corners = f.state === 'hover' && f.section ? sectionWorldCorners(child, f.section) ?? undefined : undefined;
+    return [{ ...f, child, corners }];
   });
 
   $: selectedChild = selectedId ? layout.children.find((c) => c.instance.id === selectedId) ?? null : null;
@@ -397,6 +407,8 @@
       state={f.state}
       hovered={f.hovered}
       section={f.section}
+      frameCorners={f.corners}
+      cornerStyle={selectionCorners}
       interactive={interactive && f.state === 'selected'}
       colorClass={childColorClass(f.child)}
       {style}

@@ -25,7 +25,8 @@ import {
   MapResolver,
   Serializer,
   buildDocument,
-  newId
+  newId,
+  sectionWorldCorners
 } from '@sld-kit/core';
 import { CompositeCanvas } from '@sld-kit/react';
 import { buildBoxComposite, bayId, COUPLER_ID } from './src/fixture.ts';
@@ -132,6 +133,14 @@ const charlieBoxes = () => splitEngine.layout(fixture).children.find((c) => c.in
 const openSections = busTopology(charlie).sections;
 const splitChild = charlieBoxes();
 const splitHtml = renderFixture();
+const sectionHoverHtml = renderToStaticMarkup(
+  h(CompositeCanvas, {
+    layout: splitEngine.layout(fixture),
+    boxMode: true,
+    hoverFrame: true,
+    hoveredChild: { id: 'lib-charlie', section: splitChild.boxes[1].key }
+  })
+);
 const splitSvg = new CompositeSvgExporter(splitEngine).export(fixture, { boxSubLabel });
 // Detail view with the app's child engine: bars labelled by bus id, left of the bar.
 const detailFixture = buildBoxComposite();
@@ -229,6 +238,11 @@ const checks = [
     'split box view: one hover hit rect per section box',
     // every child's whole-frame rect, plus one per section box of the split CHARLIE
     count(splitHtml, 'class="cursor-move"') === fixture.allChildren().length + splitChild.boxes.length
+  ],
+  [
+    'split box view: a hovered section gets a frame through its own (world) corners',
+    sectionHoverHtml.includes(`points="${sectionWorldCorners(splitChild, splitChild.boxes[1].key).map((p) => `${p.x},${p.y}`).join(' ')}"`) &&
+      sectionHoverHtml.includes(`data-section="${splitChild.boxes[1].key}"`)
   ],
   ['selection frame carries the child\'s colour class', selectedHtml.includes('class="sld-selection text-primary pointer-events-none sld-volt-400" data-state="selected"')]
 ];
