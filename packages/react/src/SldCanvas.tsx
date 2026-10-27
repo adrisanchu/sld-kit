@@ -1,4 +1,13 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, type ReactNode } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode
+} from 'react';
 import type { SldDocument, DiagramLayout, Point } from '@sld-kit/core';
 import { BusBarView } from './elements/BusBarView';
 import { PositionView } from './elements/PositionView';
@@ -55,18 +64,36 @@ export interface SldCanvasProps {
   showPositionLabels?: boolean;
   showConnectionLabels?: boolean;
   showBusBarLabels?: boolean;
+  /**
+   * Draw the selection halo (`sld-halo`, `data-state="hover"`, faded) around the
+   * bus bar or position under the pointer too. Default `false`.
+   */
+  hoverHalo?: boolean;
+  /** Widen each bus bar's hit area by this many px (bars are thin). Default 0. */
+  busBarHitSlop?: number;
   /** Rendered first inside the `<svg>`, under all elements (grid/lane overlays). */
   background?: ReactNode;
   /** Rendered last inside the `<svg>`, on top of all elements (ghost, rubber band). */
   children?: ReactNode;
 
   onSelect?: (detail: { id: string; shiftKey: boolean }) => void;
+  /**
+   * The element under the pointer changed; `null` when it leaves every element.
+   * Cleared while a button is held (dragging, panning).
+   */
+  onElementHover?: (detail: ElementHover | null) => void;
   onClearSelection?: () => void;
   onElementDragStart?: (detail: { id: string; event: React.PointerEvent }) => void;
   onEditLabel?: (detail: { id: string }) => void;
   onCanvasDown?: (detail: { point: Point; event: React.PointerEvent }) => void;
   onCanvasMove?: (detail: { point: Point; event: React.PointerEvent }) => void;
   onCanvasUp?: (detail: { point: Point; event: React.PointerEvent }) => void;
+}
+
+/** The element under the pointer, as reported by `SldCanvas`'s `onElementHover`. */
+export interface ElementHover {
+  id: string;
+  kind: 'position' | 'busbar' | 'connection';
 }
 
 /** Imperative API, obtained with a `ref` — the analogue of Svelte's `bind:this`. */
@@ -112,9 +139,12 @@ export const SldCanvas = forwardRef<SldCanvasHandle, SldCanvasProps>(function Sl
     showPositionLabels = true,
     showConnectionLabels = true,
     showBusBarLabels = true,
+    hoverHalo = false,
+    busBarHitSlop = 0,
     background,
     children,
     onSelect,
+    onElementHover,
     onClearSelection,
     onElementDragStart,
     onEditLabel,
@@ -146,6 +176,42 @@ export const SldCanvas = forwardRef<SldCanvasHandle, SldCanvasProps>(function Sl
   const panning = useStore(pz.panning);
 
   const selection = selectedIds ?? EMPTY_SELECTION;
+
+  // ── Hover ─────────────────────────────────────────────────────────────────
+  // Element views report enter/leave; the canvas keeps the latest and masks it
+  // while a button is down (drag, pan), like `CompositeCanvas`.
+  const [rawHover, setRawHover] = useState<ElementHover | null>(null);
+  const [pressed, setPressed] = useState(false);
+  const hoverHandler = useCallback(
+    (kind: ElementHover['kind']) =>
+      ({ id, hovered }: { id: string; hovered: boolean }) =>
+        setRawHover((prev) => (hovered ? (prev?.id === id ? prev : { id, kind }) : prev?.id === id ? null : prev)),
+    []
+  );
+  const onPositionHover = useMemo(() => hoverHandler('position'), [hoverHandler]);
+  const onBusBarHover = useMemo(() => hoverHandler('busbar'), [hoverHandler]);
+  const onConnectionHover = useMemo(() => hoverHandler('connection'), [hoverHandler]);
+  useEffect(() => {
+    const up = () => setPressed(false);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    return () => {
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
+  }, []);
+  const masked = pressed || panning;
+  const hover = masked ? null : rawHover;
+  const onElementHoverRef = useRef(onElementHover);
+  onElementHoverRef.current = onElementHover;
+  const lastHoverId = useRef<string | null>(null);
+  useEffect(() => {
+    const id = hover?.id ?? null;
+    if (id === lastHoverId.current) return;
+    lastHoverId.current = id;
+    onElementHoverRef.current?.(hover);
+  }, [hover]);
+  const haloOnHover = hoverHalo && !masked;
 
   // `version` looks redundant to the exhaustive-deps rule — it is not. `doc`
   // mutates in place, so its identity never changes; the counter from
@@ -280,6 +346,7 @@ export const SldCanvas = forwardRef<SldCanvasHandle, SldCanvasProps>(function Sl
       className={`h-full w-full touch-none ${cursorClass}`}
       viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
       onPointerDown={handlePointerDown}
+      onPointerDownCapture={() => setPressed(true)}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
@@ -300,6 +367,7 @@ export const SldCanvas = forwardRef<SldCanvasHandle, SldCanvasProps>(function Sl
           doc={doc}
           style={style}
           showLabel={showConnectionLabels}
+          onHover={onConnectionHover}
           onSelect={onSelect}
           onEditLabel={onEditLabel}
         />
@@ -315,6 +383,9 @@ export const SldCanvas = forwardRef<SldCanvasHandle, SldCanvasProps>(function Sl
           formatResolver={formatResolver}
           style={style}
           showLabel={showBusBarLabels}
+          hoverHalo={haloOnHover}
+          hitSlop={busBarHitSlop}
+          onHover={onBusBarHover}
           onSelect={onSelect}
           onEditLabel={onEditLabel}
         />
@@ -332,6 +403,8 @@ export const SldCanvas = forwardRef<SldCanvasHandle, SldCanvasProps>(function Sl
           formatResolver={formatResolver}
           style={style}
           showLabel={showPositionLabels}
+          hoverHalo={haloOnHover}
+          onHover={onPositionHover}
           onSelect={onSelect}
           onDragStart={onElementDragStart}
           onEditLabel={onEditLabel}

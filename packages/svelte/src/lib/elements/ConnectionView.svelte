@@ -31,6 +31,8 @@
 
   const dispatch = createEventDispatcher<{
     select: { id: string; shiftKey: boolean };
+    /** The pointer entered / left this element (`SldCanvas` turns it into `elementhover`). */
+    hover: { id: string; hovered: boolean };
     editlabel: { id: string };
   }>();
 
@@ -61,14 +63,24 @@
   }
 </script>
 
+<!-- Styling hooks: root `sld-connection` + `data-hover` / `data-selected` (no halo:
+     selection is the heavier stroke). -->
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <g
-  class={colorClass ?? 'text-slate-600 dark:text-slate-300'}
+  class="sld-connection {colorClass ?? 'text-slate-600 dark:text-slate-300'}"
+  data-hover={hovered && interactive ? 'true' : undefined}
+  data-selected={selected ? 'true' : undefined}
   style={colorClass ? 'color: hsl(var(--sld-pos))' : ''}
   class:cursor-pointer={interactive}
   on:pointerdown={handlePointerDown}
-  on:pointerenter={() => (hovered = true)}
-  on:pointerleave={() => (hovered = false)}
+  on:pointerenter={() => {
+    hovered = true;
+    dispatch('hover', { id: conn.id, hovered: true });
+  }}
+  on:pointerleave={() => {
+    hovered = false;
+    dispatch('hover', { id: conn.id, hovered: false });
+  }}
   on:dblclick={() => interactive && dispatch('editlabel', { id: conn.id })}
 >
   <!-- Invisible fat stroke so thin lines are easy to hit. -->

@@ -29,6 +29,8 @@ export interface ConnectionViewProps {
   doc?: SldDocument | null;
   /** Numeric presentation config (stroke widths, hit target, symbol). */
   style?: SldViewStyle;
+  /** The pointer entered / left this connection (`SldCanvas` turns it into `onElementHover`). */
+  onHover?: (detail: { id: string; hovered: boolean }) => void;
   onSelect?: (detail: { id: string; shiftKey: boolean }) => void;
   onEditLabel?: (detail: { id: string }) => void;
 }
@@ -37,6 +39,9 @@ export interface ConnectionViewProps {
  * Draws one `Connection`: the orthogonal path with hop arcs, plus an optional
  * arrowhead, junction dot, asset glyph and label. An invisible fat hit stroke
  * underneath keeps thin lines easy to click.
+ *
+ * Styling hooks: root class `sld-connection` with `data-hover` / `data-selected`
+ * (`"true"` when set). No halo — selection is the heavier stroke.
  */
 export function ConnectionView({
   conn,
@@ -49,6 +54,7 @@ export function ConnectionView({
   formatResolver = null,
   doc = null,
   style = DEFAULT_VIEW_STYLE,
+  onHover,
   onSelect,
   onEditLabel
 }: ConnectionViewProps) {
@@ -75,11 +81,19 @@ export function ConnectionView({
 
   return (
     <g
-      className={`${colorClass ?? 'text-slate-600 dark:text-slate-300'}${interactive ? ' cursor-pointer' : ''}`}
+      className={`sld-connection ${colorClass ?? 'text-slate-600 dark:text-slate-300'}${interactive ? ' cursor-pointer' : ''}`}
       style={colorClass ? { color: 'var(--sld-pos)' } : undefined}
+      data-hover={hovered && interactive ? 'true' : undefined}
+      data-selected={selected ? 'true' : undefined}
       onPointerDown={handlePointerDown}
-      onPointerEnter={() => setHovered(true)}
-      onPointerLeave={() => setHovered(false)}
+      onPointerEnter={() => {
+        setHovered(true);
+        onHover?.({ id: conn.id, hovered: true });
+      }}
+      onPointerLeave={() => {
+        setHovered(false);
+        onHover?.({ id: conn.id, hovered: false });
+      }}
       onDoubleClick={() => interactive && onEditLabel?.({ id: conn.id })}
     >
       {/* Invisible fat stroke so thin lines are easy to hit. */}

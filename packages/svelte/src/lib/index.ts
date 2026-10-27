@@ -10,6 +10,7 @@
 
 // ── Canvas + element views ────────────────────────────────────────────────
 export { default as SldCanvas } from './SldCanvas.svelte';
+export type { ElementHover } from './hover';
 export { default as PositionView } from './elements/PositionView.svelte';
 export { default as BusBarView } from './elements/BusBarView.svelte';
 export { default as ConnectionView } from './elements/ConnectionView.svelte';

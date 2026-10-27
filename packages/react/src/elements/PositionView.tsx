@@ -4,6 +4,7 @@ import { SLD_LAYOUT, resolveFormat } from '@sld-kit/core';
 import { DEFAULT_POSITION_TOKENS, type PositionTokens } from '../labels';
 import type { FormatResolver } from '../format';
 import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
+import { Halo } from './Halo';
 
 export interface PositionViewProps {
   pos: Position;
@@ -36,6 +37,13 @@ export interface PositionViewProps {
   formatResolver?: FormatResolver | null;
   /** Numeric presentation config (stroke widths, opacities, selection halo). */
   style?: SldViewStyle;
+  /**
+   * Also draw the halo while hovered (`data-state="hover"`, faded). Default
+   * `false`: hover only changes the opacity / stroke width, as before.
+   */
+  hoverHalo?: boolean;
+  /** The pointer entered / left this element (`SldCanvas` turns it into `onElementHover`). */
+  onHover?: (detail: { id: string; hovered: boolean }) => void;
   onSelect?: (detail: { id: string; shiftKey: boolean }) => void;
   onDragStart?: (detail: { id: string; event: React.PointerEvent }) => void;
   onEditLabel?: (detail: { id: string }) => void;
@@ -45,6 +53,9 @@ export interface PositionViewProps {
  * Draws one `Position` as a rounded, type-colored box with a centred label and
  * an optional dashed selection halo. Emits `onSelect` + `onDragStart` together
  * on pointerdown, and `onEditLabel` on double-click.
+ *
+ * Styling hooks: root class `sld-position` with `data-hover` / `data-selected`
+ * (`"true"` when set), and the halo's `sld-halo` (see `Halo`).
  */
 export function PositionView({
   pos,
@@ -58,6 +69,8 @@ export function PositionView({
   showLabel = true,
   formatResolver = null,
   style = DEFAULT_VIEW_STYLE,
+  hoverHalo = false,
+  onHover,
   onSelect,
   onDragStart,
   onEditLabel
@@ -72,7 +85,6 @@ export function PositionView({
   const fillAlpha = fmt?.fillOpacity != null ? baseAlpha * fmt.fillOpacity : baseAlpha;
   const strokeW = fmt?.strokeWidth ?? style.position.strokeWidth;
   const fontSize = pos.label.length > 13 ? SLD_LAYOUT.labelFontSize - 2 : SLD_LAYOUT.labelFontSize;
-  const sel = style.selection;
 
   function handlePointerDown(e: React.PointerEvent) {
     if (!interactive) return;
@@ -87,22 +99,25 @@ export function PositionView({
         interactive ? ' cursor-pointer' : ''
       }`}
       opacity={dragging ? style.position.draggingOpacity : 1}
+      data-hover={hovered && interactive ? 'true' : undefined}
+      data-selected={selected ? 'true' : undefined}
       onPointerDown={handlePointerDown}
-      onPointerEnter={() => setHovered(true)}
-      onPointerLeave={() => setHovered(false)}
+      onPointerEnter={() => {
+        setHovered(true);
+        onHover?.({ id: pos.id, hovered: true });
+      }}
+      onPointerLeave={() => {
+        setHovered(false);
+        onHover?.({ id: pos.id, hovered: false });
+      }}
       onDoubleClick={() => interactive && onEditLabel?.({ id: pos.id })}
     >
-      {selected && (
-        <rect
-          x={geo.rect.x - sel.padding}
-          y={geo.rect.y - sel.padding}
-          width={geo.rect.width + sel.padding * 2}
-          height={geo.rect.height + sel.padding * 2}
+      {(selected || (hoverHalo && hovered && interactive)) && (
+        <Halo
+          rect={geo.rect}
           rx={SLD_LAYOUT.positionCornerRadius + 2}
-          fill="none"
-          className="stroke-primary"
-          strokeWidth={sel.strokeWidth}
-          strokeDasharray={sel.dashArray}
+          state={selected ? 'selected' : 'hover'}
+          style={style}
         />
       )}
       {/* `--sld-pos` holds a complete color here (Tailwind v4 / shadcn tokens),

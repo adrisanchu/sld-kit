@@ -12,7 +12,7 @@
  */
 
 // ── Canvas + element views ────────────────────────────────────────────────
-export { SldCanvas, type SldCanvasProps, type SldCanvasHandle } from './SldCanvas';
+export { SldCanvas, type SldCanvasProps, type SldCanvasHandle, type ElementHover } from './SldCanvas';
 export { PositionView, type PositionViewProps } from './elements/PositionView';
 export { BusBarView, type BusBarViewProps } from './elements/BusBarView';
 export { ConnectionView, type ConnectionViewProps } from './elements/ConnectionView';

@@ -66,6 +66,33 @@ const checks = [
   ['renders the transformer symbol glyph', html.includes('fill-background')]
 ];
 
+// ── Element styling hooks (#69, phase 4) ──────────────────────────────────
+{
+  const n = (str, needle) => str.split(needle).length - 1;
+  const bar = doc.busBars()[0];
+  const pos = doc.positions()[0];
+  const conn = doc.connections()[0];
+  const sel = renderToStaticMarkup(
+    h(SldCanvas, { doc, layout, version: 0, selectedIds: new Set([bar.id, pos.id, conn.id]) })
+  );
+  const slop = renderToStaticMarkup(h(SldCanvas, { doc, layout, version: 0, busBarHitSlop: 8 }));
+  checks.push(
+    [
+      'elements: root hooks (sld-busbar / sld-position / sld-connection)',
+      n(html, 'class="sld-busbar ') === doc.busBars().length &&
+        n(html, 'class="sld-connection ') === doc.connections().length
+    ],
+    ['elements: nothing selected → no halo, no data-selected', !html.includes('sld-halo') && !html.includes('data-selected')],
+    [
+      'elements: selected bar + position wear a styleable halo',
+      n(sel, 'class="sld-halo text-primary" data-state="selected"') === 2 &&
+        sel.includes('stroke:var(--sld-halo-stroke, currentColor);stroke-width:var(--sld-halo-width, 1.5);stroke-dasharray:var(--sld-halo-dash, 5 3)')
+    ],
+    ['elements: selected elements carry data-selected', n(sel, 'data-selected="true"') === 3],
+    ['elements: busBarHitSlop adds a transparent hit rect per bar', n(slop, 'fill="transparent"') - n(html, 'fill="transparent"') === doc.busBars().length]
+  );
+}
+
 // ── Chrome ────────────────────────────────────────────────────────────────
 const toolbar = renderToStaticMarkup(
   h(SldToolbar, { userRole: 'editor', editMode: true, tool: 'position', canUndo: true, positionType: 'renewable' })
