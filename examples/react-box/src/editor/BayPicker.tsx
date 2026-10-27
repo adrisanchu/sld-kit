@@ -1,12 +1,13 @@
 import { useEffect } from 'react';
 import { Plus, SquarePen } from 'lucide-react';
-import { Floating } from './Floating';
+import { Floating, type AnchorFn } from './Floating';
 import type { Terminal } from './terminals';
 
 export interface BayPickerProps {
-  /** Anchor in viewport coordinates (the click that opened it). */
-  clientX: number;
-  clientY: number;
+  /** Where it's tethered on the canvas (viewport px, polled per frame); see `Floating`. */
+  anchor: AnchorFn;
+  /** Its anchor left the view: close it. */
+  onDetach: () => void;
   /** Substation name, for the heading. */
   name: string;
   /** The box's free feeders. */
@@ -26,8 +27,8 @@ export interface BayPickerProps {
  * substation editor to design one. Lines join bays, never whole boxes.
  */
 export function BayPicker({
-  clientX,
-  clientY,
+  anchor,
+  onDetach,
   name,
   terminals,
   canAutoBay,
@@ -49,8 +50,8 @@ export function BayPicker({
 
   return (
     <Floating
-      clientX={clientX}
-      clientY={clientY}
+      anchor={anchor}
+      onDetach={onDetach}
       className="w-56 rounded-lg border border-border bg-background p-1 text-sm shadow-lg"
     >
       <p className="px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground">Connect to {name}</p>

@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import type { CompositeLine, CompositeLineKind } from '@sld-kit/core';
 import type { LineRatingData, SeasonalCapacity } from '../fixture';
-import { Floating } from './Floating';
+import { Floating, type AnchorFn } from './Floating';
 
 export interface LinePopoverProps {
-  /** Anchor in viewport coordinates (the click that opened it). */
-  clientX: number;
-  clientY: number;
+  /** Where it's tethered on the canvas (viewport px, polled per frame); see `Floating`. */
+  anchor: AnchorFn;
+  /** Its anchor left the view: close it. */
+  onDetach: () => void;
   line: CompositeLine;
   kinds: { kind: CompositeLineKind; label: string }[];
   /** Apply both edits as one undoable step (`data` undefined clears the ratings). */
@@ -30,7 +31,7 @@ const toNum = (s: string): number | undefined => {
  * the line's opaque `data` (core never reads it); the layout's `lineLabels`
  * resolver formats them.
  */
-export function LinePopover({ clientX, clientY, line, kinds, onApply, onClose }: LinePopoverProps) {
+export function LinePopover({ anchor, onDetach, line, kinds, onApply, onClose }: LinePopoverProps) {
   const ratings = (line.data as LineRatingData | undefined)?.ratings;
   const [kind, setKind] = useState<CompositeLineKind>(line.kind);
   const [capacity, setCapacity] = useState<string[]>(() => [0, 1, 2, 3].map((i) => toField(ratings?.capacity?.[i])));
@@ -50,8 +51,8 @@ export function LinePopover({ clientX, clientY, line, kinds, onApply, onClose }:
 
   return (
     <Floating
-      clientX={clientX}
-      clientY={clientY}
+      anchor={anchor}
+      onDetach={onDetach}
       className="w-64 rounded-lg border border-border bg-background p-3 text-sm shadow-lg"
     >
       <div

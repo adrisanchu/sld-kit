@@ -66,7 +66,8 @@ import { buildBoxComposite, ratingLabels, voltageClass, voltageFill } from './fi
 import { barBusIdLabel, boxSplit, openFeeders, sectionLabel } from './topology';
 import { BayPicker } from './editor/BayPicker';
 import { LinePopover } from './editor/LinePopover';
-import { TargetFx, type Target } from './editor/TargetFx';
+import { TargetFx, TargetPin, type Target } from './editor/TargetFx';
+import type { AnchorFn } from './editor/Floating';
 import type { LineRatingData } from './fixture';
 import { SubstationDialog, type SubstationEditTarget } from './editor/SubstationDialog';
 import {
@@ -106,7 +107,7 @@ function busLabel(child: ChildLayout, section?: BoxSection): string | null {
  */
 type Tool = 'operate' | 'move' | 'draw';
 /** The bay picker opened by a drawn end landing on a box body. */
-type Picker = { x: number; y: number; point: Point; instanceId: string; sectionKey: string | null };
+type Picker = { point: Point; instanceId: string; sectionKey: string | null };
 
 const sameRect = (a: Rect, b: Rect) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 
@@ -185,7 +186,8 @@ export default function App() {
   const [ghostAt, setGhostAt] = useState<Point | null>(null);
   const [lastKv, setLastKv] = useState(220);
   // Where the selected line's editor popover sits (container px); null = closed.
-  const [lineEditAt, setLineEditAt] = useState<{ x: number; y: number } | null>(null);
+  // The selected line's editor popover, tethered to the clicked point (world); null = closed.
+  const [lineEditAt, setLineEditAt] = useState<Point | null>(null);
   const lastChildDown = useRef<{ id: string; t: number } | null>(null);
   // `openEdit` is declared further down; the drag handler reaches it through a ref.
   const openEditRef = useRef<(id: string) => void>(() => {});
@@ -300,8 +302,6 @@ export default function App() {
       const hit = boxAt(layout, point, boxMode);
       if (hit) {
         setPicker({
-          x: lastPointer.current.x,
-          y: lastPointer.current.y,
           point,
           instanceId: hit.child.instance.id,
           sectionKey: hit.sectionKey
@@ -428,6 +428,7 @@ export default function App() {
   };
 
   const editedLine = selectedLineId ? composite.getLine(selectedLineId) : undefined;
+  const editedLineLayout = editedLine ? layout.lines.find((l) => l.line.id === editedLine.id) : undefined;
 
   /** Kind + ratings of the selected line as ONE undoable step (no-op when unchanged). */
   const applyLineEdit = (kind: CompositeLineKind, data: LineRatingData | undefined) => {
@@ -610,6 +611,37 @@ export default function App() {
     setHover((prev) => (prev && next && prev.key === next.key && sameRect(prev.rect, next.rect) ? prev : next));
   };
 
+  /**
+   * Tether a popover to a world point: maps it to viewport px through the
+   * live view (the canvas's `clientToSvg` is affine, so two samples invert it),
+   * or `null` once it leaves the visible canvas — the popover then closes.
+   */
+  const worldAnchor =
+    (p: Point): AnchorFn =>
+    () => {
+      const h = canvasRef.current;
+      const box = canvasWrapRef.current?.getBoundingClientRect();
+      if (!h || !box) return null;
+      const a = h.clientToSvg(0, 0);
+      const b = h.clientToSvg(100, 100);
+      const x = (p.x - a.x) / ((b.x - a.x) / 100);
+      const y = (p.y - a.y) / ((b.y - a.y) / 100);
+      return x < box.left || x > box.right || y < box.top || y > box.bottom ? null : { x, y };
+    };
+
+  // The selected box wears the same lock-on frame as the hover, turned up
+  // (the canvas's own selection frame is off): one perimeter, two intensities.
+  const selectedLayout = selectedChildId ? layout.children.find((c) => c.instance.id === selectedChildId) : undefined;
+  const selectedTarget: Target | null = selectedLayout
+    ? {
+        key: selectedLayout.instance.id,
+        rect: selectedLayout.worldBounds,
+        colorClass: voltageClass(selectedLayout.instance.resolved?.meta.voltageKv),
+        variant: 'lock'
+      }
+    : null;
+  const hoverOnSelected = !!hover && !!selectedChildId && hover.key.startsWith(`${selectedChildId}:`);
+
   const isOnCanvas = (target: EventTarget) => target instanceof Node && !!canvasWrapRef.current?.contains(target);
 
   // Escape cancels a draft; Delete removes the selected line.
@@ -721,6 +753,7 @@ export default function App() {
             snapTargets={snapTargets}
             draftPoints={draft.map((d) => d.point)}
             selectedId={selectedChildId}
+            showSelectionFrame={false}
             selectedLineId={selectedLineId}
             childColorClass={childColorClass}
             lineColorClass={lineColorClass}
@@ -732,7 +765,7 @@ export default function App() {
               if (tool !== 'move') return;
               setSelectedLineId(id);
               setSelectedChildId(null);
-              setLineEditAt({ ...lastPointer.current });
+              setLineEditAt(canvasRef.current?.clientToSvg(lastPointer.current.x, lastPointer.current.y) ?? null);
             }}
             onPortDirection={pinPortDirection}
             explore={operating}
@@ -744,7 +777,14 @@ export default function App() {
               blur();
             }}
           >
-            {(tool === 'operate' || tool === 'move') && !placing && <TargetFx target={hover} />}
+            <TargetFx target={selectedTarget} mode="selected" hot={hoverOnSelected} />
+            {(tool === 'operate' || tool === 'move') && !placing && (
+              <TargetFx target={hoverOnSelected ? null : hover} />
+            )}
+            {picker && <TargetPin at={picker.point} colorClass={pickerChild && childColorClass(pickerChild)} />}
+            {tool === 'move' && lineEditAt && editedLine && (
+              <TargetPin at={lineEditAt} colorClass={editedLineLayout && lineColorClass(editedLineLayout)} />
+            )}
             {ghost && placing && (
               <g opacity={0.6} pointerEvents="none">
                 <rect
@@ -893,8 +933,8 @@ export default function App() {
         )}
         {picker && pickerChild && (
           <BayPicker
-            clientX={picker.x}
-            clientY={picker.y}
+            anchor={worldAnchor(picker.point)}
+            onDetach={() => setPicker(null)}
             name={pickerChild.name}
             terminals={pickerTerminals}
             canAutoBay={!!pickerBar}
@@ -907,8 +947,8 @@ export default function App() {
         {tool === 'move' && lineEditAt && editedLine && (
           <LinePopover
             key={editedLine.id}
-            clientX={lineEditAt.x}
-            clientY={lineEditAt.y}
+            anchor={worldAnchor(lineEditAt)}
+            onDetach={() => setLineEditAt(null)}
             line={editedLine}
             kinds={LINE_KINDS}
             onApply={applyLineEdit}

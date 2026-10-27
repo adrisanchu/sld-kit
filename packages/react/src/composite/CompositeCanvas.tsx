@@ -34,6 +34,13 @@ function glyphBox(g: LineGlyph): Rect {
 export interface CompositeCanvasProps {
   layout: CompositeLayout;
   selectedId?: string | null;
+  /**
+   * Draw the built-in selection chrome (outline, corner dots, rotation handle)
+   * around the `selectedId` child. Turn it off to draw your own selection look:
+   * the child stays selected for everything else (e.g. its feeder pin handles).
+   * Default `true`.
+   */
+  showSelectionFrame?: boolean;
   /** Currently selected manual line (shows its draggable bend handles). */
   selectedLineId?: string | null;
   interactive?: boolean;
@@ -142,6 +149,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
   {
     layout,
     selectedId = null,
+    showSelectionFrame = true,
     selectedLineId = null,
     interactive = true,
     explore = false,
@@ -308,7 +316,8 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     const cy = child.worldBounds.y + child.worldBounds.height / 2;
     const dx = tip.point.x - cx;
     const dy = tip.point.y - cy;
-    const current: ExternalDirection = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'down' : 'up';
+    const current: ExternalDirection =
+      Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'down' : 'up';
     // The handle shows a world side; the pin is child-local, so un-rotate it.
     const side = rotateSide(NEXT_SIDE[current], -child.instance.angleDeg);
     onPortDirection?.({ instanceId: tip.instanceId, connectionId: tip.connectionId, side });
@@ -494,9 +503,25 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
             className={`pointer-events-none ${cls ?? 'text-primary'}`}
             style={cls ? { color: 'var(--sld-pos)' } : undefined}
           >
-            <rect x={box.x} y={box.y} width={box.width} height={box.height} rx={2} className="fill-background" fillOpacity={0.9} />
+            <rect
+              x={box.x}
+              y={box.y}
+              width={box.width}
+              height={box.height}
+              rx={2}
+              className="fill-background"
+              fillOpacity={0.9}
+            />
             {rows.map((r, i) => (
-              <text key={i} x={r.x} y={r.y} textAnchor={textAnchor} fontSize={fontSize} fontWeight={700} fill="currentColor">
+              <text
+                key={i}
+                x={r.x}
+                y={r.y}
+                textAnchor={textAnchor}
+                fontSize={fontSize}
+                fontWeight={700}
+                fill="currentColor"
+              >
                 {r.text}
               </text>
             ))}
@@ -505,7 +530,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
       })}
 
       {/* Selection + rotation chrome on top. */}
-      {selectedChild && (
+      {selectedChild && showSelectionFrame && (
         <SelectionFrame child={selectedChild} interactive={interactive} onRotateStart={onRotateStart} />
       )}
 
