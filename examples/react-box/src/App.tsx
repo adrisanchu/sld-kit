@@ -753,7 +753,6 @@ export default function App() {
             snapTargets={snapTargets}
             draftPoints={draft.map((d) => d.point)}
             selectedId={selectedChildId}
-            showSelectionFrame={false}
             selectedLineId={selectedLineId}
             childColorClass={childColorClass}
             lineColorClass={lineColorClass}

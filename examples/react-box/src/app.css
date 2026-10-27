@@ -163,6 +163,11 @@
   target's own `--sld-pos` (voltage bucket), else the lock accent. Entry is a
   keyframe (replayed per target); exit is a transition on `data-on="false"`.
 */
+/* Interim (#69): the app draws its own selection with TargetFx, so the
+   canvas's built-in frame stays hidden until the effects move onto it. */
+.sld-selection {
+  display: none;
+}
 :root {
   --sld-fx-accent: oklch(0.7 0.15 222);
 }

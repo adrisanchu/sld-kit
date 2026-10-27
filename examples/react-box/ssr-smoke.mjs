@@ -87,6 +87,17 @@ const html = renderToStaticMarkup(
   })
 );
 
+// The selection frame carries the selected child's colour class, so app CSS can
+// tint it (`.sld-selection { --sld-selection-stroke: var(--sld-pos) }`).
+const selectedHtml = renderToStaticMarkup(
+  h(CompositeCanvas, {
+    layout,
+    boxMode: true,
+    selectedId: 'a',
+    childColorClass: (child) => (child.instance.resolved?.meta.voltageKv >= 400 ? 'sld-volt-400' : 'sld-volt-220')
+  })
+);
+
 const svg = new CompositeSvgExporter(engine).export(composite, {
   boxMode: true,
   boxFill: () => '#dcfce7',
@@ -212,7 +223,8 @@ const checks = [
       expandedHtml.includes('>DELTA<') && // neighbours still render as boxes
       !expandedHtml.includes('sld-morph-ghost') // no animation on first render / SSR
   ],
-  ['auto-facing derives the exit side from live positions', facingRight === 'right' && facingLeft === 'left']
+  ['auto-facing derives the exit side from live positions', facingRight === 'right' && facingLeft === 'left'],
+  ['selection frame carries the child\'s colour class', selectedHtml.includes('class="sld-selection text-primary pointer-events-none sld-volt-400" data-state="selected"')]
 ];
 
 let failed = 0;

@@ -1,35 +1,46 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { ChildLayout, Point } from '@sld-kit/core';
+  import type { ChildLayout } from '@sld-kit/core';
+  import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
+  import { frameGeometry } from './frameGeometry';
 
   /**
    * Selection chrome for the active child, drawn in world coordinates (OUTSIDE
    * the child's transform): a rotated outline through `worldCorners`, corner
    * dots (visual only, no resize), and a Figma-style rotation handle — a small
    * circle offset from the top-edge midpoint along the rotated "up" direction.
+   *
+   * Styleable from the app (headless chrome):
+   * - classes `sld-selection` (root, with `data-state="selected"`),
+   *   `sld-selection-outline`, `sld-selection-corner`, `sld-selection-rotate`;
+   * - CSS custom properties `--sld-selection-stroke` (colour, default the
+   *   `text-primary` currentColor), `--sld-selection-width`, `--sld-selection-dash`
+   *   (default the `style` numbers). Custom properties cross Svelte's style
+   *   scoping, so a plain global stylesheet can set them.
    */
   export let child: ChildLayout;
   export let interactive: boolean = true;
+  /**
+   * The child's colour class (e.g. a voltage bucket setting `--sld-pos`), put on
+   * the root so a stylesheet can tint the frame — e.g.
+   * `.sld-selection { --sld-selection-stroke: hsl(var(--sld-pos)) }`. Paint is
+   * unchanged unless a rule uses it.
+   */
+  export let colorClass: string | null = null;
+  /** Extra class(es) on the root `<g>`. */
+  let className: string = '';
+  export { className as class };
+  /** Numbers come from `style.composite.selection`. */
+  export let style: SldViewStyle = DEFAULT_VIEW_STYLE;
 
   const dispatch = createEventDispatcher<{ rotatestart: { event: PointerEvent } }>();
 
-  const HANDLE_OFFSET = 28;
+  const stroke = 'stroke: var(--sld-selection-stroke, currentColor)';
 
-  $: corners = child.worldCorners; // [TL, TR, BR, BL]
-  $: polyPoints = corners.map((p) => `${p.x},${p.y}`).join(' ');
-
-  $: center = {
-    x: (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4,
-    y: (corners[0].y + corners[1].y + corners[2].y + corners[3].y) / 4
-  } as Point;
-  $: topMid = { x: (corners[0].x + corners[1].x) / 2, y: (corners[0].y + corners[1].y) / 2 } as Point;
-  $: up = normalize({ x: topMid.x - center.x, y: topMid.y - center.y });
-  $: handle = { x: topMid.x + up.x * HANDLE_OFFSET, y: topMid.y + up.y * HANDLE_OFFSET } as Point;
-
-  function normalize(v: Point): Point {
-    const len = Math.hypot(v.x, v.y) || 1;
-    return { x: v.x / len, y: v.y / len };
-  }
+  $: sel = style.composite.selection;
+  $: geo = frameGeometry(child.worldCorners, sel.padding, sel.rotateHandleOffset);
+  $: outlineStyle = `${stroke}; stroke-width: var(--sld-selection-width, ${sel.strokeWidth}); stroke-dasharray: var(--sld-selection-dash, ${sel.dashArray})`;
+  $: rootClass = ['sld-selection text-primary pointer-events-none', colorClass, className].filter(Boolean).join(' ');
 
   function handleRotateDown(e: PointerEvent) {
     if (!interactive) return;
@@ -39,23 +50,40 @@
   }
 </script>
 
-<g class="pointer-events-none">
-  <polygon points={polyPoints} fill="none" class="stroke-primary" stroke-width="1.5" stroke-dasharray="6 4" />
-  {#each corners as c}
-    <circle cx={c.x} cy={c.y} r="3.5" class="fill-background stroke-primary" stroke-width="1.5" />
+<g class={rootClass} data-state="selected">
+  <polygon points={geo.points} fill="none" class="sld-selection-outline" style={outlineStyle} />
+  {#each geo.corners as c}
+    <circle
+      cx={c.x}
+      cy={c.y}
+      r={sel.cornerRadius}
+      class="sld-selection-corner fill-background"
+      style={stroke}
+      stroke-width={sel.strokeWidth}
+    />
   {/each}
 
   <!-- Rotation handle -->
-  <line x1={topMid.x} y1={topMid.y} x2={handle.x} y2={handle.y} class="stroke-primary" stroke-width="1.5" />
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <circle
-    cx={handle.x}
-    cy={handle.y}
-    r="6"
-    class="fill-background stroke-primary"
-    class:pointer-events-auto={interactive}
-    class:cursor-grab={interactive}
-    stroke-width="1.5"
-    on:pointerdown={handleRotateDown}
-  />
+  <g class="sld-selection-rotate">
+    <line
+      x1={geo.topMid.x}
+      y1={geo.topMid.y}
+      x2={geo.handle.x}
+      y2={geo.handle.y}
+      style={stroke}
+      stroke-width={sel.strokeWidth}
+    />
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <circle
+      cx={geo.handle.x}
+      cy={geo.handle.y}
+      r={sel.rotateHandleRadius}
+      class="fill-background"
+      class:pointer-events-auto={interactive}
+      class:cursor-grab={interactive}
+      style={stroke}
+      stroke-width={sel.strokeWidth}
+      on:pointerdown={handleRotateDown}
+    />
+  </g>
 </g>

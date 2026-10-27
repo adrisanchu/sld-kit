@@ -25,12 +25,6 @@
    */
   export let layout: CompositeLayout;
   export let selectedId: string | null = null;
-  /**
-   * Draw the built-in selection chrome (outline, corner dots, rotation handle)
-   * around the `selectedId` child. Turn it off to draw your own selection look:
-   * the child stays selected for everything else (e.g. its feeder pin handles).
-   */
-  export let showSelectionFrame: boolean = true;
   /** Currently selected manual line (shows its draggable bend handles). */
   export let selectedLineId: string | null = null;
   export let interactive: boolean = true;
@@ -343,9 +337,16 @@
     />
   {/each}
 
-  <!-- Selection + rotation chrome on top. -->
-  {#if selectedChild && showSelectionFrame}
-    <SelectionFrame child={selectedChild} {interactive} on:rotatestart />
+  <!-- Selection + rotation chrome on top. Styleable through its classes and CSS
+       variables (see SelectionFrame); hide it with `.sld-selection { display: none }`. -->
+  {#if selectedChild}
+    <SelectionFrame
+      child={selectedChild}
+      {interactive}
+      colorClass={childColorClass(selectedChild)}
+      {style}
+      on:rotatestart
+    />
   {/if}
 
   <!-- Manual-line chrome on top: hit targets for selection + bend handles. -->

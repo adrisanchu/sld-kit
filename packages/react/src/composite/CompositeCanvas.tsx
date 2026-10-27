@@ -34,13 +34,6 @@ function glyphBox(g: LineGlyph): Rect {
 export interface CompositeCanvasProps {
   layout: CompositeLayout;
   selectedId?: string | null;
-  /**
-   * Draw the built-in selection chrome (outline, corner dots, rotation handle)
-   * around the `selectedId` child. Turn it off to draw your own selection look:
-   * the child stays selected for everything else (e.g. its feeder pin handles).
-   * Default `true`.
-   */
-  showSelectionFrame?: boolean;
   /** Currently selected manual line (shows its draggable bend handles). */
   selectedLineId?: string | null;
   interactive?: boolean;
@@ -149,7 +142,6 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
   {
     layout,
     selectedId = null,
-    showSelectionFrame = true,
     selectedLineId = null,
     interactive = true,
     explore = false,
@@ -529,9 +521,16 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         );
       })}
 
-      {/* Selection + rotation chrome on top. */}
-      {selectedChild && showSelectionFrame && (
-        <SelectionFrame child={selectedChild} interactive={interactive} onRotateStart={onRotateStart} />
+      {/* Selection + rotation chrome on top. Styleable through its classes and
+          CSS variables (see SelectionFrame); hide it with `.sld-selection { display: none }`. */}
+      {selectedChild && (
+        <SelectionFrame
+          child={selectedChild}
+          interactive={interactive}
+          colorClass={childColorClass(selectedChild)}
+          style={style}
+          onRotateStart={onRotateStart}
+        />
       )}
 
       {/* Manual-line chrome on top: hit targets for selection. */}

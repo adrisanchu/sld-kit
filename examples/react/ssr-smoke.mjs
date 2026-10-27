@@ -24,7 +24,8 @@ import {
   ExternalAssetPopover,
   CompositeCanvas,
   CompositeExplorer,
-  CompositeToolbar
+  CompositeToolbar,
+  resolveViewStyle
 } from '@sld-kit/react';
 
 const doc = buildDocument({
@@ -120,7 +121,37 @@ const cc = renderToStaticMarkup(h(CompositeCanvas, { layout: clayout, selectedId
 checks.push(
   ['composite renders both child names', cc.includes('Level A') && cc.includes('Level B')],
   ['composite auto-links the shared tie', clayout.links.length === 1 && cc.includes('stroke-primary/70')],
-  ['composite draws the selection frame', cc.includes('stroke-dasharray="6 4"')]
+  ['composite draws the selection frame', cc.includes('stroke-dasharray:var(--sld-selection-dash, 6 4)')]
+);
+
+// Styleable selection chrome (#69): class hooks, data-state and CSS-variable
+// paint whose fallbacks are today's numbers; `style.composite.selection` tunes them.
+const count = (s, needle) => s.split(needle).length - 1;
+const firstChild = clayout.children[0];
+const styled = renderToStaticMarkup(
+  h(CompositeCanvas, {
+    layout: clayout,
+    selectedId: firstChild.instance.id,
+    style: resolveViewStyle({ composite: { selection: { strokeWidth: 3, padding: 10, cornerRadius: 5 } } })
+  })
+);
+const unselected = renderToStaticMarkup(h(CompositeCanvas, { layout: clayout }));
+const tl = firstChild.worldCorners[0];
+checks.push(
+  ['selection frame: root hook + state', cc.includes('class="sld-selection text-primary pointer-events-none" data-state="selected"')],
+  [
+    'selection frame: part hooks (outline, 4 corners, rotate handle)',
+    count(cc, 'sld-selection-outline') === 1 && count(cc, 'sld-selection-corner') === 4 && count(cc, 'sld-selection-rotate') === 1
+  ],
+  [
+    'selection frame: CSS variables fall back to the default numbers',
+    cc.includes('stroke:var(--sld-selection-stroke, currentColor)') && cc.includes('stroke-width:var(--sld-selection-width, 1.5)')
+  ],
+  ['selection frame: default corner dots + handle sizes', cc.includes('r="3.5"') && cc.includes('r="6"')],
+  ['selection frame: `style.composite.selection` overrides width + corner size', styled.includes('--sld-selection-width, 3') && styled.includes('r="5"')],
+  ['selection frame: padding pushes the corners out along the edges', styled.includes(`cx="${tl.x - 10}" cy="${tl.y - 10}"`)],
+  ['selection frame: none without a selection', !unselected.includes('sld-selection')],
+  ['resolveViewStyle keeps unspecified selection numbers', resolveViewStyle({ composite: { selection: { padding: 2 } } }).composite.selection.dashArray === '6 4']
 );
 
 const explorer = renderToStaticMarkup(

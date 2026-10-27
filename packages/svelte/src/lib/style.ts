@@ -67,6 +67,26 @@ export interface SldViewStyle {
     draftStrokeWidth: number;
     draftDashArray: string;
     draftPointRadius: number;
+    /**
+     * The composite selection / hover frame (`SelectionFrame`) around a child.
+     * Width and dash are also overridable from plain CSS through custom
+     * properties; see "Styling the chrome" in the package README.
+     */
+    selection: {
+      /** Outline width (CSS: `--sld-selection-width`). */
+      strokeWidth: number;
+      /** Outline dash pattern (CSS: `--sld-selection-dash`). */
+      dashArray: string;
+      /** Outward offset of the frame from the child's corners, along its rotated edges. */
+      padding: number;
+      /** Radius of the corner dots (`selectionCorners="dots"`). */
+      cornerRadius: number;
+      /** Length of each corner bracket arm (`selectionCorners="brackets"`). */
+      cornerArm: number;
+      /** Distance of the rotation handle from the top-edge midpoint. */
+      rotateHandleOffset: number;
+      rotateHandleRadius: number;
+    };
   };
 }
 
@@ -90,7 +110,16 @@ export const DEFAULT_VIEW_STYLE: SldViewStyle = {
     snapHandleRadius: 5,
     draftStrokeWidth: 2,
     draftDashArray: '4 4',
-    draftPointRadius: 4
+    draftPointRadius: 4,
+    selection: {
+      strokeWidth: 1.5,
+      dashArray: '6 4',
+      padding: 0,
+      cornerRadius: 3.5,
+      cornerArm: 12,
+      rotateHandleOffset: 28,
+      rotateHandleRadius: 6
+    }
   }
 };
 
@@ -109,6 +138,10 @@ export function resolveViewStyle(style?: DeepPartial<SldViewStyle>): SldViewStyl
     symbol: { ...DEFAULT_VIEW_STYLE.symbol, ...style.symbol },
     selection: { ...DEFAULT_VIEW_STYLE.selection, ...style.selection },
     hitStrokeWidth: style.hitStrokeWidth ?? DEFAULT_VIEW_STYLE.hitStrokeWidth,
-    composite: { ...DEFAULT_VIEW_STYLE.composite, ...style.composite }
+    composite: {
+      ...DEFAULT_VIEW_STYLE.composite,
+      ...style.composite,
+      selection: { ...DEFAULT_VIEW_STYLE.composite.selection, ...style.composite?.selection }
+    }
   };
 }
