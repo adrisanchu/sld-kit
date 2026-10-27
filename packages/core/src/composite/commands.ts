@@ -175,9 +175,6 @@ export class UpdateLineKindCommand implements Command<CompositeDocument> {
 /**
  * Replace a line's opaque `data` via before/after snapshots (e.g. updated
  * ratings from the consumer's model). `undefined` clears it. Undoable.
- *
- * Currently unused (no editor edits line data yet) — kept, with its tests, for
- * future line-property editing; revisit when that lands.
  */
 export class SetLineDataCommand implements Command<CompositeDocument> {
   readonly label = 'Update line data';

@@ -105,7 +105,10 @@ of `vertices`, each either a free `point` (fixed in composite coordinates) or an
   removed from the auto-link pass, so a manual line replaces the dashed link for
   that id. Everything else still auto-links.
 - **Commands only.** `AddLineCommand` / `RemoveLineCommand` / `UpdateLineCommand`
-  keep undo/redo intact, exactly like the child commands.
+  keep undo/redo intact, exactly like the child commands. Group a compound edit
+  into one undo step with `BatchCommand` — e.g. remove a child together with
+  `doc.linesAt(childId)` (every line anchored to it, or with a `connectionId`,
+  to one feeder; also how an editor tells a used terminal from a free one).
 - **Editing a child's internals** (e.g. toggling a bay's `Position.state` from a
   composite view): wrap the single-diagram command in
   `ChildDocumentCommand(instanceId, cmd)`. It runs against that child's

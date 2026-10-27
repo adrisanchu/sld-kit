@@ -82,6 +82,22 @@ export class CompositeDocument {
     return [...this.lines.values()];
   }
 
+  /**
+   * Lines with an anchor on a child — or, given `connectionId`, on that one
+   * feeder of the child. Insertion order. Use it to find a feeder's free/used
+   * state, or every line to cascade when a child or feeder goes away.
+   */
+  linesAt(instanceId: string, connectionId?: string): CompositeLine[] {
+    return this.allLines().filter((ln) =>
+      ln.vertices.some(
+        (v) =>
+          v.kind === 'anchor' &&
+          v.instanceId === instanceId &&
+          (connectionId === undefined || v.connectionId === connectionId)
+      )
+    );
+  }
+
   isEmpty(): boolean {
     return this.children.size === 0 && this.lines.size === 0;
   }
@@ -188,10 +204,7 @@ export class CompositeDocument {
   }
 
   /**
-   * Replace a line's opaque `data` (deep-copied; `undefined` clears it).
-   *
-   * Currently unused by the examples (fixtures pass `data` to the
-   * `CompositeLine` constructor) — kept for future line-property editing; call
+   * Replace a line's opaque `data` (deep-copied; `undefined` clears it). Call
    * it only through {@link SetLineDataCommand}.
    */
   setLineData(id: string, data: unknown): void {

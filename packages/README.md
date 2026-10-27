@@ -70,16 +70,16 @@ Status legend: ✅ complete · 🚧 in progress · ⬜ pending
 
 ### Canvas + element views
 
-| Component        | What it does                                                                                                                                                                                                                                        | Svelte 4 | React |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------: | :---: |
-| `SldCanvas`      | The `<svg>` host of a single diagram. Owns the pan/zoom viewBox and renders every element view in z-order (connections → bars → positions).<br>Emits selection, drag and raw canvas-point events; takes overlay slots above and below the elements. |    ✅    |  ✅   |
-| `PositionView`   | Draws one `Position` as a rounded, type-colored box with a centred label and an optional dashed selection halo.<br>Emits `select` / `dragstart` on pointerdown and `editlabel` on double-click; dims while being dragged.                           |    ✅    |  ✅   |
-| `BusBarView`     | Draws one `BusBar` as a thick filled bar spanning its row, with a bold label at `busBarLabelAnchor` (`top-left`, the default, or `center-left` beside the bar).<br>Draws the layout-resolved `geo.label`, so a core `busBarLabel` resolver can override the text. Colors via `currentColor` so a `colorClass` (e.g. a voltage bucket) can retint it; no drag.                                                   |    ✅    |  ✅   |
-| `ConnectionView` | Draws one `Connection`: the orthogonal path with hop arcs, plus optional arrowhead, junction dot, asset glyph and label.<br>Carries an invisible fat hit stroke so thin lines stay easy to click.                                                   |    ✅    |  ✅   |
-| `GhostPreview`   | Translucent snapped preview of the position being placed or dragged, centred in the target slot.<br>Green outline when the drop is valid, dashed red when rejected.                                                                                 |    ✅    |  ✅   |
-| `GridOverlay`    | Edit-mode layer outlining every free slot with a dashed rounded rect.<br>Tints the drop target green/red and the cells a reflow would displace amber; draws the bus-bar insertion boundary line.                                                    |    ✅    |  ✅   |
-| `LaneOverlay`    | Row/column selection chrome: full-height column hit bands, row highlight bands and numbered handle tabs in the left margin.<br>Adds dashed "+" affordances at the grid edges; emits `selectlane` / `addlane`.                                       |    ✅    |  ✅   |
-| `SymbolGlyph`    | Draws a `SymbolRegistry` glyph scaled into a box over an optional opaque backing rect, stroking `currentColor`.<br>Shared by `ConnectionView` (external asset glyphs) and the composite line adornments (transformer / demand).                     |    ⬜    |  ✅   |
+| Component        | What it does                                                                                                                                                                                                                                                                                                                                                  | Svelte 4 | React |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------: | :---: |
+| `SldCanvas`      | The `<svg>` host of a single diagram. Owns the pan/zoom viewBox and renders every element view in z-order (connections → bars → positions).<br>Emits selection, drag and raw canvas-point events; takes overlay slots above and below the elements.                                                                                                           |    ✅    |  ✅   |
+| `PositionView`   | Draws one `Position` as a rounded, type-colored box with a centred label and an optional dashed selection halo.<br>Emits `select` / `dragstart` on pointerdown and `editlabel` on double-click; dims while being dragged.                                                                                                                                     |    ✅    |  ✅   |
+| `BusBarView`     | Draws one `BusBar` as a thick filled bar spanning its row, with a bold label at `busBarLabelAnchor` (`top-left`, the default, or `center-left` beside the bar).<br>Draws the layout-resolved `geo.label`, so a core `busBarLabel` resolver can override the text. Colors via `currentColor` so a `colorClass` (e.g. a voltage bucket) can retint it; no drag. |    ✅    |  ✅   |
+| `ConnectionView` | Draws one `Connection`: the orthogonal path with hop arcs, plus optional arrowhead, junction dot, asset glyph and label.<br>Carries an invisible fat hit stroke so thin lines stay easy to click.                                                                                                                                                             |    ✅    |  ✅   |
+| `GhostPreview`   | Translucent snapped preview of the position being placed or dragged, centred in the target slot.<br>Green outline when the drop is valid, dashed red when rejected.                                                                                                                                                                                           |    ✅    |  ✅   |
+| `GridOverlay`    | Edit-mode layer outlining every free slot with a dashed rounded rect.<br>Tints the drop target green/red and the cells a reflow would displace amber; draws the bus-bar insertion boundary line.                                                                                                                                                              |    ✅    |  ✅   |
+| `LaneOverlay`    | Row/column selection chrome: full-height column hit bands, row highlight bands and numbered handle tabs in the left margin.<br>Adds dashed "+" affordances at the grid edges; emits `selectlane` / `addlane`.                                                                                                                                                 |    ✅    |  ✅   |
+| `SymbolGlyph`    | Draws a `SymbolRegistry` glyph scaled into a box over an optional opaque backing rect, stroking `currentColor`.<br>Shared by `ConnectionView` (external asset glyphs) and the composite line adornments (transformer / demand).                                                                                                                               |    ⬜    |  ✅   |
 
 ### Editor chrome (event-dispatching, no dialogs)
 
@@ -94,13 +94,13 @@ Status legend: ✅ complete · 🚧 in progress · ⬜ pending
 
 ### Composite ("diagram of diagrams")
 
-| Component           | What it does                                                                                                                                                                                                                 | Svelte 4 | React |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------: | :---: |
-| `CompositeCanvas`   | The `<svg>` host of a composite: dashed auto-links, manual lines, every placed child, and the selected line's bend handles.<br>Adds draw-mode chrome (snap rings, draft polyline) and emits the full line-editing event set. |    ✅    |  ✅   |
-| `CompositeExplorer` | Read-only "operate and watch" wrapper over `CompositeCanvas`: click a child to fly into it, click the background to fly out.<br>Injects the flow and line-label overlays; emits `elementactivate` and `focuschange`.         |    ✅    |  ✅   |
-| `CompositeToolbar`  | The composite equivalent of `SldToolbar`: fit, export, color/label modes, plus draw-line, import, delete and undo/redo.<br>No placement tools and no edit-mode toggle.                                                       |    ✅    |  ✅   |
-| `ChildDiagramView`  | Renders one placed child diagram under its `Transform2D`, reusing the element views with labels kept upright.<br>Falls back to a dashed "Diagram not found" placeholder; supports focus and dim states.                      |    ✅    |  ✅   |
-| `SelectionFrame`    | Figma-style selection chrome around the selected child: dashed polygon through its world corners plus corner dots.<br>Carries the rotation handle that emits `rotatestart`.                                                  |    ✅    |  ✅   |
+| Component           | What it does                                                                                                                                                                                                                                                                                                | Svelte 4 | React |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------: | :---: |
+| `CompositeCanvas`   | The `<svg>` host of a composite: dashed auto-links, manual lines, every placed child, and the selected line's bend handles.<br>Adds draw-mode chrome (snap rings, draft polyline) and emits the full line-editing event set.                                                                                |    ✅    |  ✅   |
+| `CompositeExplorer` | Read-only "operate and watch" wrapper over `CompositeCanvas`: click a child to fly into it, click the background to fly out.<br>Injects the flow and line-label overlays; emits `elementactivate` and `focuschange`.                                                                                        |    ✅    |  ✅   |
+| `CompositeToolbar`  | The composite equivalent of `SldToolbar`: fit, export, color/label modes, plus draw-line, import, delete and undo/redo.<br>No placement tools and no edit-mode toggle.                                                                                                                                      |    ✅    |  ✅   |
+| `ChildDiagramView`  | Renders one placed child diagram under its `Transform2D`, reusing the element views with labels kept upright.<br>Falls back to a dashed "Diagram not found" placeholder; supports focus and dim states.                                                                                                     |    ✅    |  ✅   |
+| `SelectionFrame`    | Figma-style selection chrome around the selected child: dashed polygon through its world corners plus corner dots.<br>Carries the rotation handle that emits `rotatestart`.<br>`CompositeCanvas showSelectionFrame={false}` hides it, so an app can draw its own selection look (the child stays selected). |    ✅    |  ✅   |
 
 #### Box view (grid-level SLD)
 
@@ -120,21 +120,21 @@ inherit it.
 Try it: [live demo](https://adrisanchu.github.io/sld-kit/box/) (React, from
 [`examples/react-box`](../examples/react-box)).
 
-| Capability                                       | Where                                                       | Svelte 4 | React |
-| ------------------------------------------------ | ----------------------------------------------------------- | :------: | :---: |
-| `boxMode` / `boxSubLabel`                        | `CompositeCanvas`, `ChildDiagramView`, `CompositeExplorer`  |    ⬜    |  ✅   |
-| Line kinds + glyphs                              | `CompositeCanvas` (core `CompositeLine.kind` + layout)      |    ⬜    |  ✅   |
-| `orthogonal` draw + `orthogonalizePolyline`      | `CompositeCanvas` + `routing`                               |    ⬜    |  ✅   |
-| Floating-connector router (`layout.snapTips`)    | core `CompositeLayoutEngine`; `snapTargets` prop            |    ⬜    |  ✅   |
-| Port-direction override (`onPortDirection`)      | `CompositeCanvas` feeder handle → `SetPortDirectionCommand` |    ⬜    |  ✅   |
-| Auto-facing policy (`meta.autoFacing`)           | core-derived; `SetAutoFacingCommand` (no adapter surface)   |    ⬜    |  ✅   |
-| Uniform box size (`boxSize`, default `BOX_SIZE`) | core `CompositeLayoutEngine` option (no adapter surface)    |    ⬜    |  ✅   |
-| Line labels (`CompositeLine.data` + `lineLabels`) | core layout places `ln.label`; `CompositeCanvas` draws it   |    ⬜    |  ✅   |
-| Section boxes (`boxSections` → `child.boxes`/`ties`) | core layout; `ChildDiagramView` box branch, `boxSubLabel(child, section)` |    ⬜    |  ✅   |
+| Capability                                                         | Where                                                                                                 | Svelte 4 | React |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | :------: | :---: |
+| `boxMode` / `boxSubLabel`                                          | `CompositeCanvas`, `ChildDiagramView`, `CompositeExplorer`                                            |    ⬜    |  ✅   |
+| Line kinds + glyphs                                                | `CompositeCanvas` (core `CompositeLine.kind` + layout)                                                |    ⬜    |  ✅   |
+| `orthogonal` draw + `orthogonalizePolyline`                        | `CompositeCanvas` + `routing`                                                                         |    ⬜    |  ✅   |
+| Floating-connector router (`layout.snapTips`)                      | core `CompositeLayoutEngine`; `snapTargets` prop                                                      |    ⬜    |  ✅   |
+| Port-direction override (`onPortDirection`)                        | `CompositeCanvas` feeder handle → `SetPortDirectionCommand`                                           |    ⬜    |  ✅   |
+| Auto-facing policy (`meta.autoFacing`)                             | core-derived; `SetAutoFacingCommand` (no adapter surface)                                             |    ⬜    |  ✅   |
+| Uniform box size (`boxSize`, default `BOX_SIZE`)                   | core `CompositeLayoutEngine` option (no adapter surface)                                              |    ⬜    |  ✅   |
+| Line labels (`CompositeLine.data` + `lineLabels`)                  | core layout places `ln.label`; `CompositeCanvas` draws it                                             |    ⬜    |  ✅   |
+| Section boxes (`boxSections` → `child.boxes`/`ties`)               | core layout; `ChildDiagramView` box branch, `boxSubLabel(child, section)`                             |    ⬜    |  ✅   |
 | Expand in place (`layout(doc, { expanded })`) + box ↔ detail morph | `ChildDiagramView` (`animateMorph`), `CompositeCanvas` (expanded drawn last, re-routed lines fade in) |    ⬜    |  ✅   |
-| Open-bay default look (`Position.state` → `resolveFormat`) | `PositionView`                                           |    ✅    |  ✅   |
-| Open-bay connections grey + dashed (`switchOpenConnectionFormat`) | `ConnectionView` (`doc` prop), `CompositeCanvas` via `linkFormat`/`lineFormat` |    ✅    |  ✅   |
-| `ElementFormat.stroke` (line colour)              | `ConnectionView`, `CompositeCanvas` links + lines           |    ✅    |  ✅   |
+| Open-bay default look (`Position.state` → `resolveFormat`)         | `PositionView`                                                                                        |    ✅    |  ✅   |
+| Open-bay connections grey + dashed (`switchOpenConnectionFormat`)  | `ConnectionView` (`doc` prop), `CompositeCanvas` via `linkFormat`/`lineFormat`                        |    ✅    |  ✅   |
+| `ElementFormat.stroke` (line colour)                               | `ConnectionView`, `CompositeCanvas` links + lines                                                     |    ✅    |  ✅   |
 
 ### Flow overlays (generic, domain-agnostic)
 
