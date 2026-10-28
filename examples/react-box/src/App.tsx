@@ -111,9 +111,12 @@ type Picker = { point: Point; instanceId: string; sectionKey: string | null };
 
 /**
  * The canvas's selection / hover frame, styled as a "target lock" in `app.css`
- * (`.sld-selection`): pushed out from the box, with corner brackets.
+ * (`.sld-selection`): pushed out from the box with rounded corners, the wash on
+ * the box itself, and brackets that grow when the box locks (selected).
  */
-const VIEW_STYLE = resolveViewStyle({ composite: { selection: { padding: 8, cornerArm: 18 } } });
+const VIEW_STYLE = resolveViewStyle({
+  composite: { selection: { padding: 8, radius: 6, bodyRadius: 4, cornerArm: 22, hoverCornerArm: 14 } }
+});
 
 /** Placement grid for a new substation (composite units). */
 const PLACE_SNAP = 20;

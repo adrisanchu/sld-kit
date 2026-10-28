@@ -35,6 +35,7 @@ import {
   MatrixCreatorFlyout,
   SldCanvas,
   SldToolbar,
+  resolveViewStyle,
   useCommandStack,
   useSldDocument,
   type ColorMode,
@@ -47,6 +48,9 @@ import { X } from 'lucide-react';
 import { voltageClass } from '../fixture';
 import { barBusIdLabel } from '../topology';
 import { terminalsOf } from './terminals';
+
+/** Halos pushed out to clear the bay, with lock-on brackets (styled in `app.css`, `.sld-halo`). */
+const HALO_STYLE = resolveViewStyle({ selection: { padding: 8, cornerArm: 14, hoverCornerArm: 14 } });
 
 /** Map the toolbar's label-visibility mode to the canvas's three toggles. */
 const LABELS: Record<LabelMode, { pos: boolean; conn: boolean; bar: boolean }> = {
@@ -411,7 +415,9 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
             // What a click would hit (Select / Connection tools): bays lock on,
             // bars glow — styled on the adapter's `.sld-halo` in `app.css`.
             hoverHalo={editMode && (tool === 'select' || tool === 'connection')}
+            haloCorners="brackets"
             busBarHitSlop={8}
+            style={HALO_STYLE}
             background={
               editMode && (
                 <LaneOverlay

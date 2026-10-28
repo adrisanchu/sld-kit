@@ -89,6 +89,29 @@ const checks = [
         sel.includes('stroke:var(--sld-halo-stroke, currentColor);stroke-width:var(--sld-halo-width, 1.5);stroke-dasharray:var(--sld-halo-dash, 5 3)')
     ],
     ['elements: selected elements carry data-selected', n(sel, 'data-selected="true"') === 3],
+    [
+      'elements: halo parts (body + outline), brackets only on request',
+      n(sel, 'sld-halo-body') === 2 && n(sel, 'class="sld-halo-outline"') === 2 && !sel.includes('sld-halo-corner')
+    ],
+    [
+      'elements: haloCorners="brackets" adds 4 brackets per halo, sized by style.selection.cornerArm',
+      (() => {
+        const b = renderToStaticMarkup(
+          h(SldCanvas, {
+            doc,
+            layout,
+            version: 0,
+            selectedIds: new Set([pos.id]),
+            haloCorners: 'brackets',
+            style: resolveViewStyle({ selection: { cornerArm: 9 } })
+          })
+        );
+        const geo = layout.geometry.get(pos.id).rect;
+        const x = geo.x - 4;
+        const y = geo.y - 4;
+        return n(b, 'class="sld-halo-corner"') === 4 && b.includes(`d="M${x},${y + 9} L${x},${y} L${x + 9},${y}"`);
+      })()
+    ],
     ['elements: busBarHitSlop adds a transparent hit rect per bar', n(slop, 'fill="transparent"') - n(html, 'fill="transparent"') === doc.busBars().length]
   );
 }
@@ -178,7 +201,37 @@ function cornerChecks() {
         brackets.includes('data-corners="brackets"')
     ],
     ['corners: none draws no corner marks', count(none, 'sld-selection-corner') === 0 && none.includes('data-corners="none"')],
-    ['corners: the default stays dots, no data-corners', !cc.includes('data-corners')]
+    ['corners: the default stays dots, no data-corners', !cc.includes('data-corners')],
+    ...shapeChecks()
+  ];
+}
+
+// Frame shape (#69, phase 6): body part, rounded outline, per-state bracket arms.
+function shapeChecks() {
+  const [a, b] = clayout.children;
+  const rounded = renderToStaticMarkup(
+    h(CompositeCanvas, {
+      layout: clayout,
+      selectedId: a.instance.id,
+      hoverFrame: true,
+      hoveredChild: { id: b.instance.id },
+      selectionCorners: 'brackets',
+      style: resolveViewStyle({ composite: { selection: { radius: 6, bodyRadius: 4, cornerArm: 22, hoverCornerArm: 14 } } })
+    })
+  );
+  const tl = (c) => c.worldCorners[0];
+  return [
+    ['shape: default outline stays a polygon, with an unpainted body polygon', cc.includes('class="sld-selection-body"') && /<polygon[^>]*class="sld-selection-outline"/.test(cc)],
+    [
+      'shape: radius rounds the outline and body with arcs (like <rect rx>)',
+      /<path d="M[^"]*A6,6 0 0 1[^"]*Z" fill="none" class="sld-selection-outline"/.test(rounded) &&
+        /<path d="M[^"]*A4,4 0 0 1[^"]*Z" fill="none" class="sld-selection-body"/.test(rounded)
+    ],
+    [
+      'shape: brackets are 22 when selected, 14 on hover',
+      rounded.includes(`d="M${tl(a).x},${tl(a).y + 22} L${tl(a).x},${tl(a).y} L${tl(a).x + 22},${tl(a).y}"`) &&
+        rounded.includes(`d="M${tl(b).x},${tl(b).y + 14} L${tl(b).x},${tl(b).y} L${tl(b).x + 14},${tl(b).y}"`)
+    ]
   ];
 }
 
