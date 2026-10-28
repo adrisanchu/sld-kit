@@ -47,7 +47,6 @@ import { X } from 'lucide-react';
 import { voltageClass } from '../fixture';
 import { barBusIdLabel } from '../topology';
 import { terminalsOf } from './terminals';
-import { TargetFx, type Target } from './TargetFx';
 
 /** Map the toolbar's label-visibility mode to the canvas's three toggles. */
 const LABELS: Record<LabelMode, { pos: boolean; conn: boolean; bar: boolean }> = {
@@ -129,8 +128,6 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
   const [cursor, setCursor] = useState<Point | null>(null);
   const [external, setExternal] = useState<{ x: number; y: number; point: Point } | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
-  // What a click would hit (Select / Connection tools): bars glow, bays lock on.
-  const [hover, setHover] = useState<Target | null>(null);
 
   useEffect(() => {
     const d = dialogRef.current;
@@ -222,10 +219,7 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
     });
   };
 
-  const handleCanvasMove = ({ point, event }: { point: Point; event: React.PointerEvent }) => {
-    const next =
-      editMode && (tool === 'select' || tool === 'connection') && event.buttons === 0 ? targetAt(point) : null;
-    setHover((prev) => (prev?.key === next?.key ? prev : next));
+  const handleCanvasMove = ({ point }: { point: Point }) => {
     if (tool === 'position') {
       const cell = layout.cellAt(point);
       setGhost(cell && layout.rowKind(cell.row) === 'slots' ? { cell, valid: grid.isFree(cell) } : null);
@@ -283,20 +277,6 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
     chooseTool('select');
     // The canvas fitted the empty grid on mount; frame the new one.
     requestAnimationFrame(() => canvasRef.current?.zoomToFit());
-  };
-
-  /** The bay or bar under a point (bays win; a bar's hit band is widened, it's thin). */
-  const targetAt = (p: Point): Target | null => {
-    let bar: Target | null = null;
-    for (const [id, geo] of layout.geometry) {
-      const r = geo.kind === 'position' || geo.kind === 'busbar' ? geo.rect : null;
-      if (!r) continue;
-      const slop = geo.kind === 'busbar' ? 8 : 0;
-      if (p.x < r.x || p.x > r.x + r.width || p.y < r.y - slop || p.y > r.y + r.height + slop) continue;
-      if (geo.kind === 'position') return { key: id, rect: r, variant: 'lock' };
-      bar = { key: id, rect: r, variant: 'glow' };
-    }
-    return bar;
   };
 
   // ── Selected element: label + (bars) bus number ─────────────────────────────
@@ -428,7 +408,10 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
             }}
             onCanvasDown={handleCanvasDown}
             onCanvasMove={handleCanvasMove}
-            onCanvasUp={() => setHover(null)}
+            // What a click would hit (Select / Connection tools): bays lock on,
+            // bars glow — styled on the adapter's `.sld-halo` in `app.css`.
+            hoverHalo={editMode && (tool === 'select' || tool === 'connection')}
+            busBarHitSlop={8}
             background={
               editMode && (
                 <LaneOverlay
@@ -449,7 +432,6 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
             {tool === 'position' && ghost && (
               <GhostPreview rect={layout.cellRect(ghost.cell)} valid={ghost.valid} type={positionType} />
             )}
-            <TargetFx target={hover} />
             {rubberFrom && cursor && (
               <line
                 x1={rubberFrom.x}
