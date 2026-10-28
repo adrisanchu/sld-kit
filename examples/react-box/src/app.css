@@ -157,11 +157,16 @@
 }
 
 /*
-  Hover affordances (`src/editor/TargetFx.tsx`): game-style "target lock".
-  A box/bay gets corner brackets that snap in over a marching-ants frame and a
-  faint wash; a bus bar gets a soft halo that swells around it. Tinted by the
-  target's own `--sld-pos` (voltage bucket), else the lock accent. Entry is a
-  keyframe (replayed per target); exit is a transition on `data-on="false"`.
+  Target lock (#69): the game-style hover / selection look, as pure CSS over
+  the adapters' styling hooks — no app-side geometry.
+  - Substations: `CompositeCanvas` draws ONE frame per box (`.sld-selection`),
+    for hover and selection alike (`data-state`, plus `data-hover` when the
+    selected box is also under the pointer), with bracket corners
+    (`selectionCorners="brackets"`). Tinted by the box's voltage (`--sld-pos`).
+  - Editor bays / bars: `SldCanvas`'s halos (`.sld-halo` inside `.sld-position`
+    / `.sld-busbar`, `hoverHalo`), in the lock accent.
+  The adapter keys each frame by its state, so the entry keyframes replay when a
+  hovered box gets selected.
 */
 :root {
   --sld-fx-accent: oklch(0.7 0.15 222);
@@ -172,84 +177,157 @@
 .sld-fx-primary {
   --sld-pos: var(--sld-fx-accent);
 }
+
+/* Substation frame — hover ("scanning"): marching ants on a rounded frame,
+   light brackets, a faint wash on the box itself (the body). */
+.sld-selection {
+  color: var(--sld-pos, var(--sld-fx-accent));
+  --sld-selection-width: 1.5;
+  --sld-selection-dash: 7 5;
+}
+.sld-selection[data-state='hover'] {
+  opacity: 1; /* the adapter's default fade; intensity is set below instead */
+}
+.sld-selection > * {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.sld-selection-rotate {
+  display: none; /* substations don't rotate in this app */
+}
+.sld-selection-body {
+  fill: currentColor;
+  fill-opacity: 0.07;
+  stroke: currentColor;
+  stroke-opacity: 0;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  animation: sld-fx-fade 220ms ease-out backwards;
+}
+.sld-selection-outline {
+  stroke-opacity: 0.7;
+  animation:
+    sld-fx-fade 200ms ease-out backwards,
+    sld-fx-march 900ms linear infinite;
+}
+.sld-selection-corner {
+  stroke-width: 3;
+  animation: sld-fx-lock 260ms cubic-bezier(0.2, 1.4, 0.4, 1) backwards;
+}
+
+/* Selected ("locked"): the same perimeter, held still and turned up, longer
+   brackets (`cornerArm`), a deeper wash, and one radar ping as it locks on —
+   the body's ring growing out past the frame. It marches slowly while hovered. */
+.sld-selection[data-state='selected'] {
+  --sld-selection-width: 2.25;
+  --sld-selection-dash: 12 4;
+}
+.sld-selection[data-state='selected'] .sld-selection-body {
+  fill-opacity: 0.12;
+  animation: sld-fx-ping 520ms ease-out;
+}
+.sld-selection[data-state='selected'] .sld-selection-outline {
+  stroke-opacity: 1;
+  animation: sld-fx-fade 200ms ease-out backwards;
+}
+.sld-selection[data-state='selected'][data-hover='true'] .sld-selection-outline {
+  animation: sld-fx-march 1.8s linear infinite;
+}
+.sld-selection[data-state='selected'] .sld-selection-corner {
+  stroke-width: 4.5;
+}
+/* Boxes are a uniform 200×72, the frame 8 outside: start the ring on the frame. */
+@keyframes sld-fx-ping {
+  from {
+    transform: scale(1.08, 1.222);
+    stroke-opacity: 0.55;
+    fill-opacity: 0;
+  }
+  to {
+    transform: scale(1.21, 1.369);
+    stroke-opacity: 0;
+    fill-opacity: 0;
+  }
+}
+
+/* Editor halos (in the lock accent): bays lock on like the substations; bars glow. */
+.sld-halo {
+  color: var(--sld-fx-accent);
+}
+.sld-halo[data-state='hover'] {
+  opacity: 1;
+}
+.sld-halo > * {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.sld-position .sld-halo-body {
+  rx: 4px;
+  fill: currentColor;
+  fill-opacity: 0.07;
+  animation: sld-fx-fade 220ms ease-out backwards;
+}
+.sld-position .sld-halo-outline {
+  rx: 6px;
+  stroke-opacity: 0.7;
+  --sld-halo-dash: 7 5;
+  animation:
+    sld-fx-fade 200ms ease-out backwards,
+    sld-fx-march 900ms linear infinite;
+}
+.sld-halo-corner {
+  stroke-width: 3;
+  animation: sld-fx-lock 260ms cubic-bezier(0.2, 1.4, 0.4, 1) backwards;
+}
+.sld-position .sld-halo[data-state='selected'] .sld-halo-body {
+  fill-opacity: 0.12;
+}
+.sld-position .sld-halo[data-state='selected'] .sld-halo-outline {
+  stroke-opacity: 1;
+  --sld-halo-width: 2.25;
+  --sld-halo-dash: 12 4;
+  animation: sld-fx-fade 200ms ease-out backwards;
+}
+.sld-position .sld-halo[data-state='selected'] .sld-halo-corner {
+  stroke-width: 4.5;
+}
+.sld-busbar .sld-halo-corner {
+  display: none;
+}
+.sld-busbar .sld-halo-outline {
+  rx: 7px;
+  fill: currentColor;
+  fill-opacity: 0.22;
+  stroke: none !important;
+  filter: blur(5px);
+  animation:
+    sld-fx-swell 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards,
+    sld-fx-breathe 1.6s ease-in-out 280ms infinite;
+}
+.sld-busbar .sld-halo-body {
+  rx: 3px;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-opacity: 0.85;
+  animation: sld-fx-fade 160ms ease-out backwards;
+}
+.sld-busbar .sld-halo[data-state='selected'] .sld-halo-outline {
+  fill-opacity: 0.32;
+  animation: sld-fx-swell 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
+}
+.sld-busbar .sld-halo[data-state='selected'] .sld-halo-body {
+  stroke-width: 2;
+  stroke-opacity: 1;
+}
+
+/* Popover tether pin (`src/editor/TargetPin.tsx`). */
 .sld-fx {
   color: var(--sld-pos, var(--sld-fx-accent));
-  transition: opacity 180ms ease-out;
-}
-.sld-fx[data-on='false'] {
-  opacity: 0;
 }
 .sld-fx > * {
   transform-box: fill-box;
   transform-origin: center;
 }
-
-/* Lock-on (boxes, bays). */
-.sld-fx-wash {
-  fill: currentColor;
-  fill-opacity: 0.07;
-  stroke: none;
-  animation: sld-fx-fade 220ms ease-out backwards;
-}
-.sld-fx-ants {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-opacity: 0.7;
-  stroke-dasharray: 7 5;
-  animation:
-    sld-fx-fade 200ms ease-out backwards,
-    sld-fx-march 900ms linear infinite;
-}
-.sld-fx-corners {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  animation: sld-fx-lock 260ms cubic-bezier(0.2, 1.4, 0.4, 1) backwards;
-}
-.sld-fx-lock[data-on='false'] .sld-fx-corners {
-  transform: scale(1.12);
-  transition: transform 180ms ease-in;
-}
-
-/* Selected ("locked"): the same perimeter, held still and turned up. */
-.sld-fx-lock[data-mode='selected'] .sld-fx-wash {
-  fill-opacity: 0.12;
-}
-.sld-fx-lock[data-mode='selected'] .sld-fx-ants {
-  stroke-width: 2.25;
-  stroke-opacity: 1;
-  stroke-dasharray: 12 4;
-  animation: sld-fx-fade 200ms ease-out backwards;
-}
-.sld-fx-lock[data-mode='selected'][data-hot='true'] .sld-fx-ants {
-  animation: sld-fx-march 1.8s linear infinite;
-}
-.sld-fx-lock[data-mode='selected'] .sld-fx-corners {
-  stroke-width: 4.5;
-}
-/* One radar ping as it locks on. */
-.sld-fx-ping {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  opacity: 0;
-  animation: sld-fx-ping 520ms ease-out;
-}
-@keyframes sld-fx-ping {
-  from {
-    opacity: 0.55;
-    transform: scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: scale(1.12);
-  }
-}
-
-/* Popover tether pin. */
 .sld-fx-pin-dot {
   fill: currentColor;
 }
@@ -275,26 +353,6 @@
     opacity: 0;
     transform: scale(2.6);
   }
-}
-
-/* Glow (bus bars). */
-.sld-fx-halo {
-  fill: currentColor;
-  fill-opacity: 0.22;
-  filter: blur(5px);
-  animation: sld-fx-swell 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
-}
-.sld-fx-edge {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-opacity: 0.85;
-  animation: sld-fx-fade 160ms ease-out backwards;
-}
-.sld-fx-glow[data-on='true'] .sld-fx-halo {
-  animation:
-    sld-fx-swell 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards,
-    sld-fx-breathe 1.6s ease-in-out 280ms infinite;
 }
 
 @keyframes sld-fx-fade {
@@ -339,6 +397,8 @@
 @media (prefers-reduced-motion: reduce) {
   .sld-fx,
   .sld-fx *,
+  .sld-selection *,
+  .sld-halo *,
   .sld-pop {
     animation: none !important;
     transition: none !important;

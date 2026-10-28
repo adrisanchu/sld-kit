@@ -3,6 +3,8 @@ import type { BusBar, BusBarGeometry, ElementFormat } from '@sld-kit/core';
 import { SLD_LAYOUT } from '@sld-kit/core';
 import type { FormatResolver } from '../format';
 import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
+import { Halo } from './Halo';
+import type { FrameCorners } from '../composite/frameGeometry';
 
 export interface BusBarViewProps {
   bar: BusBar;
@@ -23,6 +25,20 @@ export interface BusBarViewProps {
   formatResolver?: FormatResolver | null;
   /** Numeric presentation config (opacities, selection halo). */
   style?: SldViewStyle;
+  /**
+   * Also draw the halo while hovered (`data-state="hover"`, faded). Default
+   * `false`: hover only changes the opacity / stroke width, as before.
+   */
+  hoverHalo?: boolean;
+  /** Corner brackets on the halo (`brackets`); `none` (default) draws plain dashes. */
+  haloCorners?: FrameCorners;
+  /** The pointer entered / left this element (`SldCanvas` turns it into `onElementHover`). */
+  onHover?: (detail: { id: string; hovered: boolean }) => void;
+  /**
+   * Widen the bar's hit area by this many px on every side (an invisible rect):
+   * bars are thin, so a little slop makes them easier to hover and pick. Default 0.
+   */
+  hitSlop?: number;
   onSelect?: (detail: { id: string; shiftKey: boolean }) => void;
   onEditLabel?: (detail: { id: string }) => void;
 }
@@ -31,6 +47,9 @@ export interface BusBarViewProps {
  * Draws one `BusBar` as a thick filled bar spanning its row, with a bold label
  * at the left overhang. Paints via `currentColor` so a `colorClass` can retint
  * the whole bar. No drag — bus bars occupy a whole row.
+ *
+ * Styling hooks: root class `sld-busbar` with `data-hover` / `data-selected`
+ * (`"true"` when set), and the halo's `sld-halo` (see `Halo`).
  */
 export function BusBarView({
   bar,
@@ -42,6 +61,10 @@ export function BusBarView({
   showLabel = true,
   formatResolver = null,
   style = DEFAULT_VIEW_STYLE,
+  hoverHalo = false,
+  haloCorners = 'none',
+  hitSlop = 0,
+  onHover,
   onSelect,
   onEditLabel
 }: BusBarViewProps) {
@@ -51,7 +74,6 @@ export function BusBarView({
 
   const baseOpacity = hovered && interactive ? style.busBar.hoverOpacity : style.busBar.opacity;
   const barOpacity = fmt?.fillOpacity != null ? baseOpacity * fmt.fillOpacity : baseOpacity;
-  const sel = style.selection;
 
   function handlePointerDown(e: React.PointerEvent) {
     if (!interactive) return;
@@ -61,24 +83,32 @@ export function BusBarView({
 
   return (
     <g
-      className={`${colorClass ?? 'text-foreground'}${interactive ? ' cursor-pointer' : ''}`}
+      className={`sld-busbar ${colorClass ?? 'text-foreground'}${interactive ? ' cursor-pointer' : ''}`}
       style={colorClass ? { color: 'var(--sld-pos)' } : undefined}
+      data-hover={hovered && interactive ? 'true' : undefined}
+      data-selected={selected ? 'true' : undefined}
       onPointerDown={handlePointerDown}
-      onPointerEnter={() => setHovered(true)}
-      onPointerLeave={() => setHovered(false)}
+      onPointerEnter={() => {
+        setHovered(true);
+        onHover?.({ id: bar.id, hovered: true });
+      }}
+      onPointerLeave={() => {
+        setHovered(false);
+        onHover?.({ id: bar.id, hovered: false });
+      }}
       onDoubleClick={() => interactive && onEditLabel?.({ id: bar.id })}
     >
-      {selected && (
+      {hitSlop > 0 && (
         <rect
-          x={geo.rect.x - sel.padding}
-          y={geo.rect.y - sel.padding}
-          width={geo.rect.width + sel.padding * 2}
-          height={geo.rect.height + sel.padding * 2}
-          fill="none"
-          className="stroke-primary"
-          strokeWidth={sel.strokeWidth}
-          strokeDasharray={sel.dashArray}
+          x={geo.rect.x - hitSlop}
+          y={geo.rect.y - hitSlop}
+          width={geo.rect.width + hitSlop * 2}
+          height={geo.rect.height + hitSlop * 2}
+          fill="transparent"
         />
+      )}
+      {(selected || (hoverHalo && hovered && interactive)) && (
+        <Halo rect={geo.rect} state={selected ? 'selected' : 'hover'} corners={haloCorners} style={style} />
       )}
       <rect
         x={geo.rect.x}

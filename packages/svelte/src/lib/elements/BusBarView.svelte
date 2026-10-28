@@ -4,6 +4,8 @@
   import { SLD_LAYOUT } from '@sld-kit/core';
   import type { FormatResolver } from '../format';
   import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
+  import Halo from './Halo.svelte';
+  import type { FrameCorners } from '../composite/frameGeometry';
 
   export let bar: BusBar;
   export let geo: BusBarGeometry;
@@ -23,9 +25,23 @@
   export let formatResolver: FormatResolver | null = null;
   /** Numeric presentation config (opacities, selection halo). */
   export let style: SldViewStyle = DEFAULT_VIEW_STYLE;
+  /**
+   * Also draw the halo while hovered (`data-state="hover"`, faded). Default
+   * `false`: hover only changes the opacity / stroke width, as before.
+   */
+  export let hoverHalo: boolean = false;
+  /** Corner brackets on the halo (`brackets`); `none` (default) draws plain dashes. */
+  export let haloCorners: FrameCorners = 'none';
+  /**
+   * Widen the bar's hit area by this many px on every side (an invisible rect):
+   * bars are thin, so a little slop makes them easier to hover and pick. Default 0.
+   */
+  export let hitSlop: number = 0;
 
   const dispatch = createEventDispatcher<{
     select: { id: string; shiftKey: boolean };
+    /** The pointer entered / left this element (`SldCanvas` turns it into `elementhover`). */
+    hover: { id: string; hovered: boolean };
     editlabel: { id: string };
   }>();
 
@@ -34,7 +50,6 @@
   $: fmt = (formatResolver?.(bar) ?? null) as ElementFormat | null;
   $: baseOpacity = hovered && interactive ? style.busBar.hoverOpacity : style.busBar.opacity;
   $: barOpacity = fmt?.fillOpacity != null ? baseOpacity * fmt.fillOpacity : baseOpacity;
-  $: sel = style.selection;
 
   function handlePointerDown(e: PointerEvent) {
     if (!interactive) return;
@@ -43,27 +58,37 @@
   }
 </script>
 
+<!-- Styling hooks: root `sld-busbar` + `data-hover` / `data-selected`; halo `sld-halo`. -->
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <g
-  class={colorClass ?? 'text-foreground'}
+  class="sld-busbar {colorClass ?? 'text-foreground'}"
+  data-hover={hovered && interactive ? 'true' : undefined}
+  data-selected={selected ? 'true' : undefined}
   style={colorClass ? 'color: hsl(var(--sld-pos))' : ''}
   class:cursor-pointer={interactive}
   on:pointerdown={handlePointerDown}
-  on:pointerenter={() => (hovered = true)}
-  on:pointerleave={() => (hovered = false)}
+  on:pointerenter={() => {
+    hovered = true;
+    dispatch('hover', { id: bar.id, hovered: true });
+  }}
+  on:pointerleave={() => {
+    hovered = false;
+    dispatch('hover', { id: bar.id, hovered: false });
+  }}
   on:dblclick={() => interactive && dispatch('editlabel', { id: bar.id })}
 >
-  {#if selected}
+  {#if hitSlop > 0}
     <rect
-      x={geo.rect.x - sel.padding}
-      y={geo.rect.y - sel.padding}
-      width={geo.rect.width + sel.padding * 2}
-      height={geo.rect.height + sel.padding * 2}
-      fill="none"
-      class="stroke-primary"
-      stroke-width={sel.strokeWidth}
-      stroke-dasharray={sel.dashArray}
+      x={geo.rect.x - hitSlop}
+      y={geo.rect.y - hitSlop}
+      width={geo.rect.width + hitSlop * 2}
+      height={geo.rect.height + hitSlop * 2}
+      fill="transparent"
     />
+  {/if}
+  {#if selected || (hoverHalo && hovered && interactive)}
+    <Halo rect={geo.rect} state={selected ? 'selected' : 'hover'}
+      corners={haloCorners} {style} />
   {/if}
   <rect
     x={geo.rect.x}

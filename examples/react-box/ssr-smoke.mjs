@@ -25,7 +25,8 @@ import {
   MapResolver,
   Serializer,
   buildDocument,
-  newId
+  newId,
+  sectionWorldCorners
 } from '@sld-kit/core';
 import { CompositeCanvas } from '@sld-kit/react';
 import { buildBoxComposite, bayId, COUPLER_ID } from './src/fixture.ts';
@@ -87,6 +88,17 @@ const html = renderToStaticMarkup(
   })
 );
 
+// The selection frame carries the selected child's colour class, so app CSS can
+// tint it (`.sld-selection { --sld-selection-stroke: var(--sld-pos) }`).
+const selectedHtml = renderToStaticMarkup(
+  h(CompositeCanvas, {
+    layout,
+    boxMode: true,
+    selectedId: 'a',
+    childColorClass: (child) => (child.instance.resolved?.meta.voltageKv >= 400 ? 'sld-volt-400' : 'sld-volt-220')
+  })
+);
+
 const svg = new CompositeSvgExporter(engine).export(composite, {
   boxMode: true,
   boxFill: () => '#dcfce7',
@@ -121,6 +133,14 @@ const charlieBoxes = () => splitEngine.layout(fixture).children.find((c) => c.in
 const openSections = busTopology(charlie).sections;
 const splitChild = charlieBoxes();
 const splitHtml = renderFixture();
+const sectionHoverHtml = renderToStaticMarkup(
+  h(CompositeCanvas, {
+    layout: splitEngine.layout(fixture),
+    boxMode: true,
+    hoverFrame: true,
+    hoveredChild: { id: 'lib-charlie', section: splitChild.boxes[1].key }
+  })
+);
 const splitSvg = new CompositeSvgExporter(splitEngine).export(fixture, { boxSubLabel });
 // Detail view with the app's child engine: bars labelled by bus id, left of the bar.
 const detailFixture = buildBoxComposite();
@@ -140,6 +160,7 @@ setState(COUPLER_ID, 'closed');
 const closedSections = busTopology(charlie).sections;
 const mergedChild = charlieBoxes();
 const mergedHtml = renderFixture();
+const count = (str, needle) => str.split(needle).length - 1;
 const sectionFeeders = (sections) => sections.map((s) => [...s.connectionIds].sort().join(',')).join(' | ');
 
 // Phase 5 operate loop on the real fixture: toggle the coupler from a composite
@@ -212,7 +233,18 @@ const checks = [
       expandedHtml.includes('>DELTA<') && // neighbours still render as boxes
       !expandedHtml.includes('sld-morph-ghost') // no animation on first render / SSR
   ],
-  ['auto-facing derives the exit side from live positions', facingRight === 'right' && facingLeft === 'left']
+  ['auto-facing derives the exit side from live positions', facingRight === 'right' && facingLeft === 'left'],
+  [
+    'split box view: one hover hit rect per section box',
+    // every child's whole-frame rect, plus one per section box of the split CHARLIE
+    count(splitHtml, 'class="cursor-move"') === fixture.allChildren().length + splitChild.boxes.length
+  ],
+  [
+    'split box view: a hovered section gets a frame through its own (world) corners',
+    sectionHoverHtml.includes(`points="${sectionWorldCorners(splitChild, splitChild.boxes[1].key).map((p) => `${p.x},${p.y}`).join(' ')}"`) &&
+      sectionHoverHtml.includes(`data-section="${splitChild.boxes[1].key}"`)
+  ],
+  ['selection frame carries the child\'s colour class', selectedHtml.includes('class="sld-selection text-primary pointer-events-none sld-volt-400" data-state="selected"')]
 ];
 
 let failed = 0;

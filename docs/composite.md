@@ -74,6 +74,9 @@ options:
   splits: the react-box example uses it for a double bus whose coupler is open.
 - Returning `null` or a single section keeps one box. The detail view ignores
   the split.
+- `sectionWorldCorners(child, key)` maps one section box through the child's
+  transform (rotation included), the per-section counterpart of
+  `ChildLayout.worldCorners`. The adapters use it to frame a hovered section.
 
 A box view can also open one substation **in place**:
 `engine.layout(doc, { expanded: [instanceId] })`.

@@ -83,6 +83,98 @@ complete example.
 /* … one per type; --sld-pos-<type> vars drive the toolbar swatches … */
 ```
 
+## Styling the chrome
+
+The interaction chrome is headless: the adapter owns the geometry, state and
+events, and your stylesheet owns the look. With no extra props or CSS it renders
+exactly the default look; every hook below is opt-in.
+
+### Composite frame (`CompositeCanvas` → `SelectionFrame`)
+
+One frame serves both selection and hover, so the two never stack.
+
+| Prop / event       | Effect                                                                                                                                                     |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hoverFrame`       | Also frame the child under the pointer (`data-state="hover"`, faded, no rotate handle). Default `false`.                                                   |
+| `hoveredChild`     | Controlled hover `{ id, section? } \| null`: draw this instead of the pointer (e.g. highlight a box from a list).                                          |
+| `selectionCorners` | `'dots'` (default), `'brackets'` or `'none'`.                                                                                                              |
+| `on:childhover`    | The child (and section box, in a split box view, React only) under the pointer, or `null`. Cleared while a button is held, while panning and in draw mode. |
+
+| Part (class)            | What it is                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| `sld-selection`         | Root `<g>`. Carries the child's `childColorClass`, so CSS can tint by `--sld-pos`. |
+| `sld-selection-body`    | The child's own corners, **unpainted** — a hook for a wash or a ping.              |
+| `sld-selection-outline` | The dashed outline (`padding` outside the child, rounded by `radius`).             |
+| `sld-selection-corner`  | Corner dots or brackets.                                                           |
+| `sld-selection-rotate`  | Rotation handle + stem (selected frames only).                                     |
+
+| Attribute (on the root) | Values                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------- |
+| `data-state`            | `selected` \| `hover` (frames are keyed by state, so entry animations replay) |
+| `data-hover`            | `"true"` when the selected child is also under the pointer                    |
+| `data-section`          | the hovered section box's key (split box view)                                |
+| `data-corners`          | `brackets` \| `none` (absent for the default dots)                            |
+
+CSS variables: `--sld-selection-stroke` (colour, default the `text-primary`
+`currentColor`), `--sld-selection-width`, `--sld-selection-dash`. Numbers:
+`style.composite.selection` — `strokeWidth`, `dashArray`, `padding`, `radius`,
+`bodyRadius`, `cornerRadius` (dots), `cornerArm` (selected brackets),
+`hoverCornerArm`, `rotateHandleOffset`, `rotateHandleRadius`.
+
+### Editor elements (`SldCanvas` → element views)
+
+| Prop / event      | Effect                                                                                    |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| `hoverHalo`       | Also draw the halo around the bus bar / position under the pointer. Default `false`.      |
+| `haloCorners`     | `'brackets'` adds corner brackets to the halos; `'none'` (default).                       |
+| `busBarHitSlop`   | Widen each bar's hit area by N px (bars are thin). Default 0.                             |
+| `on:elementhover` | `{ id, kind } \| null` for the element under the pointer; cleared while a button is held. |
+
+Roots: `sld-busbar`, `sld-position`, `sld-connection`, each with
+`data-hover="true"` / `data-selected="true"` when set. Halo parts: `sld-halo`
+(group, `data-state`), `sld-halo-body` (the element's rect, unpainted),
+`sld-halo-outline`, `sld-halo-corner`. CSS variables `--sld-halo-stroke`,
+`--sld-halo-width`, `--sld-halo-dash`; numbers in `style.selection` (`padding`,
+`strokeWidth`, `dashArray`, `cornerArm`, `hoverCornerArm`). Halo rects take `rx`
+from CSS (`.sld-halo-outline { rx: 6px }`). Connections have no halo — their
+selection is the heavier stroke.
+
+### Recipe
+
+```css
+/* Tinted hover frame with marching ants and a faint wash; hide the rotate handle. */
+.sld-selection {
+  --sld-selection-stroke: hsl(var(--sld-pos));
+}
+.sld-selection[data-state='hover'] {
+  opacity: 1;
+}
+.sld-selection[data-state='hover'] .sld-selection-outline {
+  animation: march 0.9s linear infinite;
+}
+.sld-selection-body {
+  fill: hsl(var(--sld-pos));
+  fill-opacity: 0.08;
+}
+.sld-selection-rotate {
+  display: none;
+}
+@keyframes march {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+```
+
+To hide the frame entirely: `.sld-selection { display: none }`. Paint set
+inline (the outline's stroke, width and dash) is reachable only through the CSS
+variables; everything else is a presentation attribute that any CSS rule
+overrides.
+
+Custom properties cross Svelte's style scoping, so a plain global stylesheet
+can set them. Remember `--sld-pos` is an HSL triplet here, so tint with
+`hsl(var(--sld-pos))`.
+
 ## Localization (labels)
 
 Every chrome component takes a partial `labels` prop merged over English
@@ -113,6 +205,10 @@ Utilities: `createPanZoom`, `createDocStore`, `downloadText`, `slugify`.
 
 Labels/tokens: `DEFAULT_POSITION_TOKENS` and the `DEFAULT_*_LABELS` maps, plus
 their TypeScript interfaces.
+
+Styling types: `SldViewStyle` (+ `DEFAULT_VIEW_STYLE`, `resolveViewStyle`),
+`ChildHover`, `FrameCorners`, `ElementHover` — see
+[Styling the chrome](#styling-the-chrome).
 
 ## License
 

@@ -4,6 +4,7 @@
     SLD_LAYOUT,
     linkFormat,
     lineFormat,
+    sectionWorldCorners,
     type CompositeLayout,
     type ChildLayout,
     type CompositeLineLayout,
@@ -16,6 +17,7 @@
   import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
   import ChildDiagramView from './ChildDiagramView.svelte';
   import SelectionFrame from './SelectionFrame.svelte';
+  import { frameSpecs, hoverKey, type ChildHover, type FrameCorners } from './frameGeometry';
 
   /**
    * SVG host of the composite. A sibling of `SldCanvas`, sharing only the
@@ -25,14 +27,26 @@
    */
   export let layout: CompositeLayout;
   export let selectedId: string | null = null;
-  /**
-   * Draw the built-in selection chrome (outline, corner dots, rotation handle)
-   * around the `selectedId` child. Turn it off to draw your own selection look:
-   * the child stays selected for everything else (e.g. its feeder pin handles).
-   */
-  export let showSelectionFrame: boolean = true;
   /** Currently selected manual line (shows its draggable bend handles). */
   export let selectedLineId: string | null = null;
+  /**
+   * Draw a frame around the child under the pointer: the same `SelectionFrame`
+   * with `data-state="hover"` (no rotation handle). Over the selected child it
+   * never stacks a second frame; the selected one gets `data-hover="true"`.
+   * Default `false` (hover is still reported through `childhover`).
+   */
+  export let hoverFrame: boolean = false;
+  /**
+   * Controlled hover: when given (including `null`), it is drawn instead of the
+   * canvas's own pointer tracking — e.g. to highlight a child from a list.
+   * `childhover` keeps reporting the pointer either way.
+   */
+  export let hoveredChild: ChildHover | null | undefined = undefined;
+  /**
+   * Corner treatment of the selection / hover frames: `dots` (default),
+   * `brackets` (L-shaped, `style.composite.selection.cornerArm` long) or `none`.
+   */
+  export let selectionCorners: FrameCorners = 'dots';
   export let interactive: boolean = true;
   /**
    * Explore mode: children's transforms are read-only, but a click flies into a
@@ -98,6 +112,11 @@
 
   const dispatch = createEventDispatcher<{
     childdown: { id: string; event: PointerEvent };
+    /**
+     * The child under the pointer changed; `null` when it leaves every child.
+     * Cleared while a button is held (drag, pan), while panning and in draw mode.
+     */
+    childhover: ChildHover | null;
     rotatestart: { event: PointerEvent };
     clearselection: void;
     linkdown: { connectionId: string; event: PointerEvent };
@@ -177,6 +196,34 @@
   const spaceDown = pz.spaceDown;
   const panning = pz.panning;
 
+  // ── Hover ─────────────────────────────────────────────────────────────────
+  // Children report pointer enter/leave on their hit rects; the canvas masks it
+  // while a button is down (dragging / panning) and in draw mode.
+  let rawHover: ChildHover | null = null;
+  let pressed = false;
+  function reportHover(h: ChildHover | null) {
+    if (hoverKey(h) !== hoverKey(rawHover)) rawHover = h;
+  }
+  $: trackedHover =
+    rawHover && !drawMode && !$panning && !pressed && layout.children.some((c) => c.instance.id === rawHover?.id)
+      ? rawHover
+      : null;
+  $: shownHover = hoveredChild !== undefined ? hoveredChild : trackedHover;
+  // Report changes (not the initial "nothing hovered").
+  let lastHoverKey = '';
+  $: if (hoverKey(trackedHover) !== lastHoverKey) {
+    lastHoverKey = hoverKey(trackedHover);
+    dispatch('childhover', trackedHover);
+  }
+  $: frames = frameSpecs(selectedId, shownHover, hoverFrame).flatMap((f) => {
+    const child = layout.children.find((c) => c.instance.id === f.id);
+    if (!child) return [];
+    // A hovered section of a split box gets its own frame; the selection always
+    // frames the whole child.
+    const corners = f.state === 'hover' && f.section ? sectionWorldCorners(child, f.section) ?? undefined : undefined;
+    return [{ ...f, child, corners }];
+  });
+
   $: selectedChild = selectedId ? layout.children.find((c) => c.instance.id === selectedId) ?? null : null;
 
   export function clientToSvg(clientX: number, clientY: number): Point {
@@ -253,7 +300,12 @@
   });
 </script>
 
-<svelte:window on:keydown={(e) => pz.handleKey(e, true)} on:keyup={(e) => pz.handleKey(e, false)} />
+<svelte:window
+  on:keydown={(e) => pz.handleKey(e, true)}
+  on:keyup={(e) => pz.handleKey(e, false)}
+  on:pointerup={() => (pressed = false)}
+  on:pointercancel={() => (pressed = false)}
+/>
 
 <!-- svelte-ignore a11y-no-static-element-interactions a11y-click-events-have-key-events -->
 <svg
@@ -262,6 +314,7 @@
   viewBox="{$viewBox.x} {$viewBox.y} {$viewBox.w} {$viewBox.h}"
   on:wheel|preventDefault={pz.handleWheel}
   on:pointerdown={handlePointerDown}
+  on:pointerdown|capture={() => (pressed = true)}
   on:pointermove={handlePointerMove}
   on:pointerup={handlePointerUp}
   on:pointercancel={handlePointerUp}
@@ -337,16 +390,31 @@
       {showChildNames}
       {notFoundLabel}
       on:childdown
+      on:childhover={(e) => reportHover(e.detail)}
       on:childfocus
       on:elementactivate
       on:labeldown
     />
   {/each}
 
-  <!-- Selection + rotation chrome on top. -->
-  {#if selectedChild && showSelectionFrame}
-    <SelectionFrame child={selectedChild} {interactive} on:rotatestart />
-  {/if}
+  <!-- Selection (+ rotation) and hover chrome on top: one frame per child, its
+       state in `data-state`. Styleable through its classes and CSS variables (see
+       SelectionFrame); hide it with `.sld-selection { display: none }`. Keyed by
+       state so CSS entry animations replay on a state change. -->
+  {#each frames as f (`${f.id}:${f.state}`)}
+    <SelectionFrame
+      child={f.child}
+      state={f.state}
+      hovered={f.hovered}
+      section={f.section}
+      frameCorners={f.corners}
+      cornerStyle={selectionCorners}
+      interactive={interactive && f.state === 'selected'}
+      colorClass={childColorClass(f.child)}
+      {style}
+      on:rotatestart
+    />
+  {/each}
 
   <!-- Manual-line chrome on top: hit targets for selection + bend handles. -->
   {#if !drawMode}

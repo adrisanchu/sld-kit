@@ -61,6 +61,11 @@
 
   const dispatch = createEventDispatcher<{
     childdown: { id: string; event: PointerEvent };
+    /**
+     * The pointer entered (`{ id }`) or left (`null`) this child's hit area.
+     * `CompositeCanvas` uses it to track hover; see its `childhover`.
+     */
+    childhover: { id: string; section?: string } | null;
     /** Explore mode: the user clicked this (non-focused) child to fly into it. */
     childfocus: { id: string; event: PointerEvent };
     /** Explore mode: the user clicked an operable element inside the focused child. */
@@ -218,6 +223,8 @@
       class:cursor-move={interactive && !explore}
       class:cursor-pointer={interactive && explore}
       on:pointerdown={handleDown}
+      on:pointerenter={() => dispatch('childhover', { id: instance.id })}
+      on:pointerleave={() => dispatch('childhover', null)}
     />
   {/if}
 </g>

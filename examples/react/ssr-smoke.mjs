@@ -24,7 +24,8 @@ import {
   ExternalAssetPopover,
   CompositeCanvas,
   CompositeExplorer,
-  CompositeToolbar
+  CompositeToolbar,
+  resolveViewStyle
 } from '@sld-kit/react';
 
 const doc = buildDocument({
@@ -64,6 +65,56 @@ const checks = [
   ['renders the external feeder label', html.includes('NORTH 1')],
   ['renders the transformer symbol glyph', html.includes('fill-background')]
 ];
+
+// ── Element styling hooks (#69, phase 4) ──────────────────────────────────
+{
+  const n = (str, needle) => str.split(needle).length - 1;
+  const bar = doc.busBars()[0];
+  const pos = doc.positions()[0];
+  const conn = doc.connections()[0];
+  const sel = renderToStaticMarkup(
+    h(SldCanvas, { doc, layout, version: 0, selectedIds: new Set([bar.id, pos.id, conn.id]) })
+  );
+  const slop = renderToStaticMarkup(h(SldCanvas, { doc, layout, version: 0, busBarHitSlop: 8 }));
+  checks.push(
+    [
+      'elements: root hooks (sld-busbar / sld-position / sld-connection)',
+      n(html, 'class="sld-busbar ') === doc.busBars().length &&
+        n(html, 'class="sld-connection ') === doc.connections().length
+    ],
+    ['elements: nothing selected → no halo, no data-selected', !html.includes('sld-halo') && !html.includes('data-selected')],
+    [
+      'elements: selected bar + position wear a styleable halo',
+      n(sel, 'class="sld-halo text-primary" data-state="selected"') === 2 &&
+        sel.includes('stroke:var(--sld-halo-stroke, currentColor);stroke-width:var(--sld-halo-width, 1.5);stroke-dasharray:var(--sld-halo-dash, 5 3)')
+    ],
+    ['elements: selected elements carry data-selected', n(sel, 'data-selected="true"') === 3],
+    [
+      'elements: halo parts (body + outline), brackets only on request',
+      n(sel, 'sld-halo-body') === 2 && n(sel, 'class="sld-halo-outline"') === 2 && !sel.includes('sld-halo-corner')
+    ],
+    [
+      'elements: haloCorners="brackets" adds 4 brackets per halo, sized by style.selection.cornerArm',
+      (() => {
+        const b = renderToStaticMarkup(
+          h(SldCanvas, {
+            doc,
+            layout,
+            version: 0,
+            selectedIds: new Set([pos.id]),
+            haloCorners: 'brackets',
+            style: resolveViewStyle({ selection: { cornerArm: 9 } })
+          })
+        );
+        const geo = layout.geometry.get(pos.id).rect;
+        const x = geo.x - 4;
+        const y = geo.y - 4;
+        return n(b, 'class="sld-halo-corner"') === 4 && b.includes(`d="M${x},${y + 9} L${x},${y} L${x + 9},${y}"`);
+      })()
+    ],
+    ['elements: busBarHitSlop adds a transparent hit rect per bar', n(slop, 'fill="transparent"') - n(html, 'fill="transparent"') === doc.busBars().length]
+  );
+}
 
 // ── Chrome ────────────────────────────────────────────────────────────────
 const toolbar = renderToStaticMarkup(
@@ -120,7 +171,113 @@ const cc = renderToStaticMarkup(h(CompositeCanvas, { layout: clayout, selectedId
 checks.push(
   ['composite renders both child names', cc.includes('Level A') && cc.includes('Level B')],
   ['composite auto-links the shared tie', clayout.links.length === 1 && cc.includes('stroke-primary/70')],
-  ['composite draws the selection frame', cc.includes('stroke-dasharray="6 4"')]
+  ['composite draws the selection frame', cc.includes('stroke-dasharray:var(--sld-selection-dash, 6 4)')]
+);
+
+// Styleable selection chrome (#69): class hooks, data-state and CSS-variable
+// paint whose fallbacks are today's numbers; `style.composite.selection` tunes them.
+const count = (s, needle) => s.split(needle).length - 1;
+const firstChild = clayout.children[0];
+const styled = renderToStaticMarkup(
+  h(CompositeCanvas, {
+    layout: clayout,
+    selectedId: firstChild.instance.id,
+    style: resolveViewStyle({ composite: { selection: { strokeWidth: 3, padding: 10, cornerRadius: 5 } } })
+  })
+);
+const unselected = renderToStaticMarkup(h(CompositeCanvas, { layout: clayout }));
+// Corner treatment (#69, phase 3): dots (default) / brackets / none.
+function cornerChecks() {
+  const render = (selectionCorners) =>
+    renderToStaticMarkup(h(CompositeCanvas, { layout: clayout, selectedId: firstChild.instance.id, selectionCorners }));
+  const brackets = render('brackets');
+  const none = render('none');
+  return [
+    [
+      'corners: brackets draw 4 L-paths and name the choice',
+      count(brackets, '<path') - count(cc, '<path') === 4 &&
+        count(brackets, 'sld-selection-corner') === 4 &&
+        count(brackets, '<circle') === count(cc, '<circle') - 4 && // the dots are gone
+        brackets.includes('data-corners="brackets"')
+    ],
+    ['corners: none draws no corner marks', count(none, 'sld-selection-corner') === 0 && none.includes('data-corners="none"')],
+    ['corners: the default stays dots, no data-corners', !cc.includes('data-corners')],
+    ...shapeChecks()
+  ];
+}
+
+// Frame shape (#69, phase 6): body part, rounded outline, per-state bracket arms.
+function shapeChecks() {
+  const [a, b] = clayout.children;
+  const rounded = renderToStaticMarkup(
+    h(CompositeCanvas, {
+      layout: clayout,
+      selectedId: a.instance.id,
+      hoverFrame: true,
+      hoveredChild: { id: b.instance.id },
+      selectionCorners: 'brackets',
+      style: resolveViewStyle({ composite: { selection: { radius: 6, bodyRadius: 4, cornerArm: 22, hoverCornerArm: 14 } } })
+    })
+  );
+  const tl = (c) => c.worldCorners[0];
+  return [
+    ['shape: default outline stays a polygon, with an unpainted body polygon', cc.includes('class="sld-selection-body"') && /<polygon[^>]*class="sld-selection-outline"/.test(cc)],
+    [
+      'shape: radius rounds the outline and body with arcs (like <rect rx>)',
+      /<path d="M[^"]*A6,6 0 0 1[^"]*Z" fill="none" class="sld-selection-outline"/.test(rounded) &&
+        /<path d="M[^"]*A4,4 0 0 1[^"]*Z" fill="none" class="sld-selection-body"/.test(rounded)
+    ],
+    [
+      'shape: brackets are 22 when selected, 14 on hover',
+      rounded.includes(`d="M${tl(a).x},${tl(a).y + 22} L${tl(a).x},${tl(a).y} L${tl(a).x + 22},${tl(a).y}"`) &&
+        rounded.includes(`d="M${tl(b).x},${tl(b).y + 14} L${tl(b).x},${tl(b).y} L${tl(b).x + 14},${tl(b).y}"`)
+    ]
+  ];
+}
+
+// Adapter-tracked hover (#69, phase 2). Pointer tracking can't run in SSR, so
+// these drive the same frames through the controlled `hoveredChild` prop.
+function hoverChecks() {
+  const [a, b] = clayout.children.map((c) => c.instance.id);
+  const render = (props) => renderToStaticMarkup(h(CompositeCanvas, { layout: clayout, selectedId: a, ...props }));
+  const off = render({ hoveredChild: { id: b } });
+  const other = render({ hoverFrame: true, hoveredChild: { id: b } });
+  const same = render({ hoverFrame: true, hoveredChild: { id: a, section: 's1' } });
+  const onlyHover = renderToStaticMarkup(h(CompositeCanvas, { layout: clayout, hoverFrame: true, hoveredChild: { id: b } }));
+  return [
+    ['hover: no frame unless `hoverFrame` is on', count(off, 'class="sld-selection ') === 1 && !off.includes('data-state="hover"')],
+    [
+      'hover: an unselected child gets a faded hover frame without a rotate handle',
+      count(other, 'class="sld-selection ') === 2 &&
+        other.includes('data-state="hover" data-hover="true" opacity="0.55"') &&
+        count(other, 'sld-selection-rotate') === 1
+    ],
+    [
+      'hover: over the selected child it marks that frame instead of stacking one',
+      count(same, 'class="sld-selection ') === 1 && same.includes('data-state="selected" data-hover="true" data-section="s1"')
+    ],
+    ['hover: works without a selection', count(onlyHover, 'class="sld-selection ') === 1 && !onlyHover.includes('sld-selection-rotate')]
+  ];
+}
+const tl = firstChild.worldCorners[0];
+checks.push(
+  ['selection frame: root hook + state', cc.includes('class="sld-selection text-primary pointer-events-none" data-state="selected"')],
+  [
+    'selection frame: part hooks (outline, 4 corners, rotate handle)',
+    count(cc, 'sld-selection-outline') === 1 && count(cc, 'sld-selection-corner') === 4 && count(cc, 'sld-selection-rotate') === 1
+  ],
+  [
+    'selection frame: CSS variables fall back to the default numbers',
+    cc.includes('stroke:var(--sld-selection-stroke, currentColor)') && cc.includes('stroke-width:var(--sld-selection-width, 1.5)')
+  ],
+  ['selection frame: default corner dots + handle sizes', cc.includes('r="3.5"') && cc.includes('r="6"')],
+  ['selection frame: `style.composite.selection` overrides width + corner size', styled.includes('--sld-selection-width, 3') && styled.includes('r="5"')],
+  ['selection frame: padding pushes the corners out along the edges', styled.includes(`cx="${tl.x - 10}" cy="${tl.y - 10}"`)],
+  ['selection frame: none without a selection', !unselected.includes('sld-selection')],
+  ['selection frame: no hover markup by default', !cc.includes('data-hover') && count(cc, 'class="sld-selection ') === 1],
+  ...hoverChecks(),
+  ...cornerChecks(),
+  ['resolveViewStyle keeps unspecified selection numbers', resolveViewStyle({ composite: { selection: { padding: 2 } } }).composite.selection.dashArray === '6 4']
 );
 
 const explorer = renderToStaticMarkup(

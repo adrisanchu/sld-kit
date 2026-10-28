@@ -95,6 +95,13 @@ pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
   - **Line popover** (`LinePopover`) edits kind (`UpdateLineKindCommand`) and
     ratings in `data` (`SetLineDataCommand`) as one step; labels re-place
     through the same `ratingLabels` resolver.
+- **Target-lock affordances** — hover and selection are the adapter's own
+  chrome, styled in [`src/app.css`](src/app.css) with CSS only: `CompositeCanvas`
+  `hoverFrame` + `selectionCorners="brackets"` (one frame per box, `data-state`
+  hover / selected, rounded and pushed out via `style.composite.selection`), and
+  the dialog's `SldCanvas` `hoverHalo` + `haloCorners` (bays lock on, bars glow).
+  The only app-side piece is `TargetPin`, which tethers a popover to its canvas
+  point.
 - **Office-safe export** — `CompositeSvgExporter` with `boxMode`, `boxFill` and
   `boxSubLabel` produces a PowerPoint-pasteable SVG.
 

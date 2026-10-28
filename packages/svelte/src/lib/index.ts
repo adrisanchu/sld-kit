@@ -10,6 +10,7 @@
 
 // ── Canvas + element views ────────────────────────────────────────────────
 export { default as SldCanvas } from './SldCanvas.svelte';
+export type { ElementHover } from './hover';
 export { default as PositionView } from './elements/PositionView.svelte';
 export { default as BusBarView } from './elements/BusBarView.svelte';
 export { default as ConnectionView } from './elements/ConnectionView.svelte';
@@ -31,6 +32,7 @@ export { default as CompositeExplorer } from './composite/CompositeExplorer.svel
 export { default as CompositeToolbar } from './composite/CompositeToolbar.svelte';
 export { default as ChildDiagramView } from './composite/ChildDiagramView.svelte';
 export { default as SelectionFrame } from './composite/SelectionFrame.svelte';
+export type { ChildHover, FrameCorners } from './composite/frameGeometry';
 
 // ── Flow overlay (generic animated lines; domain-agnostic) ────────────────
 export { default as FlowOverlay } from './flow/FlowOverlay.svelte';

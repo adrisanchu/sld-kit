@@ -45,6 +45,10 @@ export interface SldViewStyle {
     padding: number;
     strokeWidth: number;
     dashArray: string;
+    /** Bracket arm length of a selected halo (`haloCorners="brackets"`). */
+    cornerArm: number;
+    /** Bracket arm length of a hovered halo (`hoverHalo` + `haloCorners="brackets"`). */
+    hoverCornerArm: number;
   };
   /** Width of the invisible fat stroke that makes thin lines easy to click. */
   hitStrokeWidth: number;
@@ -73,6 +77,32 @@ export interface SldViewStyle {
     draftStrokeWidth: number;
     draftDashArray: string;
     draftPointRadius: number;
+    /**
+     * The composite selection / hover frame (`SelectionFrame`) around a child.
+     * Width and dash are also overridable from plain CSS through custom
+     * properties; see "Styling the chrome" in the package README.
+     */
+    selection: {
+      /** Outline width (CSS: `--sld-selection-width`). */
+      strokeWidth: number;
+      /** Outline dash pattern (CSS: `--sld-selection-dash`). */
+      dashArray: string;
+      /** Outward offset of the frame from the child's corners, along its rotated edges. */
+      padding: number;
+      /** Corner rounding of the outline (0 = sharp polygon). */
+      radius: number;
+      /** Corner rounding of the unpainted `sld-selection-body` part (the child's own corners). */
+      bodyRadius: number;
+      /** Radius of the corner dots (`selectionCorners="dots"`). */
+      cornerRadius: number;
+      /** Length of each corner bracket arm on a selected frame (`selectionCorners="brackets"`). */
+      cornerArm: number;
+      /** Length of each corner bracket arm on a hover frame. */
+      hoverCornerArm: number;
+      /** Distance of the rotation handle from the top-edge midpoint. */
+      rotateHandleOffset: number;
+      rotateHandleRadius: number;
+    };
   };
 }
 
@@ -82,7 +112,7 @@ export const DEFAULT_VIEW_STYLE: SldViewStyle = {
   busBar: { opacity: 1, hoverOpacity: 0.75 },
   connection: { strokeWidth: 2, hoverStrokeWidth: 2.5, selectedStrokeWidth: 3 },
   symbol: { strokeWidth: 1.6 },
-  selection: { padding: 4, strokeWidth: 1.5, dashArray: '5 3' },
+  selection: { padding: 4, strokeWidth: 1.5, dashArray: '5 3', cornerArm: 12, hoverCornerArm: 12 },
   hitStrokeWidth: 12,
   composite: {
     linkStrokeWidth: 2,
@@ -101,7 +131,19 @@ export const DEFAULT_VIEW_STYLE: SldViewStyle = {
     snapHandleRadius: 5,
     draftStrokeWidth: 2,
     draftDashArray: '4 4',
-    draftPointRadius: 4
+    draftPointRadius: 4,
+    selection: {
+      strokeWidth: 1.5,
+      dashArray: '6 4',
+      padding: 0,
+      radius: 0,
+      bodyRadius: 0,
+      cornerRadius: 3.5,
+      cornerArm: 12,
+      hoverCornerArm: 12,
+      rotateHandleOffset: 28,
+      rotateHandleRadius: 6
+    }
   }
 };
 
@@ -120,6 +162,10 @@ export function resolveViewStyle(style?: DeepPartial<SldViewStyle>): SldViewStyl
     symbol: { ...DEFAULT_VIEW_STYLE.symbol, ...style.symbol },
     selection: { ...DEFAULT_VIEW_STYLE.selection, ...style.selection },
     hitStrokeWidth: style.hitStrokeWidth ?? DEFAULT_VIEW_STYLE.hitStrokeWidth,
-    composite: { ...DEFAULT_VIEW_STYLE.composite, ...style.composite }
+    composite: {
+      ...DEFAULT_VIEW_STYLE.composite,
+      ...style.composite,
+      selection: { ...DEFAULT_VIEW_STYLE.composite.selection, ...style.composite?.selection }
+    }
   };
 }

@@ -12,7 +12,7 @@
  */
 
 // ── Canvas + element views ────────────────────────────────────────────────
-export { SldCanvas, type SldCanvasProps, type SldCanvasHandle } from './SldCanvas';
+export { SldCanvas, type SldCanvasProps, type SldCanvasHandle, type ElementHover } from './SldCanvas';
 export { PositionView, type PositionViewProps } from './elements/PositionView';
 export { BusBarView, type BusBarViewProps } from './elements/BusBarView';
 export { ConnectionView, type ConnectionViewProps } from './elements/ConnectionView';
@@ -38,6 +38,7 @@ export {
 export { CompositeToolbar, type CompositeToolbarProps } from './composite/CompositeToolbar';
 export { ChildDiagramView, type ChildDiagramViewProps } from './composite/ChildDiagramView';
 export { SelectionFrame, type SelectionFrameProps } from './composite/SelectionFrame';
+export type { ChildHover, FrameCorners } from './composite/frameGeometry';
 export { SymbolGlyph, type SymbolGlyphProps } from './composite/SymbolGlyph';
 export { orthogonalizePolyline } from './composite/routing';
 

@@ -8,6 +8,8 @@
   import { DEFAULT_POSITION_TOKENS, type PositionTokens } from './labels';
   import type { FormatResolver } from './format';
   import { DEFAULT_VIEW_STYLE, type SldViewStyle } from './style';
+  import type { ElementHover } from './hover';
+  import type { FrameCorners } from './composite/frameGeometry';
 
   /**
    * SVG host of the diagram. Owns the viewBox (pan/zoom) and renders the
@@ -55,9 +57,26 @@
   export let showPositionLabels: boolean = true;
   export let showConnectionLabels: boolean = true;
   export let showBusBarLabels: boolean = true;
+  /**
+   * Draw the selection halo (`sld-halo`, `data-state="hover"`, faded) around the
+   * bus bar or position under the pointer too. Default `false`.
+   */
+  export let hoverHalo: boolean = false;
+  /**
+   * Corner brackets on the bus bar / position halos (`brackets`, sized by
+   * `style.selection.cornerArm` / `hoverCornerArm`); `none` (default) = plain dashes.
+   */
+  export let haloCorners: FrameCorners = 'none';
+  /** Widen each bus bar's hit area by this many px (bars are thin). Default 0. */
+  export let busBarHitSlop: number = 0;
 
   const dispatch = createEventDispatcher<{
     select: { id: string; shiftKey: boolean };
+    /**
+     * The element under the pointer changed; `null` when it leaves every
+     * element. Cleared while a button is held (dragging, panning).
+     */
+    elementhover: ElementHover | null;
     clearselection: void;
     elementdragstart: { id: string; event: PointerEvent };
     editlabel: { id: string };
@@ -161,9 +180,33 @@
   onMount(() => {
     pz.zoomToFit();
   });
+
+  // ── Hover ─────────────────────────────────────────────────────────────────
+  // Element views report enter/leave; the canvas keeps the latest and masks it
+  // while a button is down (drag, pan), like `CompositeCanvas`.
+  let rawHover: ElementHover | null = null;
+  let pressed = false;
+  function reportHover(kind: ElementHover['kind'], { id, hovered }: { id: string; hovered: boolean }) {
+    if (hovered) {
+      if (rawHover?.id !== id) rawHover = { id, kind };
+    } else if (rawHover?.id === id) rawHover = null;
+  }
+  $: masked = pressed || $panning;
+  $: hover = masked ? null : rawHover;
+  let lastHoverId: string | null = null;
+  $: if ((hover?.id ?? null) !== lastHoverId) {
+    lastHoverId = hover?.id ?? null;
+    dispatch('elementhover', hover);
+  }
+  $: haloOnHover = hoverHalo && !masked;
 </script>
 
-<svelte:window on:keydown={(e) => pz.handleKey(e, true)} on:keyup={(e) => pz.handleKey(e, false)} />
+<svelte:window
+  on:keydown={(e) => pz.handleKey(e, true)}
+  on:keyup={(e) => pz.handleKey(e, false)}
+  on:pointerup={() => (pressed = false)}
+  on:pointercancel={() => (pressed = false)}
+/>
 
 <!-- svelte-ignore a11y-no-static-element-interactions a11y-click-events-have-key-events -->
 <svg
@@ -172,6 +215,7 @@
   viewBox="{$viewBox.x} {$viewBox.y} {$viewBox.w} {$viewBox.h}"
   on:wheel|preventDefault={pz.handleWheel}
   on:pointerdown={handlePointerDown}
+  on:pointerdown|capture={() => (pressed = true)}
   on:pointermove={handlePointerMove}
   on:pointerup={handlePointerUp}
   on:pointercancel={handlePointerUp}
@@ -191,6 +235,7 @@
       {doc}
       {style}
       showLabel={showConnectionLabels}
+      on:hover={(e) => reportHover('connection', e.detail)}
       on:select
       on:editlabel
     />
@@ -205,6 +250,10 @@
       {formatResolver}
       {style}
       showLabel={showBusBarLabels}
+      hoverHalo={haloOnHover}
+      {haloCorners}
+      hitSlop={busBarHitSlop}
+      on:hover={(e) => reportHover('busbar', e.detail)}
       on:select
       on:editlabel
     />
@@ -221,6 +270,9 @@
       {formatResolver}
       {style}
       showLabel={showPositionLabels}
+      hoverHalo={haloOnHover}
+      {haloCorners}
+      on:hover={(e) => reportHover('position', e.detail)}
       on:select
       on:dragstart={(e) => dispatch('elementdragstart', e.detail)}
       on:editlabel={(e) => dispatch('editlabel', e.detail)}

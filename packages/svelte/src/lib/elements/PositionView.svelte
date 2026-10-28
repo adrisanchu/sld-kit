@@ -5,6 +5,8 @@
   import { DEFAULT_POSITION_TOKENS, type PositionTokens } from '../labels';
   import type { FormatResolver } from '../format';
   import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
+  import Halo from './Halo.svelte';
+  import type { FrameCorners } from '../composite/frameGeometry';
 
   export let pos: Position;
   export let geo: PositionGeometry;
@@ -36,9 +38,18 @@
   export let formatResolver: FormatResolver | null = null;
   /** Numeric presentation config (stroke widths, opacities, selection halo). */
   export let style: SldViewStyle = DEFAULT_VIEW_STYLE;
+  /**
+   * Also draw the halo while hovered (`data-state="hover"`, faded). Default
+   * `false`: hover only changes the opacity / stroke width, as before.
+   */
+  export let hoverHalo: boolean = false;
+  /** Corner brackets on the halo (`brackets`); `none` (default) draws plain dashes. */
+  export let haloCorners: FrameCorners = 'none';
 
   const dispatch = createEventDispatcher<{
     select: { id: string; shiftKey: boolean };
+    /** The pointer entered / left this element (`SldCanvas` turns it into `elementhover`). */
+    hover: { id: string; hovered: boolean };
     dragstart: { id: string; event: PointerEvent };
     editlabel: { id: string };
   }>();
@@ -52,7 +63,6 @@
   $: fillAlpha = fmt?.fillOpacity != null ? baseAlpha * fmt.fillOpacity : baseAlpha;
   $: strokeW = fmt?.strokeWidth ?? style.position.strokeWidth;
   $: fontSize = pos.label.length > 13 ? SLD_LAYOUT.labelFontSize - 2 : SLD_LAYOUT.labelFontSize;
-  $: sel = style.selection;
 
   function handlePointerDown(e: PointerEvent) {
     if (!interactive) return;
@@ -62,27 +72,32 @@
   }
 </script>
 
+<!-- Styling hooks: root `sld-position` + `data-hover` / `data-selected`; halo `sld-halo`. -->
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <g
   class="sld-position {token} transition-transform duration-150 ease-out"
+  data-hover={hovered && interactive ? 'true' : undefined}
+  data-selected={selected ? 'true' : undefined}
   class:cursor-pointer={interactive}
   opacity={dragging ? style.position.draggingOpacity : 1}
   on:pointerdown={handlePointerDown}
-  on:pointerenter={() => (hovered = true)}
-  on:pointerleave={() => (hovered = false)}
+  on:pointerenter={() => {
+    hovered = true;
+    dispatch('hover', { id: pos.id, hovered: true });
+  }}
+  on:pointerleave={() => {
+    hovered = false;
+    dispatch('hover', { id: pos.id, hovered: false });
+  }}
   on:dblclick={() => interactive && dispatch('editlabel', { id: pos.id })}
 >
-  {#if selected}
-    <rect
-      x={geo.rect.x - sel.padding}
-      y={geo.rect.y - sel.padding}
-      width={geo.rect.width + sel.padding * 2}
-      height={geo.rect.height + sel.padding * 2}
+  {#if selected || (hoverHalo && hovered && interactive)}
+    <Halo
+      rect={geo.rect}
       rx={SLD_LAYOUT.positionCornerRadius + 2}
-      fill="none"
-      class="stroke-primary"
-      stroke-width={sel.strokeWidth}
-      stroke-dasharray={sel.dashArray}
+      state={selected ? 'selected' : 'hover'}
+      corners={haloCorners}
+      {style}
     />
   {/if}
   <rect

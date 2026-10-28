@@ -35,13 +35,13 @@ import {
   type CompositeLineKind,
   type CompositeLineLayout,
   type ExternalDirection,
-  type Point,
-  type Rect
+  type Point
 } from '@sld-kit/core';
 import {
   ChildDiagramView,
   CompositeCanvas,
   downloadText,
+  resolveViewStyle,
   slugify,
   useCommandStack,
   useSldDocument,
@@ -66,7 +66,7 @@ import { buildBoxComposite, ratingLabels, voltageClass, voltageFill } from './fi
 import { barBusIdLabel, boxSplit, openFeeders, sectionLabel } from './topology';
 import { BayPicker } from './editor/BayPicker';
 import { LinePopover } from './editor/LinePopover';
-import { TargetFx, TargetPin, type Target } from './editor/TargetFx';
+import { TargetPin } from './editor/TargetPin';
 import type { AnchorFn } from './editor/Floating';
 import type { LineRatingData } from './fixture';
 import { SubstationDialog, type SubstationEditTarget } from './editor/SubstationDialog';
@@ -109,7 +109,14 @@ type Tool = 'operate' | 'move' | 'draw';
 /** The bay picker opened by a drawn end landing on a box body. */
 type Picker = { point: Point; instanceId: string; sectionKey: string | null };
 
-const sameRect = (a: Rect, b: Rect) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+/**
+ * The canvas's selection / hover frame, styled as a "target lock" in `app.css`
+ * (`.sld-selection`): pushed out from the box with rounded corners, the wash on
+ * the box itself, and brackets that grow when the box locks (selected).
+ */
+const VIEW_STYLE = resolveViewStyle({
+  composite: { selection: { padding: 8, radius: 6, bodyRadius: 4, cornerArm: 22, hoverCornerArm: 14 } }
+});
 
 /** Placement grid for a new substation (composite units). */
 const PLACE_SNAP = 20;
@@ -173,8 +180,6 @@ export default function App() {
   }, [hint]);
   // Last pointer-down position (viewport px), to anchor popovers.
   const lastPointer = useRef({ x: 0, y: 0 });
-  // The box under the pointer (Operate / Move): drawn as a lock-on frame.
-  const [hover, setHover] = useState<Target | null>(null);
   const mainRef = useRef<HTMLElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
 
@@ -588,30 +593,6 @@ export default function App() {
     if (tool === 'move') setSelectedChildId(inst.id);
   };
   /**
-   * Hover affordance for Operate / Move: lock onto the box (or section box)
-   * under the pointer. Off while a button is held (dragging / panning), and on
-   * the substation already opened in Operate (its switches are the targets).
-   */
-  const trackHover = (e: React.PointerEvent) => {
-    const handle = canvasRef.current;
-    const hit =
-      (tool === 'operate' || tool === 'move') && e.buttons === 0 && handle
-        ? boxAt(layout, handle.clientToSvg(e.clientX, e.clientY), boxMode)
-        : null;
-    const next: Target | null =
-      hit && !(operating && hit.child.instance.id === focusedId)
-        ? {
-            key: `${hit.child.instance.id}:${hit.sectionKey ?? ''}`,
-            rect: hit.rect,
-            colorClass: voltageClass(hit.child.instance.resolved?.meta.voltageKv),
-            variant: 'lock'
-          }
-        : null;
-    // Same box, same place → keep the object, so nothing re-renders per move.
-    setHover((prev) => (prev && next && prev.key === next.key && sameRect(prev.rect, next.rect) ? prev : next));
-  };
-
-  /**
    * Tether a popover to a world point: maps it to viewport px through the
    * live view (the canvas's `clientToSvg` is affine, so two samples invert it),
    * or `null` once it leaves the visible canvas — the popover then closes.
@@ -628,19 +609,6 @@ export default function App() {
       const y = (p.y - a.y) / ((b.y - a.y) / 100);
       return x < box.left || x > box.right || y < box.top || y > box.bottom ? null : { x, y };
     };
-
-  // The selected box wears the same lock-on frame as the hover, turned up
-  // (the canvas's own selection frame is off): one perimeter, two intensities.
-  const selectedLayout = selectedChildId ? layout.children.find((c) => c.instance.id === selectedChildId) : undefined;
-  const selectedTarget: Target | null = selectedLayout
-    ? {
-        key: selectedLayout.instance.id,
-        rect: selectedLayout.worldBounds,
-        colorClass: voltageClass(selectedLayout.instance.resolved?.meta.voltageKv),
-        variant: 'lock'
-      }
-    : null;
-  const hoverOnSelected = !!hover && !!selectedChildId && hover.key.startsWith(`${selectedChildId}:`);
 
   const isOnCanvas = (target: EventTarget) => target instanceof Node && !!canvasWrapRef.current?.contains(target);
 
@@ -736,10 +704,8 @@ export default function App() {
         }}
         onPointerMoveCapture={(e) => {
           if (!isOnCanvas(e.target)) return;
-          if (placing) return setGhostAt(canvasRef.current?.clientToSvg(e.clientX, e.clientY) ?? null);
-          trackHover(e);
+          if (placing) setGhostAt(canvasRef.current?.clientToSvg(e.clientX, e.clientY) ?? null);
         }}
-        onPointerLeave={() => setHover(null)}
       >
         <div ref={canvasWrapRef} className="absolute inset-0">
           <CompositeCanvas
@@ -753,7 +719,11 @@ export default function App() {
             snapTargets={snapTargets}
             draftPoints={draft.map((d) => d.point)}
             selectedId={selectedChildId}
-            showSelectionFrame={false}
+            // Hover lock-on in Operate / Move (the canvas masks it while dragging,
+            // panning or drawing, and skips the substation opened in Operate).
+            hoverFrame={(tool === 'operate' || tool === 'move') && !placing}
+            selectionCorners="brackets"
+            style={VIEW_STYLE}
             selectedLineId={selectedLineId}
             childColorClass={childColorClass}
             lineColorClass={lineColorClass}
@@ -777,10 +747,6 @@ export default function App() {
               blur();
             }}
           >
-            <TargetFx target={selectedTarget} mode="selected" hot={hoverOnSelected} />
-            {(tool === 'operate' || tool === 'move') && !placing && (
-              <TargetFx target={hoverOnSelected ? null : hover} />
-            )}
             {picker && <TargetPin at={picker.point} colorClass={pickerChild && childColorClass(pickerChild)} />}
             {tool === 'move' && lineEditAt && editedLine && (
               <TargetPin at={lineEditAt} colorClass={editedLineLayout && lineColorClass(editedLineLayout)} />
