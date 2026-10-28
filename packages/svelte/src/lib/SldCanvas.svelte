@@ -9,6 +9,7 @@
   import type { FormatResolver } from './format';
   import { DEFAULT_VIEW_STYLE, type SldViewStyle } from './style';
   import type { ElementHover } from './hover';
+  import type { FrameCorners } from './composite/frameGeometry';
 
   /**
    * SVG host of the diagram. Owns the viewBox (pan/zoom) and renders the
@@ -61,6 +62,11 @@
    * bus bar or position under the pointer too. Default `false`.
    */
   export let hoverHalo: boolean = false;
+  /**
+   * Corner brackets on the bus bar / position halos (`brackets`, sized by
+   * `style.selection.cornerArm` / `hoverCornerArm`); `none` (default) = plain dashes.
+   */
+  export let haloCorners: FrameCorners = 'none';
   /** Widen each bus bar's hit area by this many px (bars are thin). Default 0. */
   export let busBarHitSlop: number = 0;
 
@@ -245,6 +251,7 @@
       {style}
       showLabel={showBusBarLabels}
       hoverHalo={haloOnHover}
+      {haloCorners}
       hitSlop={busBarHitSlop}
       on:hover={(e) => reportHover('busbar', e.detail)}
       on:select
@@ -264,6 +271,7 @@
       {style}
       showLabel={showPositionLabels}
       hoverHalo={haloOnHover}
+      {haloCorners}
       on:hover={(e) => reportHover('position', e.detail)}
       on:select
       on:dragstart={(e) => dispatch('elementdragstart', e.detail)}

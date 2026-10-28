@@ -17,6 +17,7 @@ import { useStore } from './useStore';
 import { DEFAULT_POSITION_TOKENS, type PositionTokens } from './labels';
 import type { FormatResolver } from './format';
 import { DEFAULT_VIEW_STYLE, type SldViewStyle } from './style';
+import type { FrameCorners } from './composite/frameGeometry';
 
 export interface SldCanvasProps {
   doc: SldDocument;
@@ -69,6 +70,11 @@ export interface SldCanvasProps {
    * bus bar or position under the pointer too. Default `false`.
    */
   hoverHalo?: boolean;
+  /**
+   * Corner brackets on the bus bar / position halos (`brackets`, sized by
+   * `style.selection.cornerArm` / `hoverCornerArm`); `none` (default) = plain dashes.
+   */
+  haloCorners?: FrameCorners;
   /** Widen each bus bar's hit area by this many px (bars are thin). Default 0. */
   busBarHitSlop?: number;
   /** Rendered first inside the `<svg>`, under all elements (grid/lane overlays). */
@@ -140,6 +146,7 @@ export const SldCanvas = forwardRef<SldCanvasHandle, SldCanvasProps>(function Sl
     showConnectionLabels = true,
     showBusBarLabels = true,
     hoverHalo = false,
+    haloCorners = 'none',
     busBarHitSlop = 0,
     background,
     children,
@@ -384,6 +391,7 @@ export const SldCanvas = forwardRef<SldCanvasHandle, SldCanvasProps>(function Sl
           style={style}
           showLabel={showBusBarLabels}
           hoverHalo={haloOnHover}
+          haloCorners={haloCorners}
           hitSlop={busBarHitSlop}
           onHover={onBusBarHover}
           onSelect={onSelect}
@@ -404,6 +412,7 @@ export const SldCanvas = forwardRef<SldCanvasHandle, SldCanvasProps>(function Sl
           style={style}
           showLabel={showPositionLabels}
           hoverHalo={haloOnHover}
+          haloCorners={haloCorners}
           onHover={onPositionHover}
           onSelect={onSelect}
           onDragStart={onElementDragStart}

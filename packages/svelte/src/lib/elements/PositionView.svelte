@@ -6,6 +6,7 @@
   import type { FormatResolver } from '../format';
   import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
   import Halo from './Halo.svelte';
+  import type { FrameCorners } from '../composite/frameGeometry';
 
   export let pos: Position;
   export let geo: PositionGeometry;
@@ -42,6 +43,8 @@
    * `false`: hover only changes the opacity / stroke width, as before.
    */
   export let hoverHalo: boolean = false;
+  /** Corner brackets on the halo (`brackets`); `none` (default) draws plain dashes. */
+  export let haloCorners: FrameCorners = 'none';
 
   const dispatch = createEventDispatcher<{
     select: { id: string; shiftKey: boolean };
@@ -93,6 +96,7 @@
       rect={geo.rect}
       rx={SLD_LAYOUT.positionCornerRadius + 2}
       state={selected ? 'selected' : 'hover'}
+      corners={haloCorners}
       {style}
     />
   {/if}

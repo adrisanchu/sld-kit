@@ -113,3 +113,26 @@ export function bracketPaths(corners: readonly Point[], arm: number): string[] {
     return `M${a.x},${a.y} L${p.x},${p.y} L${b.x},${b.y}`;
   });
 }
+
+/**
+ * Path data for a closed rectangle-like polygon with rounded corners: each
+ * corner is cut back by `r` along both of its edges (clamped to half the
+ * shorter edge) and joined with a circular arc — the same shape as a `<rect rx>`,
+ * at any rotation. Expects clockwise corners (screen coordinates), as
+ * `worldCorners` are.
+ */
+export function roundedPath(corners: readonly Point[], r: number): string {
+  const n = corners.length;
+  const parts: string[] = [];
+  corners.forEach((p, i) => {
+    const prev = corners[(i + n - 1) % n];
+    const next = corners[(i + 1) % n];
+    const lp = Math.hypot(prev.x - p.x, prev.y - p.y) || 1;
+    const ln = Math.hypot(next.x - p.x, next.y - p.y) || 1;
+    const k = Math.min(r, lp / 2, ln / 2);
+    const a = { x: p.x + ((prev.x - p.x) / lp) * k, y: p.y + ((prev.y - p.y) / lp) * k };
+    const b = { x: p.x + ((next.x - p.x) / ln) * k, y: p.y + ((next.y - p.y) / ln) * k };
+    parts.push(`${i === 0 ? 'M' : 'L'}${a.x},${a.y} A${k},${k} 0 0 1 ${b.x},${b.y}`);
+  });
+  return `${parts.join(' ')} Z`;
+}

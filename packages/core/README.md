@@ -426,7 +426,8 @@ generic formatting seam `ElementFormat` / `elementFormat` / `firstFormat`),
 the metadata helper `getElementData`,
 and the composite classes (`CompositeDocument`,
 `DiagramInstance`, `CompositeLayoutEngine`, `CompositeSerializer`,
-`CompositeSvgExporter`, `Transform2D`, `MapResolver`).
+`CompositeSvgExporter`, `Transform2D`, `MapResolver`, and the box-view section
+helpers `layoutSectionBoxes` / `sectionWorldCorners`).
 
 See [`docs/architecture.md`](../../docs/architecture.md) for the design.
 

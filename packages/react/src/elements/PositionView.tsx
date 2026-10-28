@@ -5,6 +5,7 @@ import { DEFAULT_POSITION_TOKENS, type PositionTokens } from '../labels';
 import type { FormatResolver } from '../format';
 import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
 import { Halo } from './Halo';
+import type { FrameCorners } from '../composite/frameGeometry';
 
 export interface PositionViewProps {
   pos: Position;
@@ -42,6 +43,8 @@ export interface PositionViewProps {
    * `false`: hover only changes the opacity / stroke width, as before.
    */
   hoverHalo?: boolean;
+  /** Corner brackets on the halo (`brackets`); `none` (default) draws plain dashes. */
+  haloCorners?: FrameCorners;
   /** The pointer entered / left this element (`SldCanvas` turns it into `onElementHover`). */
   onHover?: (detail: { id: string; hovered: boolean }) => void;
   onSelect?: (detail: { id: string; shiftKey: boolean }) => void;
@@ -70,6 +73,7 @@ export function PositionView({
   formatResolver = null,
   style = DEFAULT_VIEW_STYLE,
   hoverHalo = false,
+  haloCorners = 'none',
   onHover,
   onSelect,
   onDragStart,
@@ -117,6 +121,7 @@ export function PositionView({
           rect={geo.rect}
           rx={SLD_LAYOUT.positionCornerRadius + 2}
           state={selected ? 'selected' : 'hover'}
+          corners={haloCorners}
           style={style}
         />
       )}

@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { ChildLayout, Point } from '@sld-kit/core';
 import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
-import { bracketPaths, frameGeometry, type FrameCorners } from './frameGeometry';
+import { bracketPaths, frameGeometry, roundedPath, type FrameCorners } from './frameGeometry';
 
 export interface SelectionFrameProps {
   child: ChildLayout;
@@ -50,7 +50,9 @@ export interface SelectionFrameProps {
  * Styleable from the app (headless chrome):
  * - classes `sld-selection` (root, with `data-state="selected" | "hover"`,
  *   plus `data-hover="true"` / `data-section` while the pointer is over it),
- *   `sld-selection-outline`, `sld-selection-corner`, `sld-selection-rotate`;
+ *   `sld-selection-body` (the child's own corners, unpainted — a hook for a
+ *   wash or a ping), `sld-selection-outline`, `sld-selection-corner`,
+ *   `sld-selection-rotate`;
  * - CSS custom properties `--sld-selection-stroke` (colour, default the
  *   `text-primary` currentColor), `--sld-selection-width`, `--sld-selection-dash`
  *   (default the `style` numbers).
@@ -69,11 +71,9 @@ export function SelectionFrame({
   onRotateStart
 }: SelectionFrameProps) {
   const sel = style.composite.selection;
-  const { corners, points, topMid, handle } = frameGeometry(
-    frameCorners ?? child.worldCorners,
-    sel.padding,
-    sel.rotateHandleOffset
-  );
+  const src = frameCorners ?? child.worldCorners;
+  const { corners, points, topMid, handle } = frameGeometry(src, sel.padding, sel.rotateHandleOffset);
+  const arm = state === 'hover' ? sel.hoverCornerArm : sel.cornerArm;
 
   const stroke = 'var(--sld-selection-stroke, currentColor)';
   const outlineStyle: CSSProperties = {
@@ -100,9 +100,18 @@ export function SelectionFrame({
       data-corners={cornerStyle === 'dots' ? undefined : cornerStyle}
       opacity={state === 'hover' ? 0.55 : undefined}
     >
-      <polygon points={points} fill="none" className="sld-selection-outline" style={outlineStyle} />
+      {sel.bodyRadius > 0 ? (
+        <path d={roundedPath(src, sel.bodyRadius)} fill="none" className="sld-selection-body" />
+      ) : (
+        <polygon points={src.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" className="sld-selection-body" />
+      )}
+      {sel.radius > 0 ? (
+        <path d={roundedPath(corners, sel.radius)} fill="none" className="sld-selection-outline" style={outlineStyle} />
+      ) : (
+        <polygon points={points} fill="none" className="sld-selection-outline" style={outlineStyle} />
+      )}
       {cornerStyle === 'brackets' &&
-        bracketPaths(corners, sel.cornerArm).map((d, i) => (
+        bracketPaths(corners, arm).map((d, i) => (
           <path
             key={i}
             d={d}

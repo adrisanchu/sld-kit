@@ -4,6 +4,7 @@ import { SLD_LAYOUT } from '@sld-kit/core';
 import type { FormatResolver } from '../format';
 import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
 import { Halo } from './Halo';
+import type { FrameCorners } from '../composite/frameGeometry';
 
 export interface BusBarViewProps {
   bar: BusBar;
@@ -29,6 +30,8 @@ export interface BusBarViewProps {
    * `false`: hover only changes the opacity / stroke width, as before.
    */
   hoverHalo?: boolean;
+  /** Corner brackets on the halo (`brackets`); `none` (default) draws plain dashes. */
+  haloCorners?: FrameCorners;
   /** The pointer entered / left this element (`SldCanvas` turns it into `onElementHover`). */
   onHover?: (detail: { id: string; hovered: boolean }) => void;
   /**
@@ -59,6 +62,7 @@ export function BusBarView({
   formatResolver = null,
   style = DEFAULT_VIEW_STYLE,
   hoverHalo = false,
+  haloCorners = 'none',
   hitSlop = 0,
   onHover,
   onSelect,
@@ -104,7 +108,7 @@ export function BusBarView({
         />
       )}
       {(selected || (hoverHalo && hovered && interactive)) && (
-        <Halo rect={geo.rect} state={selected ? 'selected' : 'hover'} style={style} />
+        <Halo rect={geo.rect} state={selected ? 'selected' : 'hover'} corners={haloCorners} style={style} />
       )}
       <rect
         x={geo.rect.x}

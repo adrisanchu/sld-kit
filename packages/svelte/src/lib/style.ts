@@ -45,6 +45,10 @@ export interface SldViewStyle {
     padding: number;
     strokeWidth: number;
     dashArray: string;
+    /** Bracket arm length of a selected halo (`haloCorners="brackets"`). */
+    cornerArm: number;
+    /** Bracket arm length of a hovered halo (`hoverHalo` + `haloCorners="brackets"`). */
+    hoverCornerArm: number;
   };
   /** Width of the invisible fat stroke that makes thin lines easy to click. */
   hitStrokeWidth: number;
@@ -79,10 +83,16 @@ export interface SldViewStyle {
       dashArray: string;
       /** Outward offset of the frame from the child's corners, along its rotated edges. */
       padding: number;
+      /** Corner rounding of the outline (0 = sharp polygon). */
+      radius: number;
+      /** Corner rounding of the unpainted `sld-selection-body` part (the child's own corners). */
+      bodyRadius: number;
       /** Radius of the corner dots (`selectionCorners="dots"`). */
       cornerRadius: number;
-      /** Length of each corner bracket arm (`selectionCorners="brackets"`). */
+      /** Length of each corner bracket arm on a selected frame (`selectionCorners="brackets"`). */
       cornerArm: number;
+      /** Length of each corner bracket arm on a hover frame. */
+      hoverCornerArm: number;
       /** Distance of the rotation handle from the top-edge midpoint. */
       rotateHandleOffset: number;
       rotateHandleRadius: number;
@@ -96,7 +106,7 @@ export const DEFAULT_VIEW_STYLE: SldViewStyle = {
   busBar: { opacity: 1, hoverOpacity: 0.75 },
   connection: { strokeWidth: 2, hoverStrokeWidth: 2.5, selectedStrokeWidth: 3 },
   symbol: { strokeWidth: 1.6 },
-  selection: { padding: 4, strokeWidth: 1.5, dashArray: '5 3' },
+  selection: { padding: 4, strokeWidth: 1.5, dashArray: '5 3', cornerArm: 12, hoverCornerArm: 12 },
   hitStrokeWidth: 12,
   composite: {
     linkStrokeWidth: 2,
@@ -115,8 +125,11 @@ export const DEFAULT_VIEW_STYLE: SldViewStyle = {
       strokeWidth: 1.5,
       dashArray: '6 4',
       padding: 0,
+      radius: 0,
+      bodyRadius: 0,
       cornerRadius: 3.5,
       cornerArm: 12,
+      hoverCornerArm: 12,
       rotateHandleOffset: 28,
       rotateHandleRadius: 6
     }

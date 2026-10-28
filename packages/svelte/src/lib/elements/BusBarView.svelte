@@ -5,6 +5,7 @@
   import type { FormatResolver } from '../format';
   import { DEFAULT_VIEW_STYLE, type SldViewStyle } from '../style';
   import Halo from './Halo.svelte';
+  import type { FrameCorners } from '../composite/frameGeometry';
 
   export let bar: BusBar;
   export let geo: BusBarGeometry;
@@ -29,6 +30,8 @@
    * `false`: hover only changes the opacity / stroke width, as before.
    */
   export let hoverHalo: boolean = false;
+  /** Corner brackets on the halo (`brackets`); `none` (default) draws plain dashes. */
+  export let haloCorners: FrameCorners = 'none';
   /**
    * Widen the bar's hit area by this many px on every side (an invisible rect):
    * bars are thin, so a little slop makes them easier to hover and pick. Default 0.
@@ -84,7 +87,8 @@
     />
   {/if}
   {#if selected || (hoverHalo && hovered && interactive)}
-    <Halo rect={geo.rect} state={selected ? 'selected' : 'hover'} {style} />
+    <Halo rect={geo.rect} state={selected ? 'selected' : 'hover'}
+      corners={haloCorners} {style} />
   {/if}
   <rect
     x={geo.rect.x}
