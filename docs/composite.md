@@ -60,6 +60,39 @@ floating router still snaps near-aligned ports within `ALIGN_TOLERANCE`, as a
 fallback for unequal slot counts. `new OrthogonalRouter(STUB_LENGTH, 0)` disables
 that snap.
 
+Auto-routed lines (`orthogonal` and `curved`) keep out of every child box. If the
+router's L/Z would cut through a box, a minimal-bend orthogonal search
+(`composite/avoid.ts`) detours around all boxes, inflated by `OBSTACLE_CLEARANCE`.
+In detail view a line ends at an arrow tip *inside* its own diagram, so each end
+first leaves that diagram with a straight **escape stem** (out to the frame edge plus
+the clearance, `Port.owner`). The diagram then stays an obstacle, so the route never
+cuts back through the drawings it connects. Only diagrams that overlap so much that
+an escape stem ends inside them are skipped. In box view, ports sit on the box edge
+and keep the fixed `STUB_LENGTH` stub. A route with nothing in its way is left
+unchanged.
+Pass `{ avoidObstacles: false }` as the router's third argument to turn this off.
+`straight` lines keep their stored vertices and are never re-routed.
+
+The router also avoids small jogs:
+
+- Facing ports closer than two stubs get their stubs capped at half the gap, so
+  the route never doubles back on itself.
+- Only box-edge ports snap into line (`ALIGN_TOLERANCE`). A detail-view arrow tip
+  is a fixed point of its drawing, so a line always ends exactly on its arrow.
+- After a detour, any jog shorter than `MIN_JOG` (two corner radii) is
+  straightened when the run beside it can slide onto the other run's line without
+  entering a box. That trades a little clearance for a straight line. Pass
+  `{ minJog: 0 }` to keep every jog.
+
+`curved` routing takes exactly the `orthogonal` route and draws each bend as a
+circular arc of `cornerRadius` (engine option, default `CURVE_RADIUS`), clamped to
+half of each adjacent segment. A jog that remains and is shorter than two radii
+(between two runs heading the same way) can't fit two full arcs, so it is drawn as
+one smooth S-curve, a cubic Bézier `C`, instead of a tight wiggle. Arcs and curves
+are plain path commands, so the export stays Office-safe.
+Flow overlays still follow the sharp polyline, so their dots cut a corner by about
+`r(√2−1)`.
+
 A child can also be drawn as **several boxes**. Pass a
 `boxSections: (instance) => { sections, ties } | null` resolver in the engine
 options:
