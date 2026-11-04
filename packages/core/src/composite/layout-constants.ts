@@ -17,6 +17,23 @@ export const STUB_LENGTH = 24;
 export const ALIGN_TOLERANCE = 8;
 
 /**
+ * How far the obstacle-avoiding router keeps a line off every child box. Kept
+ * below {@link STUB_LENGTH} so a port's exit stub always ends outside its own
+ * (inflated) box — the box then stays an obstacle and a route never doubles
+ * back through it.
+ */
+export const OBSTACLE_CLEARANCE = 12;
+
+/**
+ * Cost of one extra bend in the obstacle-avoiding search, in px of route length.
+ * High enough that the router prefers a slightly longer run to an extra jog.
+ */
+export const BEND_PENALTY = 48;
+
+/** Corner radius of a `curved` line's rounded bends (`cornerRadius` engine option). */
+export const CURVE_RADIUS = 12;
+
+/**
  * Uniform box-view frame. Every box in box mode gets this size regardless of how
  * many feeders its child has, so grid-aligned boxes produce exactly straight
  * ties (matching the reference drawings). Pass `boxSize: null` to the

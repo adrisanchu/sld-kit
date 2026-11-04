@@ -8,7 +8,7 @@ import { Transform2D } from '../layout/Transform2D';
 import type { Point, Rect } from '../layout/geometry';
 import { CompositeDocument } from './CompositeDocument';
 import { CompositeLine, type CompositeLineKind, type LineVertexJson } from './CompositeLine';
-import { routePolyline, type LineRouting } from './routing';
+import { isOrthogonalRouting, routePolyline, type LineRouting } from './routing';
 import { chordFrame } from './lineFrame';
 import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
 import { OrthogonalRouter } from './OrthogonalRouter';
@@ -17,6 +17,7 @@ import { facingSide, rotateSide, type Port } from './ports';
 import {
   BOX_SIZE,
   CABLE_DASH_ARRAY,
+  CURVE_RADIUS,
   DEMAND_LEAD_LENGTH,
   DEMAND_SYMBOL,
   LINE_LABEL_FONT_SIZE,
@@ -233,6 +234,11 @@ export interface CompositeLink {
   b: { instanceId: string; point: Point };
   /** Polyline (v1: two points). */
   points: Point[];
+  /**
+   * Set only for `curved` routing: draw each bend as a circular arc of this
+   * radius (pass it to `connectionPath`). `points` stay the sharp polyline.
+   */
+  cornerRadius?: number;
 }
 
 type Ref = { instanceId: string; connectionId: string };
@@ -283,6 +289,16 @@ export function linkFormat(
   theme?: FormatContext['theme']
 ): ElementFormat | undefined {
   return firstResolved(linkRefs(link), children, resolve, theme);
+}
+
+/**
+ * Where a renderer draws an auto-link's node dots: every vertex of a sharp link,
+ * but only the two ends of a `curved` one — its rounded bends leave the sharp
+ * vertices off the drawn line. Shared by both adapters and the exporter.
+ */
+export function linkNodeDots(link: CompositeLink): Point[] {
+  const pts = link.points;
+  return link.cornerRadius && pts.length > 2 ? [pts[0], pts[pts.length - 1]] : pts;
 }
 
 /** The format of a **manual line**, from the child connections it anchors to (see {@link linkFormat}). */
@@ -349,6 +365,12 @@ export interface CompositeLineLayout {
   terminus?: LineGlyph;
   /** Stacked text label beside the line — present only when the `lineLabels` resolver returns rows. */
   label?: LineLabelLayout;
+  /**
+   * Set only for `curved` routing: draw each bend as a circular arc of this
+   * radius (pass it to `connectionPath`). `points` stay the sharp polyline, so
+   * glyphs, labels and handles sit exactly where they do for `orthogonal`.
+   */
+  cornerRadius?: number;
 }
 
 /**
@@ -452,6 +474,8 @@ export interface CompositeLayoutOptions {
    * section's box. Ignored in detail view.
    */
   boxSections?: BoxSectionsResolver;
+  /** Corner radius of `curved` lines and links (default {@link CURVE_RADIUS}). */
+  cornerRadius?: number;
 }
 
 export class CompositeLayoutEngine {
@@ -459,6 +483,7 @@ export class CompositeLayoutEngine {
   private readonly boxSize: { width: number; height: number } | null;
   private readonly lineLabels?: LineLabelResolver;
   private readonly boxSections?: BoxSectionsResolver;
+  private readonly cornerRadius: number;
   /** Detail-view child layouts with swapped directions, keyed by `(libraryId, dir signature)`. */
   private detailLayoutCache = new Map<string, DiagramLayout>();
 
@@ -473,6 +498,7 @@ export class CompositeLayoutEngine {
     this.boxSize = options.boxSize === undefined ? BOX_SIZE : options.boxSize;
     this.lineLabels = options.lineLabels;
     this.boxSections = options.boxSections;
+    this.cornerRadius = options.cornerRadius ?? CURVE_RADIUS;
   }
 
   layout(doc: CompositeDocument, request: CompositeLayoutRequest = {}): CompositeLayout {
@@ -492,11 +518,11 @@ export class CompositeLayoutEngine {
 
     // The floating-connector model (attach-per-view, node-relative leads,
     // orthogonal auto-routing) runs whenever the composite shows boxes OR uses
-    // orthogonal routing — the box epic. `boxMode` then only selects perimeter
+    // orthogonal (or curved) routing — the box epic. `boxMode` then only selects perimeter
     // (box) vs SLD-tip (detail) attach, so a box composite stays consistent
     // across the box↔detail toggle. Plain composites (straight routing, no box
     // mode) keep the legacy fixed-connector path untouched.
-    const floating = boxMode || defaultRouting === 'orthogonal';
+    const floating = boxMode || isOrthogonalRouting(defaultRouting);
     if (floating) {
       const autoFacing = doc.meta.autoFacing ?? false;
       const peerCenterOf = autoFacing ? this.buildPeerCenters(doc, children) : undefined;
@@ -642,7 +668,7 @@ export class CompositeLayoutEngine {
    * endpoint to a floating {@link Port} on the active view's frame — box perimeter
    * when `boxMode`, else the SLD arrow tip — and route the bends orthogonally, so
    * the same document lays out cleanly in both views with no stored pixel
-   * geometry. `straight`/`curved` lines still draw their resolved points as-is.
+   * geometry. `straight` lines still draw their resolved points as-is.
    */
   private layoutFloating(
     doc: CompositeDocument,
@@ -654,10 +680,12 @@ export class CompositeLayoutEngine {
   ): CompositeLayout {
     const resolver = new PortResolver(children, boxMode, { autoFacing, peerCenterOf });
     const routingDefault = defaultRouting ?? 'straight';
+    // Every child box is an obstacle the auto router keeps its lines out of.
+    const obstacles = this.obstacles(children);
 
     const lines: CompositeLineLayout[] = [];
     for (const line of doc.allLines()) {
-      const routed = this.routeFloatingLine(line, resolver, line.routing ?? routingDefault);
+      const routed = this.routeFloatingLine(line, resolver, line.routing ?? routingDefault, obstacles);
       if (routed) lines.push(routed);
     }
 
@@ -665,11 +693,28 @@ export class CompositeLayoutEngine {
     // then route the remaining auto-links through the same floating router.
     const claimed = new Set<string>();
     for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
-    const links = this.detectFloatingLinks(children, resolver, claimed, routingDefault);
+    const links = this.detectFloatingLinks(children, resolver, claimed, routingDefault, obstacles);
 
     // Snap targets come from the same resolver that attached the lines, so a
     // ring always sits on the line end it would create (view + effective side).
     return { children, links, lines, bounds: this.unionBounds(children, links, lines), snapTips: resolver.tips() };
+  }
+
+  /**
+   * World rects the auto router routes around: each child's box (each section
+   * box when split), its expanded detail frame, or its placeholder frame. The
+   * router drops any that hold a line's own exit stub, so a line can always
+   * leave the diagram it starts in.
+   */
+  private obstacles(children: ChildLayout[]): Rect[] {
+    return children.flatMap((c) =>
+      c.boxes?.length ? c.boxes.map((b) => c.transform.boundsOf(b.frame)) : [c.worldBounds]
+    );
+  }
+
+  /** The routed line's `cornerRadius` field: only for `curved`. */
+  private corner(routing: LineRouting): { cornerRadius?: number } {
+    return routing === 'curved' && this.cornerRadius > 0 ? { cornerRadius: this.cornerRadius } : {};
   }
 
   /**
@@ -730,7 +775,12 @@ export class CompositeLayoutEngine {
   }
 
   /** Resolve one line's endpoints to floating ports and route its polyline. */
-  private routeFloatingLine(line: CompositeLine, resolver: PortResolver, routing: LineRouting): CompositeLineLayout | null {
+  private routeFloatingLine(
+    line: CompositeLine,
+    resolver: PortResolver,
+    routing: LineRouting,
+    obstacles: Rect[]
+  ): CompositeLineLayout | null {
     const ends = line.vertices.map((v) => this.resolveFloatingEnd(v, resolver));
     const first = ends[0];
     const last = ends[ends.length - 1];
@@ -746,27 +796,28 @@ export class CompositeLayoutEngine {
 
     // Non-orthogonal styles draw every resolved vertex as-is (ports at their
     // attach point), preserving intermediate free `point` bends. The auto router
-    // is used only for `orthogonal`, where it ignores intermediate bends and
-    // routes between the two floating ends (perpendicular stubs + L/Z join).
-    if (routing !== 'orthogonal') {
+    // is used only for `orthogonal`/`curved`, where it ignores intermediate bends
+    // and routes between the two floating ends (perpendicular stubs + L/Z join,
+    // detouring around child boxes in the way).
+    if (!isOrthogonalRouting(routing)) {
       const pts = ends.flatMap((e) => (e ? [floatingEndPoint(e)] : []));
       return pts.length >= 2 ? this.decorateFloatingLine(line, simplify(pts)) : null;
     }
 
     let points: Point[] | null = null;
     if (first?.port && last?.port) {
-      points = this.router.route(first.port, last.port);
+      points = this.router.route(first.port, last.port, obstacles);
     } else if (first?.port && last?.point) {
-      points = this.router.toPoint(first.port, last.point);
+      points = this.router.toPoint(first.port, last.point, obstacles);
     } else if (first?.point && last?.port) {
-      points = this.router.toPoint(last.port, first.point);
+      points = this.router.toPoint(last.port, first.point, obstacles);
     } else {
       // No floating end: draw the resolved free points straight (manual polyline).
       const raw = ends.flatMap((e) => (e?.point ? [e.point] : []));
       points = raw.length >= 2 ? simplify(raw) : null;
     }
 
-    return points ? this.decorateFloatingLine(line, points) : null;
+    return points ? { ...this.decorateFloatingLine(line, points), ...this.corner(routing) } : null;
   }
 
   private resolveFloatingEnd(v: CompositeLine['vertices'][number], resolver: PortResolver): BoxEnd {
@@ -819,7 +870,8 @@ export class CompositeLayoutEngine {
     children: ChildLayout[],
     resolver: PortResolver,
     suppressed: Set<string>,
-    routingDefault: LineRouting
+    routingDefault: LineRouting,
+    obstacles: Rect[]
   ): CompositeLink[] {
     const index = new Map<string, string[]>();
     for (const child of children) {
@@ -836,7 +888,7 @@ export class CompositeLayoutEngine {
       }
     }
 
-    const orthogonal = routingDefault === 'orthogonal';
+    const orthogonal = isOrthogonalRouting(routingDefault);
     const links: CompositeLink[] = [];
     for (const [connectionId, ends] of index) {
       if (ends.length < 2) continue;
@@ -844,12 +896,13 @@ export class CompositeLayoutEngine {
       const pa = resolver.resolve(firstId, connectionId);
       const pb = resolver.resolve(secondId, connectionId);
       if (!pa || !pb) continue;
-      const points = orthogonal ? this.router.route(pa, pb) : simplify([pa.point, pb.point]);
+      const points = orthogonal ? this.router.route(pa, pb, obstacles) : simplify([pa.point, pb.point]);
       links.push({
         connectionId,
         a: { instanceId: firstId, point: pa.point },
         b: { instanceId: secondId, point: pb.point },
-        points
+        points,
+        ...this.corner(routingDefault)
       });
     }
     return links;
@@ -918,7 +971,7 @@ export class CompositeLayoutEngine {
         // Apply the drawing style (per-line, else the composite default) to the
         // resolved world path before decorating, so glyphs sit on the drawn line.
         const routing = line.routing ?? defaultRouting ?? 'straight';
-        out.push(this.decorateLine(line, routePolyline(points, routing)));
+        out.push({ ...this.decorateLine(line, routePolyline(points, routing)), ...this.corner(routing) });
       }
     }
     return out;
@@ -1008,12 +1061,14 @@ export class CompositeLayoutEngine {
       if (ends.length < 2) continue;
       const [first, second] = ends;
       // Auto-links have no per-line override, so they follow the composite default.
-      const points = routePolyline([first.tip, second.tip], defaultRouting ?? 'straight');
+      const routing = defaultRouting ?? 'straight';
+      const points = routePolyline([first.tip, second.tip], routing);
       links.push({
         connectionId,
         a: { instanceId: first.instanceId, point: first.tip },
         b: { instanceId: second.instanceId, point: second.tip },
-        points
+        points,
+        ...this.corner(routing)
       });
     }
     return links;

@@ -4,6 +4,7 @@ import type { ExternalDirection } from '../types';
 import { CompositeDocument } from './CompositeDocument';
 import { CompositeLine, type CompositeLineJson, type CompositeLineKind, type LineVertexJson } from './CompositeLine';
 import { DiagramInstance, type DiagramInstanceJson, type LabelPlacement } from './DiagramInstance';
+import type { LineRouting } from './routing';
 
 export type { LabelPlacement };
 
@@ -255,6 +256,28 @@ export class SetAutoFacingCommand implements Command<CompositeDocument> {
 
   undo(doc: CompositeDocument): void {
     doc.updateMeta({ autoFacing: this.before });
+  }
+}
+
+/**
+ * Set the composite's default line routing (`meta.defaultRouting`), e.g. to
+ * flip auto lines between sharp `orthogonal` and rounded `curved` bends.
+ * `undefined` clears it (back to `straight`). Per-line overrides are untouched.
+ */
+export class SetDefaultRoutingCommand implements Command<CompositeDocument> {
+  readonly label = 'Set line routing';
+
+  constructor(
+    private before: LineRouting | undefined,
+    private after: LineRouting | undefined
+  ) {}
+
+  do(doc: CompositeDocument): void {
+    doc.updateMeta({ defaultRouting: this.after });
+  }
+
+  undo(doc: CompositeDocument): void {
+    doc.updateMeta({ defaultRouting: this.before });
   }
 }
 
