@@ -148,6 +148,23 @@ detailFixture.updateMeta({ boxMode: false });
 const detailEngine = new CompositeLayoutEngine(new LayoutEngine({ ...SLD_LAYOUT, busBarLabelAnchor: 'center-left' }, { busBarLabel: barBusIdLabel }));
 const detailHtml = renderToStaticMarkup(h(CompositeCanvas, { layout: detailEngine.layout(detailFixture) }));
 const detailSvg = new CompositeSvgExporter(detailEngine).export(detailFixture);
+// `curved` takes the same route as `orthogonal` and rounds its bends, on screen
+// and in the (office-safe) export. BRAVO drops 200px so the ALPHA–BRAVO tie
+// bends. Obstacle avoidance is covered by the core tests.
+const bentFixture = (routing) => {
+  const d = buildBoxComposite();
+  d.getChild('lib-bravo').y = 200;
+  d.updateMeta({ defaultRouting: routing });
+  return d;
+};
+const tieOf = (layout) => layout.lines.find((l) => l.line.id === 'l-alpha-bravo').points;
+const orthoBent = splitEngine.layout(bentFixture('orthogonal'));
+const curvedFixture = bentFixture('curved');
+const curvedLayout = splitEngine.layout(curvedFixture);
+const curvedHtml = renderToStaticMarkup(h(CompositeCanvas, { layout: curvedLayout, boxMode: true, boxSubLabel }));
+const orthoBentHtml = renderToStaticMarkup(h(CompositeCanvas, { layout: orthoBent, boxMode: true, boxSubLabel }));
+const curvedSvg = new CompositeSvgExporter(splitEngine).export(curvedFixture, { boxSubLabel });
+const sameRoute = tieOf(orthoBent).length > 2 && JSON.stringify(tieOf(curvedLayout)) === JSON.stringify(tieOf(orthoBent));
 // Switching state is core's first-class `Position.state` (a test may poke it directly).
 const setState = (id, state) => {
   charlie.getElement(id).state = state;
@@ -232,6 +249,11 @@ const checks = [
       expandedHtml.includes('>BC<') && // CHARLIE's coupler position is drawn
       expandedHtml.includes('>DELTA<') && // neighbours still render as boxes
       !expandedHtml.includes('sld-morph-ghost') // no animation on first render / SSR
+  ],
+  ['curved: same route as orthogonal, bends drawn as arcs on screen', sameRoute && / A 12 12 0 0 [01] /.test(curvedHtml) && !/ A 12 12 0 0 [01] /.test(orthoBentHtml)],
+  [
+    'curved: the export draws arcs and stays office-safe',
+    / A 12 12 0 0 [01] /.test(curvedSvg) && !curvedSvg.includes('<style') && !curvedSvg.includes('class=') && !curvedSvg.includes('currentColor')
   ],
   ['auto-facing derives the exit side from live positions', facingRight === 'right' && facingLeft === 'left'],
   [

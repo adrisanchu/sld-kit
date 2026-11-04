@@ -391,6 +391,26 @@ const svg = new CompositeSvgExporter().export(composite);
 `layout.snapTips` holds the draw-mode snap targets: one point per external
 feeder, exactly where a line anchored to it attaches in the active view.
 
+**Line routing** (`CompositeLine.routing`, or `meta.defaultRouting` for every
+line and auto-link) is one of:
+
+- `straight` (the default): stored vertices are drawn as-is.
+- `orthogonal`: the floating-connector router lays out axis-aligned runs with
+  sharp 90° bends. When a route would cut through another child, it detours
+  around every child box with as few bends as possible. Output is deterministic,
+  and a route with nothing in its way is left unchanged.
+- `curved`: the same route as `orthogonal`, but each bend is drawn as a circular
+  arc. The layout sets `cornerRadius` on that line or link (the engine option
+  `cornerRadius`, default `CURVE_RADIUS`); `points` stay the sharp polyline.
+  Render with `connectionPath(points, undefined, hopRadius, cornerRadius)`, and
+  draw link dots at `linkNodeDots(link)`. The export does both for you.
+
+Avoidance is tuned on the router:
+`new OrthogonalRouter(STUB_LENGTH, ALIGN_TOLERANCE, { avoidObstacles: false, clearance: 12, minJog: 24 })`,
+passed as the engine's third constructor argument (`minJog`: jogs shorter than this
+are straightened when possible; `0` keeps them). `SetDefaultRoutingCommand`
+changes the default routing undoably.
+
 ## Serialization & compatibility
 
 `Serializer` validates and (if needed) migrates unknown input, throwing an

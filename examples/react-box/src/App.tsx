@@ -21,6 +21,7 @@ import {
   SLD_LAYOUT,
   SetAutoFacingCommand,
   SetBoxModeCommand,
+  SetDefaultRoutingCommand,
   SetLineDataCommand,
   SetPortDirectionCommand,
   UpdateLineKindCommand,
@@ -58,6 +59,7 @@ import {
   Plus,
   Pointer,
   Redo2,
+  Spline,
   SquarePen,
   Trash2,
   Undo2
@@ -211,6 +213,7 @@ export default function App() {
 
   const boxMode = !!composite.meta.boxMode;
   const autoFacing = !!composite.meta.autoFacing;
+  const curved = composite.meta.defaultRouting === 'curved';
   const run = useCallback((cmd: Command<CompositeDocument>) => stack.execute(cmd, composite), [stack, composite]);
 
   const childColorClass = useCallback((c: ChildLayout) => voltageClass(c.instance.resolved?.meta.voltageKv), []);
@@ -480,6 +483,10 @@ export default function App() {
     run(new SetBoxModeCommand(boxMode, !boxMode));
   };
   const toggleAutoFacing = () => run(new SetAutoFacingCommand(autoFacing, !autoFacing));
+  // Rounded vs sharp bends: `curved` routes exactly like `orthogonal`, only the
+  // corners are drawn as arcs (on screen and in the export).
+  const toggleCurved = () =>
+    run(new SetDefaultRoutingCommand(composite.meta.defaultRouting, curved ? 'orthogonal' : 'curved'));
 
   // Pin a feeder's exit side (the canvas cycles it clockwise on click). The pin
   // beats auto-facing; undo clears it back to auto/authored. `before` is the
@@ -851,6 +858,13 @@ export default function App() {
             onClick={toggleAutoFacing}
           >
             <Magnet className="h-4 w-4" />
+          </ToolButton>
+          <ToolButton
+            title={curved ? 'Curved bends: on (rounded corners)' : 'Curved bends: off (sharp 90° corners)'}
+            active={curved}
+            onClick={toggleCurved}
+          >
+            <Spline className="h-4 w-4" />
           </ToolButton>
           <ToolButton
             title={selectedChildId && !selectedLineId ? 'Delete substation (and its lines)' : 'Delete line'}

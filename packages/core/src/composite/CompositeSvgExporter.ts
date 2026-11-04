@@ -10,6 +10,7 @@ import { CompositeDocument } from './CompositeDocument';
 import {
   CompositeLayoutEngine,
   linkFormat,
+  linkNodeDots,
   lineFormat,
   type ChildLayout,
   type CompositeLineLayout,
@@ -87,14 +88,22 @@ export class CompositeSvgExporter {
     // shared child connection restyles the whole tie-line (dash / width).
     for (const link of layout.links) {
       const lf = linkFormat(link, layout.children, theme.resolveElementFormat, theme);
-      b.element('polyline', {
-        points: link.points.map((p) => `${p.x},${p.y}`).join(' '),
+      const stroke = {
         fill: 'none',
         stroke: lf?.stroke ?? theme.structure.connection,
         'stroke-width': lf?.strokeWidth ?? 2,
         'stroke-dasharray': lf?.dashArray ?? '6 4'
-      });
-      for (const p of link.points) {
+      };
+      // A `curved` link rounds its bends, so it draws as a path (see `linkNodeDots`).
+      if (link.cornerRadius) {
+        b.element('path', {
+          d: connectionPath(link.points, undefined, this.cfg.hopRadius, link.cornerRadius),
+          ...stroke
+        });
+      } else {
+        b.element('polyline', { points: link.points.map((p) => `${p.x},${p.y}`).join(' '), ...stroke });
+      }
+      for (const p of linkNodeDots(link)) {
         b.element('circle', { cx: p.x, cy: p.y, r: this.cfg.nodeDotRadius, fill: theme.structure.connection });
       }
     }
@@ -105,7 +114,7 @@ export class CompositeSvgExporter {
     for (const line of layout.lines) {
       const lf = lineFormat(line.line, layout.children, theme.resolveElementFormat, theme);
       b.element('path', {
-        d: connectionPath(line.points, undefined, this.cfg.hopRadius),
+        d: connectionPath(line.points, undefined, this.cfg.hopRadius, line.cornerRadius),
         fill: 'none',
         stroke: lf?.stroke ?? theme.structure.connection,
         'stroke-width': lf?.strokeWidth ?? theme.structure.connectionStrokeWidth,

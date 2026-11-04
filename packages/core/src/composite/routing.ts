@@ -7,8 +7,9 @@ import type { Point } from '../layout/geometry';
  *  - `straight` — segments drawn as-is (the default; free-form polyline).
  *  - `orthogonal` — every segment rewritten to axis-aligned runs with an elbow
  *    (the box-diagram rule; see {@link orthogonalizePolyline}).
- *  - `curved` — reserved for a future obstacle-avoiding spline; **currently
- *    rendered straight** (no behaviour yet).
+ *  - `curved` — routed exactly like `orthogonal`, then drawn with rounded
+ *    (circular-arc) corners. The layout reports the radius as `cornerRadius`;
+ *    the points stay the sharp orthogonal polyline.
  *
  * Open string like the other axes, but these three seed the model.
  */
@@ -43,7 +44,12 @@ export function orthogonalizePolyline(points: Point[]): Point[] {
   return out;
 }
 
-/** Apply a routing style to a resolved world polyline. `curved` is a straight passthrough for now. */
+/** Whether a routing style draws axis-aligned runs (`orthogonal`, or `curved` = orthogonal with rounded corners). */
+export function isOrthogonalRouting(routing: LineRouting | undefined): boolean {
+  return routing === 'orthogonal' || routing === 'curved';
+}
+
+/** Apply a routing style to a resolved world polyline (`curved` routes like `orthogonal`). */
 export function routePolyline(points: Point[], routing: LineRouting): Point[] {
-  return routing === 'orthogonal' ? orthogonalizePolyline(points) : points;
+  return isOrthogonalRouting(routing) ? orthogonalizePolyline(points) : points;
 }

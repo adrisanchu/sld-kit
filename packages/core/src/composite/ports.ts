@@ -1,4 +1,4 @@
-import type { Point } from '../layout/geometry';
+import type { Point, Rect } from '../layout/geometry';
 
 /**
  * The edge of a box a feeder leaves from. Stable across the box/detail views: it
@@ -66,7 +66,14 @@ export function facingSide(from: Point, to: Point): BoxSide {
 export class Port {
   constructor(
     readonly point: Point,
-    readonly side: BoxSide
+    readonly side: BoxSide,
+    /**
+     * World frame of the diagram the port sits **inside** — set for a detail-view
+     * arrow tip, absent for a box-perimeter port. The obstacle-avoiding router
+     * escapes it with a straight stem before routing, so the line never cuts
+     * back through its own diagram.
+     */
+    readonly owner?: Rect
   ) {}
 
   /** Outward unit vector along the port's side. */
