@@ -647,7 +647,7 @@ export class CompositeLayoutEngine {
     overrides: Map<string, ExternalDirection>
   ): DiagramLayout {
     const signature = [...overrides.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([id, dir]) => `${id}=${dir}`).join(',');
-    const key = `${libraryId} ${signature}`;
+    const key = `${libraryId}\u0000${signature}`;
     const cached = this.detailLayoutCache.get(key);
     if (cached) return cached;
 
