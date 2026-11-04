@@ -3,6 +3,8 @@
   import {
     SLD_LAYOUT,
     linkFormat,
+    linkNodeDots,
+    connectionPath,
     lineFormat,
     sectionWorldCorners,
     type CompositeLayout,
@@ -328,15 +330,16 @@
        tagging it in either diagram is enough (see `linkFormat`). -->
   {#each layout.links as link (link.connectionId)}
     {@const lf = linkFormat(link, layout.children, formatResolver)}
-    <polyline
-      points={link.points.map((p) => `${p.x},${p.y}`).join(' ')}
+    <!-- A `curved` link rounds its bends: a path, with dots on its ends only. -->
+    <path
+      d={connectionPath(link.points, undefined, SLD_LAYOUT.hopRadius, link.cornerRadius)}
       fill="none"
       class="stroke-primary/70"
       style:stroke={lf?.stroke}
       stroke-width={lf?.strokeWidth ?? cs.linkStrokeWidth}
       stroke-dasharray={lf?.dashArray ?? cs.linkDashArray}
     />
-    {#each link.points as p}
+    {#each linkNodeDots(link) as p}
       <circle cx={p.x} cy={p.y} r={SLD_LAYOUT.nodeDotRadius} class="fill-primary/70" />
     {/each}
     <!-- Wide transparent hit target: select an auto-link to convert it to a manual line. -->
@@ -357,8 +360,8 @@
   {#each layout.lines as ln (ln.line.id)}
     {@const cls = lineColorClass(ln)}
     {@const lf = lineFormat(ln.line, layout.children, formatResolver)}
-    <polyline
-      points={ln.points.map((p) => `${p.x},${p.y}`).join(' ')}
+    <path
+      d={connectionPath(ln.points, undefined, SLD_LAYOUT.hopRadius, ln.cornerRadius)}
       fill="none"
       stroke={cls ? 'currentColor' : undefined}
       class={cls ?? 'stroke-primary'}

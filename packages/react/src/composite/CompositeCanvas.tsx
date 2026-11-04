@@ -12,6 +12,7 @@ import {
   SLD_LAYOUT,
   connectionPath,
   linkFormat,
+  linkNodeDots,
   lineFormat,
   rotateSide,
   sectionWorldCorners,
@@ -472,15 +473,16 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         const pts = link.points.map((p) => `${p.x},${p.y}`).join(' ');
         return (
           <g key={link.connectionId}>
-            <polyline
-              points={pts}
+            {/* A `curved` link rounds its bends: a path, with dots on its ends only. */}
+            <path
+              d={connectionPath(link.points, undefined, SLD_LAYOUT.hopRadius, link.cornerRadius)}
               fill="none"
               className="stroke-primary/70"
               style={lf?.stroke ? { stroke: lf.stroke } : undefined}
               strokeWidth={lf?.strokeWidth ?? (boxMode ? cs.boxLineStrokeWidth : cs.linkStrokeWidth)}
               strokeDasharray={lf?.dashArray ?? cs.linkDashArray}
             />
-            {link.points.map((p, i) => (
+            {linkNodeDots(link).map((p, i) => (
               <circle key={i} cx={p.x} cy={p.y} r={SLD_LAYOUT.nodeDotRadius} className="fill-primary/70" />
             ))}
             {/* Wide transparent hit target: select an auto-link to convert it to a manual line. */}
@@ -498,7 +500,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
 
       {/* Manual lines, underneath the children — matches the SVG export. The kind
           drives the stroke (cable → dashed) and any glyph (transformer circles,
-          demand triangle); rounded orthogonal corners via `connectionPath`. */}
+          demand triangle); a `curved` line's rounded bends via `connectionPath`. */}
       {layout.lines.map((ln) => {
         const cls = lineColorClass(ln);
         const lf = lineFormat(ln.line, layout.children, fmt);
@@ -515,7 +517,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
             style={cls ? { color: 'var(--sld-pos)' } : undefined}
           >
             <path
-              d={connectionPath(ln.points, undefined, SLD_LAYOUT.hopRadius)}
+              d={connectionPath(ln.points, undefined, SLD_LAYOUT.hopRadius, ln.cornerRadius)}
               fill="none"
               stroke={ln.line.id !== selectedLineId && lf?.stroke ? lf.stroke : 'currentColor'}
               strokeWidth={
