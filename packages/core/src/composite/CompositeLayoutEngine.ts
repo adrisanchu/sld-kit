@@ -702,9 +702,9 @@ export class CompositeLayoutEngine {
 
   /**
    * World rects the auto router routes around: each child's box (each section
-   * box when split), its expanded detail frame, or its placeholder frame. The
-   * router drops any that hold a line's own exit stub, so a line can always
-   * leave the diagram it starts in.
+   * box when split), its detail or expanded frame, or its placeholder frame.
+   * A line's own diagrams stay obstacles too: a detail-view port carries its
+   * frame (`Port.owner`) and the router leaves it with a straight escape stem.
    */
   private obstacles(children: ChildLayout[]): Rect[] {
     return children.flatMap((c) =>

@@ -1,5 +1,6 @@
 import type { Point, Rect } from '../layout/geometry';
 import { BEND_PENALTY } from './layout-constants';
+import { simplify } from './polyline';
 
 /**
  * Obstacle-avoiding orthogonal search for the floating-connector router: a
@@ -76,9 +77,16 @@ export function polylineHitsAny(points: Point[], obstacles: Rect[]): boolean {
   return false;
 }
 
-/** Sorted, de-duplicated coordinates plus the midpoint of every gap between them. */
+/**
+ * Sorted, de-duplicated coordinates plus the midpoint of every gap between them.
+ * Values are kept exact (near-equal ones merge into the first): a rounded copy
+ * of a port's own coordinate would leave a sub-pixel jog in the route.
+ */
 function candidateCoords(base: number[]): number[] {
-  const sorted = [...new Set(base.map((v) => Math.round(v * 1000) / 1000))].sort((a, b) => a - b);
+  const sorted: number[] = [];
+  for (const v of [...base].sort((a, b) => a - b)) {
+    if (sorted.length === 0 || v - sorted[sorted.length - 1] > 1e-6) sorted.push(v);
+  }
   const out: number[] = [];
   for (let i = 0; i < sorted.length; i++) {
     out.push(sorted[i]);
@@ -234,4 +242,71 @@ export function orthogonalPath(
     if (headingOf(nodes[k - 1], nodes[k]) !== headingOf(nodes[k], nodes[k + 1])) corners.push(nodes[k]);
   }
   return corners;
+}
+
+/**
+ * Remove small jogs from a routed orthogonal polyline. A jog is a short segment
+ * (`< minJog`) between two parallel runs, e.g. a route that hugs a box's
+ * clearance edge a few px off its port's line, then steps across to the port.
+ * The run before the jog (or else the one after it) slides onto the other run's
+ * line, so the step disappears, provided:
+ *  - the slid run's outer point isn't a fixed end (the first or last point);
+ *  - the connector into it keeps its direction (a stub never flips inward);
+ *  - neither the slid run nor its connector enters an obstacle's interior
+ *    (`obstacles` are un-inflated: straightening may trade some clearance for a
+ *    straight line). A connector from a fixed end isn't checked, since a
+ *    detail-view tip sits inside its own diagram by design.
+ * Jogs that can't slide are kept (the renderer smooths them).
+ */
+export function straightenJogs(points: Point[], obstacles: Rect[], minJog: number): Point[] {
+  let p = points;
+  for (let guard = 0; guard < points.length; guard++) {
+    const next = straightenOnce(p, obstacles, minJog);
+    if (!next) return p;
+    p = next;
+  }
+  return p;
+}
+
+function straightenOnce(p: Point[], obstacles: Rect[], minJog: number): Point[] | null {
+  const n = p.length;
+  const clear = (a: Point, b: Point) => !obstacles.some((r) => segmentHitsRect(a, b, r));
+  // The connector keeps its direction; it may collapse to nothing, except a
+  // stub off a fixed end, which must still leave its port outward.
+  const sameDir = (from: number, before: number, after: number, fixed: boolean) =>
+    (!fixed && Math.abs(after - from) < EPS) || (Math.abs(after - from) >= EPS && Math.sign(after - from) === Math.sign(before - from));
+
+  for (let k = 1; k + 2 < n; k++) {
+    const [a, b, c, d] = [p[k - 1], p[k], p[k + 1], p[k + 2]];
+    const vJog = Math.abs(b.x - c.x) < EPS && Math.abs(a.y - b.y) < EPS && Math.abs(c.y - d.y) < EPS;
+    const hJog = Math.abs(b.y - c.y) < EPS && Math.abs(a.x - b.x) < EPS && Math.abs(c.x - d.x) < EPS;
+    if (!vJog && !hJog) continue;
+    const len = Math.abs(vJog ? c.y - b.y : c.x - b.x);
+    if (len < EPS || len >= minJog) continue;
+    // Move a point onto a coordinate along the jog's axis.
+    const onto = (q: Point, v: number): Point => (vJog ? { x: q.x, y: v } : { x: v, y: q.y });
+    const axis = (q: Point) => (vJog ? q.y : q.x);
+
+    // Slide the run before the jog (a→b) onto c's line.
+    if (k - 1 >= 1) {
+      const pre = p[k - 2];
+      const a2 = onto(a, axis(c));
+      const b2 = onto(b, axis(c));
+      const fixed = k - 2 === 0;
+      if (sameDir(axis(pre), axis(a), axis(a2), fixed) && clear(a2, b2) && (fixed || clear(pre, a2))) {
+        return simplify([...p.slice(0, k - 1), a2, b2, ...p.slice(k + 1)]);
+      }
+    }
+    // Else slide the run after the jog (c→d) onto b's line.
+    if (k + 2 <= n - 2) {
+      const post = p[k + 3];
+      const c2 = onto(c, axis(b));
+      const d2 = onto(d, axis(b));
+      const fixed = k + 3 === n - 1;
+      if (sameDir(axis(post), axis(d), axis(d2), fixed) && clear(c2, d2) && (fixed || clear(d2, post))) {
+        return simplify([...p.slice(0, k + 1), c2, d2, ...p.slice(k + 3)]);
+      }
+    }
+  }
+  return null;
 }

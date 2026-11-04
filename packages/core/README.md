@@ -406,8 +406,9 @@ line and auto-link) is one of:
   draw link dots at `linkNodeDots(link)`. The export does both for you.
 
 Avoidance is tuned on the router:
-`new OrthogonalRouter(STUB_LENGTH, ALIGN_TOLERANCE, { avoidObstacles: false, clearance: 12 })`,
-passed as the engine's third constructor argument. `SetDefaultRoutingCommand`
+`new OrthogonalRouter(STUB_LENGTH, ALIGN_TOLERANCE, { avoidObstacles: false, clearance: 12, minJog: 24 })`,
+passed as the engine's third constructor argument (`minJog`: jogs shorter than this
+are straightened when possible; `0` keeps them). `SetDefaultRoutingCommand`
 changes the default routing undoably.
 
 ## Serialization & compatibility

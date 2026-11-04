@@ -140,6 +140,69 @@ describe('OrthogonalRouter — obstacle avoidance', () => {
   });
 });
 
+describe('OrthogonalRouter — escape stems (ports inside their own diagram)', () => {
+  // A detail-view tip sits inside its own frame; the port carries that frame.
+  const ownA: Rect = { x: -200, y: -100, width: 260, height: 200 };
+  const a = new Port({ x: 40, y: 0 }, 'right', ownA);
+  const b = new Port({ x: 400, y: 300 }, 'left');
+
+  it('leaves its own frame with a straight stem, then keeps out of it', () => {
+    const pts = new OrthogonalRouter().route(a, b, [ownA]);
+    // The stem runs straight out past the inflated frame edge before it turns
+    // (collinear points merge, so the first corner may lie further out).
+    expect(pts[0]).toEqual(a.point);
+    expect(pts[1].y).toBe(0);
+    expect(pts[1].x).toBeGreaterThanOrEqual(ownA.x + ownA.width + OBSTACLE_CLEARANCE);
+    expect(crosses(pts.slice(1), ownA)).toBe(false);
+  });
+
+  it('keeps the fixed stub when avoidance is off', () => {
+    const pts = new OrthogonalRouter(undefined, undefined, { avoidObstacles: false }).route(a, b, [ownA]);
+    expect(pts).toEqual(new OrthogonalRouter().route(new Port(a.point, a.side), b));
+  });
+});
+
+describe('OrthogonalRouter — no small jogs', () => {
+  it('caps the stubs of close facing ports instead of doubling back', () => {
+    // 30px apart, offset 10: two 24px stubs would overshoot each other.
+    const pts = new OrthogonalRouter(undefined, 0).route(new Port({ x: 0, y: 0 }, 'right'), new Port({ x: 30, y: 10 }, 'left'));
+    expect(pts).toEqual([{ x: 0, y: 0 }, { x: 15, y: 0 }, { x: 15, y: 10 }, { x: 30, y: 10 }]);
+  });
+
+  it('never snaps a detail-view tip: the line stays on the arrow', () => {
+    const own: Rect = { x: 300, y: -50, width: 200, height: 100 };
+    const tip = new Port({ x: 400, y: 5 }, 'left', own);
+    const pts = new OrthogonalRouter().route(new Port({ x: 0, y: 0 }, 'right'), tip, [own]);
+    expect(pts[pts.length - 1]).toEqual(tip.point);
+  });
+
+  it('straightens a run that hugs a clearance edge a few px off the port line', () => {
+    // The direct run along y = 0 grazes the box's clearance band (box bottom at
+    // y = -3), so the search hugs its inflated edge at y = 9 and then has to step
+    // 9px back up to the port. Sliding that run onto y = 0 still clears the box.
+    const box: Rect = { x: 300, y: -60, width: 100, height: 57 };
+    const a = new Port({ x: 500, y: 300 }, 'up');
+    const b = new Port({ x: 0, y: 0 }, 'right');
+    const pts = new OrthogonalRouter().route(a, b, [box]);
+    expect(pts).toEqual([{ x: 500, y: 300 }, { x: 500, y: 0 }, { x: 0, y: 0 }]);
+    expect(crosses(pts, box)).toBe(false);
+    // With straightening off, the 9px step is still there.
+    const raw = new OrthogonalRouter(undefined, undefined, { minJog: 0 }).route(a, b, [box]);
+    expect(raw.some((p) => p.y === 9)).toBe(true);
+  });
+
+  it('keeps a jog it cannot slide (both runs end at fixed ports)', () => {
+    const a = new Port({ x: 0, y: 0 }, 'down');
+    const b = new Port({ x: 11, y: 200 }, 'up');
+    expect(new OrthogonalRouter(undefined, 0).route(a, b, [{ x: 500, y: 500, width: 10, height: 10 }])).toEqual([
+      { x: 0, y: 0 },
+      { x: 0, y: 100 },
+      { x: 11, y: 100 },
+      { x: 11, y: 200 }
+    ]);
+  });
+});
+
 describe('CompositeLayoutEngine — obstacle avoidance', () => {
   const boxOf = (layout: ReturnType<CompositeLayoutEngine['layout']>, id: string) =>
     layout.children.find((c) => c.instance.id === id)!.worldBounds;
@@ -169,6 +232,37 @@ describe('CompositeLayoutEngine — obstacle avoidance', () => {
     const [link] = layout.links;
     expect(link.points.length).toBeGreaterThan(2);
     expect(crosses(link.points, boxOf(layout, 'b'))).toBe(false);
+  });
+
+  // Detail view: C sits below A, and C's feeder leaves its *left* edge, so the
+  // phase-1 Z (elbow halfway between the stubs) reaches C's tip by cutting
+  // through C's own drawing. The escape stems keep both diagrams obstacles.
+  function detailPair() {
+    const res = new MapResolver(
+      new Map([
+        ['a', Serializer.toJSON(substation('a', 'tie', 'right'))],
+        ['c', Serializer.toJSON(substation('c', 'tie', 'left'))]
+      ])
+    );
+    const doc = new CompositeDocument({ id: 'pair', name: 'pair', boxMode: false, defaultRouting: 'orthogonal' });
+    doc.addChild(DiagramInstance.of({ id: 'a', libraryId: 'a', x: 0, y: 0 }));
+    doc.addChild(DiagramInstance.of({ id: 'c', libraryId: 'c', x: 0, y: 600 }));
+    doc.resolveChildren(res);
+    return doc;
+  }
+
+  it('never routes back through the diagrams a line connects (detail view)', () => {
+    const doc = detailPair();
+    const stems = (pts: Point[]) => pts.slice(1, -1); // drop the tip → stem-end segments
+    // Without avoidance, the old route does cut through C's drawing…
+    const naive = new CompositeLayoutEngine(undefined, undefined, new OrthogonalRouter(undefined, undefined, { avoidObstacles: false })).layout(doc);
+    expect(crosses(stems(naive.links[0].points), boxOf(naive, 'c'))).toBe(true);
+    // …with it, only the straight stems at each end lie inside their own frame.
+    const layout = new CompositeLayoutEngine().layout(doc);
+    const pts = layout.links[0].points;
+    expect(axisAligned(pts)).toBe(true);
+    expect(crosses(stems(pts), boxOf(layout, 'a'))).toBe(false);
+    expect(crosses(stems(pts), boxOf(layout, 'c'))).toBe(false);
   });
 
   it('leaves the straight trunk when the boxes are not in the way', () => {
@@ -250,14 +344,16 @@ describe('connectionPath — rounded corners', () => {
     expect(connectionPath(left, undefined, 6, 10)).toBe('M 0 0 L 90 0 A 10 10 0 0 0 100 -10 L 100 -100');
   });
 
-  it('clamps the radius to half a short jog', () => {
-    const z = [
-      { x: 0, y: 0 },
-      { x: 100, y: 0 },
-      { x: 100, y: 8 },
-      { x: 200, y: 8 }
-    ];
-    expect(connectionPath(z, undefined, 6, 10)).toBe('M 0 0 L 96 0 A 4 4 0 0 1 100 4 A 4 4 0 0 0 104 8 L 200 8');
+  it('draws a jog shorter than two radii as one smooth S-curve', () => {
+    const z = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 8 }, { x: 200, y: 8 }];
+    expect(connectionPath(z, undefined, 6, 10)).toBe('M 0 0 L 90 0 C 100 0 100 8 110 8 L 200 8');
+  });
+
+  it('keeps arcs for a jog of two radii or more, and for a short U-turn', () => {
+    const z = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 20 }, { x: 200, y: 20 }];
+    expect(connectionPath(z, undefined, 6, 10)).toBe('M 0 0 L 90 0 A 10 10 0 0 1 100 10 A 10 10 0 0 0 110 20 L 200 20');
+    const u = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 8 }, { x: 0, y: 8 }];
+    expect(connectionPath(u, undefined, 6, 10)).toBe('M 0 0 L 96 0 A 4 4 0 0 1 100 4 A 4 4 0 0 1 96 8 L 0 8');
   });
 
   it('keeps hops clear of a rounded corner, mid-segment hops still drawn', () => {

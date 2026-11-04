@@ -34,6 +34,14 @@ export const BEND_PENALTY = 48;
 export const CURVE_RADIUS = 12;
 
 /**
+ * Jogs shorter than this (a small sideways step between two parallel runs) are
+ * straightened away by the auto router when the run beside them can slide onto
+ * the other run's line without touching a box. Two corner radii: below it a
+ * `curved` jog can't fit two full arcs.
+ */
+export const MIN_JOG = 2 * CURVE_RADIUS;
+
+/**
  * Uniform box-view frame. Every box in box mode gets this size regardless of how
  * many feeders its child has, so grid-aligned boxes produce exactly straight
  * ties (matching the reference drawings). Pass `boxSize: null` to the
