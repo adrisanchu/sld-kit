@@ -115,7 +115,11 @@ cleanly in both. The pieces live in `@sld-kit/core` (`packages/core/src/composit
 - **`PortResolver`** turns an `(instanceId, connectionId)` reference into a
   floating `Port` (`{ point, side }`), spread across same-side feeders by slot.
 - **`OrthogonalRouter`** stubs out of each port perpendicular to its side and
-  joins them with a Manhattan L/Z. A demand is a node-relative lead off its feeder.
+  joins them with a Manhattan L/Z. When that L/Z would cut through another box,
+  it detours around every child box with as few bends as possible. A demand is a node-relative lead off its feeder.
+- **Curved bends** — the toolbar's spline toggle flips `meta.defaultRouting`
+  between `orthogonal` and `curved` (`SetDefaultRoutingCommand`, undoable).
+  `curved` takes the same route and draws each bend as a circular arc.
 - A feeder's exit side follows a `COALESCE`: per-instance pin, then
   `meta.autoFacing`, then the child's authored direction.
 
