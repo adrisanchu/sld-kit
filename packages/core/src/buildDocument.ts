@@ -8,10 +8,10 @@ import { nextPositionLabel, POSITION_LABEL_PREFIX } from './naming';
 import { autoWire } from './wiring';
 import { DuplicateIdError, SldParseError } from './serialization/validate';
 import { cloneData } from './elements/Element';
+import { newId } from './ids';
 
-/** The outgoing line a position feeds out of the diagram, if any. */
-export interface FeederSpec {
-  asset: ExternalAssetKind;
+/** Fields every feeder spec shares, whatever its asset. */
+export interface FeederSpecBase {
   label: string;
   /** Arrow direction; omit to let the layout derive it (up toward the nearer bar). */
   direction?: ExternalDirection;
@@ -37,6 +37,26 @@ export interface FeederSpec {
    */
   data?: unknown;
 }
+
+/** The third winding's end of a three-winding feeder. `id` defaults to a fresh `newId()`. */
+export interface FeederBranchSpec {
+  label: string;
+  /** Explicit branch id: an external id like a feeder's, matched across composite children. */
+  id?: ElementId;
+}
+
+/**
+ * The outgoing line a position feeds out of the diagram, if any. A variant on
+ * `asset`: a three-winding transformer (`transformer3w`) also takes its third
+ * winding's end (`branch`), which TypeScript requires there and rejects on
+ * every other asset. `label` stays the main far winding, as on a two-winding
+ * transformer. JSON / generated specs are checked the same way at build time.
+ */
+export type FeederSpec = FeederSpecBase &
+  (
+    | { asset: Exclude<ExternalAssetKind, 'transformer3w'>; branch?: never }
+    | { asset: 'transformer3w'; branch: FeederBranchSpec }
+  );
 
 /** One bay position: its functional type + row. `label` is optional (auto-named). */
 export interface BayPositionSpec {
@@ -164,7 +184,13 @@ export function buildDocument(spec: BuildDocumentSpec): SldDocument {
       Connection.of({
         id: feeder.id,
         from: element(pos.id, feeder.tap),
-        to: external({ asset: feeder.asset, label: feeder.label, direction: feeder.direction, side: feeder.side }),
+        to: external({
+          asset: feeder.asset,
+          label: feeder.label,
+          direction: feeder.direction,
+          side: feeder.side,
+          ...(feeder.branch ? { branch: { id: feeder.branch.id ?? newId(), label: feeder.branch.label } } : {})
+        }),
         data: cloneData(feeder.data)
       })
     );
@@ -194,6 +220,7 @@ function assertUniqueIds(spec: BuildDocumentSpec): void {
     for (const p of bay.positions) {
       note(p.id, `position col ${bay.col} row ${p.row}`);
       if (p.feeder) note(p.feeder.id, `feeder "${p.feeder.label}"`);
+      if (p.feeder?.branch) note(p.feeder.branch.id, `branch "${p.feeder.branch.label}" of feeder "${p.feeder.label}"`);
     }
   }
   const dups = [...seen].filter(([, where]) => where.length > 1);
