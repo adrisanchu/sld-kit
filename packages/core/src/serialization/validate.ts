@@ -2,7 +2,16 @@ import type { ElementJson, Endpoint, ExternalAssetKind, SldDocumentJson } from '
 
 export const SLD_SCHEMA_VERSION = 2;
 
-const EXTERNAL_ASSETS: ExternalAssetKind[] = ['line', 'transformer', 'renewable', 'storage', 'demand', 'reactor'];
+const EXTERNAL_ASSETS: ExternalAssetKind[] = [
+  'line',
+  'transformer',
+  'transformer3w',
+  'renewable',
+  'storage',
+  'demand',
+  'reactor',
+  'machine'
+];
 
 /**
  * Thrown by `Serializer.fromJSON` on malformed input, and collected (not
@@ -183,6 +192,19 @@ export function parseDocument(input: unknown): { errors: SldParseError[]; doc?: 
     }
   }
 
+  // Branch ids are external ids like connection ids: unique in the document.
+  const branchIds = new Set<string>();
+  for (const el of elements) {
+    if (el.kind !== 'connection') continue;
+    for (const side of ['from', 'to'] as const) {
+      const ep = el[side] as { kind?: unknown; branch?: { id?: unknown } } | undefined;
+      const id = ep?.kind === 'external' ? ep.branch?.id : undefined;
+      if (typeof id !== 'string' || !id) continue;
+      if (ids.has(id) || branchIds.has(id)) fail(`Connection ${el.id}: branch id "${id}" is already used`);
+      branchIds.add(id);
+    }
+  }
+
   if (errors.length) return { errors };
 
   const m = meta as Record<string, unknown>;
@@ -236,7 +258,7 @@ function validateEndpoint(ep: unknown, connId: string, side: 'from' | 'to', fail
     return;
   }
   if (e.kind === 'external') {
-    const ext = e as { asset?: unknown; label?: unknown; direction?: unknown; side?: unknown };
+    const ext = e as { asset?: unknown; label?: unknown; direction?: unknown; side?: unknown; branch?: unknown };
     if (!EXTERNAL_ASSETS.includes(ext.asset as ExternalAssetKind)) {
       fail(`Connection ${connId}: unknown external asset "${ext.asset}"`);
     }
@@ -248,6 +270,18 @@ function validateEndpoint(ep: unknown, connId: string, side: 'from' | 'to', fail
     }
     if (ext.side !== undefined && ext.side !== 'left' && ext.side !== 'right') {
       fail(`Connection ${connId}: invalid lane side`);
+    }
+    if (ext.asset === 'transformer3w') {
+      const b = ext.branch as { id?: unknown; label?: unknown } | undefined;
+      if (!b || typeof b !== 'object') {
+        fail(`Connection ${connId}: a three-winding transformer needs a branch (its third winding)`);
+      } else if (typeof b.id !== 'string' || !b.id) {
+        fail(`Connection ${connId}: branch without id`);
+      } else if (typeof b.label !== 'string') {
+        fail(`Connection ${connId}: invalid branch label`);
+      }
+    } else if (ext.branch !== undefined) {
+      fail(`Connection ${connId}: only a three-winding transformer (transformer3w) has a branch`);
     }
     return;
   }

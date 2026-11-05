@@ -30,6 +30,7 @@ export { BusBar, type BusBarOptions } from './elements/BusBar';
 export { Position, effectiveState, type PositionOptions } from './elements/Position';
 export { Connection, type ConnectionOptions } from './elements/Connection';
 export { element, external } from './elements/endpoints';
+export { externalBranch, connectionForExternalId } from './elements/branch';
 export { elementFromJson } from './elements/factory';
 
 export { SldDocument } from './SldDocument';
@@ -41,7 +42,9 @@ export {
   type BaySpec,
   type BayPositionSpec,
   type BusBarSpec,
-  type FeederSpec
+  type FeederSpec,
+  type FeederSpecBase,
+  type FeederBranchSpec
 } from './buildDocument';
 export { nextPositionLabel, nextExternalLabel, POSITION_LABEL_PREFIX, EXTERNAL_LABEL_PREFIX } from './naming';
 
@@ -125,8 +128,10 @@ export {
   LINE_LABEL_FONT_SIZE,
   LINE_LABEL_LINE_HEIGHT,
   DEMAND_LEAD_LENGTH,
+  HANGING_ASSETS,
   CABLE_DASH_ARRAY,
   TRANSFORMER_SYMBOL,
+  TRANSFORMER3W_SYMBOL,
   DEMAND_SYMBOL
 } from './composite/layout-constants';
 export { CompositeDocument, type CompositeMeta, type CompositeChange } from './composite/CompositeDocument';
@@ -137,6 +142,7 @@ export {
   linkConnections,
   lineConnections,
   linkFormat,
+  hangerFormat,
   linkNodeDots,
   lineFormat,
   resolveNameLabelLayout,
@@ -149,6 +155,7 @@ export {
   type NameLabelLayout,
   type CompositeLink,
   type CompositeLineLayout,
+  type HangingTieLayout,
   type LineLabelLayout,
   type LineLabelResolver,
   placeLineLabel,

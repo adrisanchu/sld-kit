@@ -10,6 +10,7 @@ import { CompositeDocument } from './CompositeDocument';
 import {
   CompositeLayoutEngine,
   linkFormat,
+  hangerFormat,
   linkNodeDots,
   lineFormat,
   type ChildLayout,
@@ -123,6 +124,20 @@ export class CompositeSvgExporter {
       this.renderLineGlyphs(b, line, theme);
     }
 
+    // Box view: ties to assets that end at a child (generators, loads,
+    // reactors…) leave their box with the asset glyph; labels come last.
+    for (const h of layout.hangers) {
+      const hf = hangerFormat(h, layout.children, theme.resolveElementFormat, theme);
+      b.element('polyline', {
+        points: h.points.map((p) => `${p.x},${p.y}`).join(' '),
+        fill: 'none',
+        stroke: hf?.stroke ?? theme.structure.connection,
+        'stroke-width': hf?.strokeWidth ?? theme.structure.connectionStrokeWidth,
+        'stroke-dasharray': hf?.dashArray
+      });
+      this.renderGlyph(b, h.terminus, theme);
+    }
+
     // Each child inside its rigid transform — a box when boxMode, else the full
     // internals (or a placeholder when unresolved).
     for (const child of layout.children) {
@@ -142,6 +157,21 @@ export class CompositeSvgExporter {
 
     // Line labels last, so a label beside a line is never hidden under a box.
     for (const line of layout.lines) if (line.label) this.renderLineLabel(b, line.label, theme);
+    for (const h of layout.hangers) {
+      if (!h.label) continue;
+      b.textElement(
+        'text',
+        {
+          x: h.label.at.x,
+          y: h.label.at.y,
+          'text-anchor': h.label.textAnchor,
+          'font-family': this.cfg.fontFamily,
+          'font-size': this.cfg.labelFontSize,
+          fill: theme.structure.label
+        },
+        h.label.text
+      );
+    }
 
     b.close();
     return b.toString();

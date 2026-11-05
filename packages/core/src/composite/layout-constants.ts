@@ -52,11 +52,24 @@ export const BOX_SIZE = { width: 200, height: 72 } as const;
 /** How far a demand's dangling lead hangs off its feeder, node-relative. */
 export const DEMAND_LEAD_LENGTH = 64;
 
+/**
+ * External assets that **end at** a diagram (a generator, a storage, a load, a
+ * reactor, a synchronous machine) rather than tie it to another node. In box
+ * view each one a child carries is drawn leaving its box (a lead, the asset's
+ * glyph and the feeder label) unless a line or an auto-link already takes it.
+ * Lines and transformers are ties between nodes: they connect boxes instead.
+ */
+export const HANGING_ASSETS: readonly string[] = ['renewable', 'storage', 'demand', 'reactor', 'machine'];
+
+/** Gap between a hanging tie's glyph and its label, world units. */
+export const HANGING_LABEL_GAP = 4;
+
 /** Dashed stroke for `cable` lines — shared by the exporter and both routers. */
 export const CABLE_DASH_ARRAY = '6 4';
 
 /** `SymbolRegistry` keys the line adornments render through. */
 export const TRANSFORMER_SYMBOL = 'external:transformer';
+export const TRANSFORMER3W_SYMBOL = 'external:transformer3w';
 export const DEMAND_SYMBOL = 'external:demand';
 
 /** Numeric line labels (`lineLabels` resolver): font size and row pitch, world units. */

@@ -126,7 +126,7 @@ autoWire(doc); // series-wires every bay to its column, spawns each feeder…
 `autoWire(doc, { externals })` is the batch form of `AddPositionCommand`: it adds
 every series connection (bar↔bay, bay↔bay) each column needs and, unless
 `externals: false`, the outgoing feeder for each external-typed bay
-(`line`/`transformer`/`renewable`/`storage`/`demand`/`reactor`). It never double-wires a
+(`line`/`transformer`/`renewable`/`storage`/`demand`/`reactor`/`machine`). It never double-wires a
 link, so it can top up a partially-wired document. It mutates directly (a
 construction step, not an undoable edit); reach for `AddPositionCommand` when you
 need one interactive, undoable insertion instead.
@@ -205,8 +205,30 @@ buildDocument({
 });
 ```
 
-External assets are `line`, `transformer`, `renewable`, `storage`, `demand` and
-`reactor` (a shunt reactor, drawn as an inductor coil). A long feeder label on
+External assets are `line`, `transformer`, `transformer3w`, `renewable`,
+`storage`, `demand`, `reactor` (a shunt reactor, drawn as an inductor coil) and
+`machine` (a synchronous machine, drawn as a circle with "SM").
+
+### Three-winding transformers (`transformer3w`)
+
+A three-winding transformer (e.g. an autotransformer with a tertiary) is still
+**one feeder**: a line needs its own bay, so a bay never carries two. Its
+external endpoint keeps the usual `label` for the main far winding and adds a
+`branch` for the third one — its own `id` and `label`, drawn as a stub off the
+three-circle glyph with its own arrow:
+
+```ts
+{ type: 'transformer', row: 3, feeder: { asset: 'transformer3w', label: '220 kV', id: 'ATP1', branch: { label: '33 kV' } } }
+```
+
+`FeederSpec` is a variant on `asset`: TypeScript requires `branch` on a
+`transformer3w` and rejects it on any other asset, and the validator enforces
+the same for JSON input. A branch `id` is an external id like a feeder's (unique
+in the document, generated when omitted): in a composite it is a snap target, a
+line anchor and an auto-link key, so the main end can tie to the 220 kV diagram
+while the branch ties to a 33 kV one. Give each document's branch an id only its
+intended peer shares. `connectionForExternalId(doc, id)` finds the connection
+behind either kind of id. A long feeder label on
 an outer column widens that side of the canvas just enough to stay visible.
 
 Start without ids or data (ids are generated) and add them as you enrich the
@@ -422,7 +444,15 @@ const svg = new CompositeSvgExporter().export(composite);
 ```
 
 `layout.snapTips` holds the draw-mode snap targets: one point per external
-feeder, exactly where a line anchored to it attaches in the active view.
+feeder (and per three-winding branch), exactly where a line anchored to it
+attaches in the active view.
+
+In box view, every feeder to an asset that **ends at** a child (`renewable`,
+`storage`, `demand`, `reactor`, `machine`: see `HANGING_ASSETS`) leaves its box
+on its own — a short lead, the asset glyph and the feeder label, in
+`layout.hangers` — unless a manual line anchors it or an auto-link joins it.
+Lines and transformers are ties between nodes, so they connect boxes instead.
+Renderers style a hanging tie with `hangerFormat`, like links with `linkFormat`.
 
 **Line routing** (`CompositeLine.routing`, or `meta.defaultRouting` for every
 line and auto-link) is one of:

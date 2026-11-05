@@ -1,4 +1,4 @@
-import type { ElementId, Endpoint, ExternalAssetKind, ExternalDirection } from '../types';
+import type { ElementId, Endpoint, ExternalAssetKind, ExternalBranch, ExternalDirection } from '../types';
 
 /**
  * Typed constructors for the two `Endpoint` shapes, so authoring a `Connection`
@@ -27,12 +27,15 @@ export function external(opts: {
   label: string;
   direction?: ExternalDirection;
   side?: 'left' | 'right';
+  /** The third winding's end — only on a `transformer3w`. */
+  branch?: ExternalBranch;
 }): Endpoint {
   return {
     kind: 'external',
     asset: opts.asset,
     label: opts.label,
     ...(opts.direction !== undefined ? { direction: opts.direction } : {}),
-    ...(opts.side !== undefined ? { side: opts.side } : {})
+    ...(opts.side !== undefined ? { side: opts.side } : {}),
+    ...(opts.branch !== undefined ? { branch: { ...opts.branch } } : {})
   };
 }

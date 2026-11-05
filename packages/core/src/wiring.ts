@@ -76,7 +76,8 @@ const EXTERNAL_POSITION_TYPES: readonly PositionType[] = [
   'renewable',
   'storage',
   'demand',
-  'reactor'
+  'reactor',
+  'machine'
 ];
 
 /**
@@ -98,7 +99,7 @@ function externalDirectionFor(doc: SldDocument, position: Position): ExternalDir
 
 /**
  * The external connection an "external" position type (`line`, `transformer`,
- * `renewable`, `storage`, `demand`, `reactor`) auto-creates on insertion — an arrow toward
+ * `renewable`, `storage`, `demand`, `reactor`, `machine`) auto-creates on insertion — an arrow toward
  * the nearest bar, auto-named. `tap` and `side` are left undefined (derived by
  * the layout). Returns null for `central`/`reserve`, which carry no external.
  */
