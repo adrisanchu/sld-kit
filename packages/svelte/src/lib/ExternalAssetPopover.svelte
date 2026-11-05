@@ -15,21 +15,36 @@
   $: L = { ...DEFAULT_EXTERNAL_ASSET_LABELS, ...labels, kinds: { ...DEFAULT_EXTERNAL_ASSET_LABELS.kinds, ...labels.kinds } };
 
   const dispatch = createEventDispatcher<{
-    confirm: { asset: ExternalAssetKind; label: string };
+    /** `branch` is set for a three-winding transformer: its third winding's label (empty → auto-named). */
+    confirm: { asset: ExternalAssetKind; label: string; branch?: { label: string } };
     cancel: void;
   }>();
 
-  const order: ExternalAssetKind[] = ['line', 'transformer', 'renewable', 'storage', 'demand', 'reactor'];
+  const order: ExternalAssetKind[] = [
+    'line',
+    'transformer',
+    'transformer3w',
+    'renewable',
+    'storage',
+    'demand',
+    'reactor',
+    'machine'
+  ];
 
   let asset: ExternalAssetKind = 'line';
   let label = '';
+  let branchLabel = '';
   let inputEl: HTMLInputElement;
 
   onMount(() => inputEl?.focus());
 
   function confirm() {
     // Empty label → the editor auto-names it (line-1, trf-2, …).
-    dispatch('confirm', { asset, label: label.trim() });
+    dispatch('confirm', {
+      asset,
+      label: label.trim(),
+      ...(asset === 'transformer3w' ? { branch: { label: branchLabel.trim() } } : {})
+    });
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -57,6 +72,13 @@
     placeholder={L.placeholder}
     class="mb-2 h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
   />
+  {#if asset === 'transformer3w'}
+    <input
+      bind:value={branchLabel}
+      placeholder={L.branchPlaceholder}
+      class="mb-2 h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+    />
+  {/if}
   <div class="flex justify-end gap-1.5">
     <button
       class="h-7 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-accent"

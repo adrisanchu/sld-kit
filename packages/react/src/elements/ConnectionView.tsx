@@ -72,6 +72,12 @@ export function ConnectionView({
   const pathD = useMemo(() => connectionPath(geo.points, geo.hops, SLD_LAYOUT.hopRadius), [geo.points, geo.hops]);
   const label =
     conn.from.kind === 'external' ? conn.from.label : conn.to.kind === 'external' ? conn.to.label : conn.label;
+  const branchLabel =
+    conn.from.kind === 'external'
+      ? conn.from.branch?.label
+      : conn.to.kind === 'external'
+        ? conn.to.branch?.label
+        : undefined;
 
   function handlePointerDown(e: React.PointerEvent) {
     if (!interactive) return;
@@ -109,6 +115,35 @@ export function ConnectionView({
       {geo.arrow && <path d={arrowheadPath(geo.arrow.at, geo.arrow.angle, SLD_LAYOUT.arrowSize)} fill={lineColor} />}
       {geo.dot && <circle cx={geo.dot.x} cy={geo.dot.y} r={SLD_LAYOUT.nodeDotRadius} fill="currentColor" />}
       {geo.symbol && <SymbolGlyph symbolKey={geo.symbol.key} box={geo.symbol.box} style={style} />}
+      {/* A three-winding transformer's third winding: stub + arrowhead + label. */}
+      {geo.branch && (
+        <>
+          <path
+            d={connectionPath(geo.branch.points, undefined, SLD_LAYOUT.hopRadius)}
+            fill="none"
+            stroke={lineColor}
+            strokeWidth={strokeW}
+            strokeDasharray={fmt?.dashArray ?? undefined}
+          />
+          <path d={arrowheadPath(geo.branch.arrow.at, geo.branch.arrow.angle, SLD_LAYOUT.arrowSize)} fill={lineColor} />
+          {showLabel && branchLabel && (
+            <text
+              x={geo.branch.labelAt.at.x}
+              y={geo.branch.labelAt.at.y}
+              textAnchor={geo.branch.labelAt.anchor}
+              fontSize={SLD_LAYOUT.labelFontSize}
+              transform={
+                labelAngleDeg
+                  ? `rotate(${labelAngleDeg} ${geo.branch.labelAt.at.x} ${geo.branch.labelAt.at.y})`
+                  : undefined
+              }
+              className="select-none fill-foreground"
+            >
+              {branchLabel}
+            </text>
+          )}
+        </>
+      )}
       {showLabel && geo.labelAt && label && (
         <g transform={labelAngleDeg ? `rotate(${labelAngleDeg} ${geo.labelAt.at.x} ${geo.labelAt.at.y})` : undefined}>
           <text

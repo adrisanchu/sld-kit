@@ -124,6 +124,8 @@ export interface ExternalAssetPopoverLabels {
   cancel: string;
   confirm: string;
   kinds: Record<ExternalAssetKind, string>;
+  /** Placeholder of the third winding's label input (three-winding transformers only). */
+  branchPlaceholder?: string;
 }
 
 export const DEFAULT_EXTERNAL_ASSET_LABELS: ExternalAssetPopoverLabels = {
@@ -131,13 +133,16 @@ export const DEFAULT_EXTERNAL_ASSET_LABELS: ExternalAssetPopoverLabels = {
   placeholder: 'Label (optional)',
   cancel: 'Cancel',
   confirm: 'Add',
+  branchPlaceholder: 'Third winding label (optional)',
   kinds: {
     line: 'Line',
     transformer: 'Transformer',
+    transformer3w: 'Three-winding transformer',
     renewable: 'Renewable',
     storage: 'Storage',
     demand: 'Demand',
-    reactor: 'Reactor'
+    reactor: 'Reactor',
+    machine: 'Synchronous machine'
   }
 };
 

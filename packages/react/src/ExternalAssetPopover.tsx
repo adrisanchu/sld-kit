@@ -6,11 +6,21 @@ export interface ExternalAssetPopoverProps {
   x: number;
   y: number;
   labels?: Partial<ExternalAssetPopoverLabels>;
-  onConfirm?: (detail: { asset: ExternalAssetKind; label: string }) => void;
+  /** `branch` is set for a three-winding transformer: its third winding's label (empty → auto-named). */
+  onConfirm?: (detail: { asset: ExternalAssetKind; label: string; branch?: { label: string } }) => void;
   onCancel?: () => void;
 }
 
-const ORDER: ExternalAssetKind[] = ['line', 'transformer', 'renewable', 'storage', 'demand', 'reactor'];
+const ORDER: ExternalAssetKind[] = [
+  'line',
+  'transformer',
+  'transformer3w',
+  'renewable',
+  'storage',
+  'demand',
+  'reactor',
+  'machine'
+];
 
 /**
  * Small HTML form shown when the user ends a connection in the margin (outside
@@ -29,6 +39,7 @@ export function ExternalAssetPopover({ x, y, labels, onConfirm, onCancel }: Exte
 
   const [asset, setAsset] = useState<ExternalAssetKind>('line');
   const [label, setLabel] = useState('');
+  const [branchLabel, setBranchLabel] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -37,7 +48,11 @@ export function ExternalAssetPopover({ x, y, labels, onConfirm, onCancel }: Exte
 
   function confirm() {
     // Empty label → the editor auto-names it (line-1, trf-2, …).
-    onConfirm?.({ asset, label: label.trim() });
+    onConfirm?.({
+      asset,
+      label: label.trim(),
+      ...(asset === 'transformer3w' ? { branch: { label: branchLabel.trim() } } : {})
+    });
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
@@ -71,6 +86,14 @@ export function ExternalAssetPopover({ x, y, labels, onConfirm, onCancel }: Exte
         placeholder={L.placeholder}
         className="mb-2 h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
       />
+      {asset === 'transformer3w' && (
+        <input
+          value={branchLabel}
+          onChange={(e) => setBranchLabel(e.target.value)}
+          placeholder={L.branchPlaceholder}
+          className="mb-2 h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+        />
+      )}
       <div className="flex justify-end gap-1.5">
         <button
           type="button"
