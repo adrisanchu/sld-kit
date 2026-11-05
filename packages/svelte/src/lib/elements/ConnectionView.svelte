@@ -50,6 +50,8 @@
   $: lineColor = !selected && fmt?.stroke ? fmt.stroke : 'currentColor';
   $: pathD = connectionPath(geo.points, geo.hops, SLD_LAYOUT.hopRadius);
   $: label = conn.from.kind === 'external' ? conn.from.label : conn.to.kind === 'external' ? conn.to.label : conn.label;
+  $: branchLabel =
+    conn.from.kind === 'external' ? conn.from.branch?.label : conn.to.kind === 'external' ? conn.to.branch?.label : undefined;
   $: symbolDef = geo.symbol ? symbols.get(geo.symbol.key) : undefined;
   $: symbolScale =
     geo.symbol && symbolDef
@@ -138,6 +140,31 @@
         {/if}
       {/each}
     </g>
+  {/if}
+  {#if geo.branch}
+    <!-- A three-winding transformer's third winding: stub + arrowhead + label. -->
+    <path
+      d={connectionPath(geo.branch.points, undefined, SLD_LAYOUT.hopRadius)}
+      fill="none"
+      stroke={lineColor}
+      stroke-width={strokeW}
+      stroke-dasharray={fmt?.dashArray ?? undefined}
+    />
+    <path d={arrowheadPath(geo.branch.arrow.at, geo.branch.arrow.angle, SLD_LAYOUT.arrowSize)} fill={lineColor} />
+    {#if showLabel && branchLabel}
+      <text
+        x={geo.branch.labelAt.at.x}
+        y={geo.branch.labelAt.at.y}
+        text-anchor={geo.branch.labelAt.anchor}
+        font-size={SLD_LAYOUT.labelFontSize}
+        transform={labelAngleDeg
+          ? `rotate(${labelAngleDeg} ${geo.branch.labelAt.at.x} ${geo.branch.labelAt.at.y})`
+          : undefined}
+        class="select-none fill-foreground"
+      >
+        {branchLabel}
+      </text>
+    {/if}
   {/if}
   {#if showLabel && geo.labelAt && label}
     <g transform={labelAngleDeg ? `rotate(${labelAngleDeg} ${geo.labelAt.at.x} ${geo.labelAt.at.y})` : undefined}>

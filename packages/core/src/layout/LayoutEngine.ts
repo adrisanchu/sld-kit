@@ -6,6 +6,7 @@ import { BusBar } from '../elements/BusBar';
 import { Position } from '../elements/Position';
 import { Connection } from '../elements/Connection';
 import { detectCrossings } from './crossings';
+import { TRANSFORMER3W_BRANCH_ANCHOR } from '../symbols/defaults';
 
 export interface BusBarGeometry {
   kind: 'busbar';
@@ -34,6 +35,8 @@ const BAR_LABEL_GAP = 8;
 
 /** Estimated rendered width of a bar label (bold-ish sans; no DOM to measure in). */
 const barLabelWidth = (text: string, fontSize: number) => text.length * fontSize * 0.62;
+/** Clearance kept between an estimated label edge and the canvas edge. */
+const LABEL_EDGE_PAD = 6;
 
 export interface PositionGeometry {
   kind: 'position';
@@ -52,6 +55,12 @@ export interface ConnectionGeometry {
   labelAt?: { at: Point; anchor: 'start' | 'middle' | 'end' };
   /** Virtual-node junction dot: the 3-way tap where an external meets a bay. */
   dot?: Point;
+  /**
+   * A three-winding transformer's third winding: a stub off the glyph with its
+   * own arrowhead and label (the endpoint's `branch`). Perpendicular to the
+   * feeder: rightward for up/down feeders, downward for left/right ones.
+   */
+  branch?: { points: Point[]; arrow: { at: Point; angle: number }; labelAt: { at: Point; anchor: 'start' | 'middle' | 'end' } };
   /**
    * Crossing points on this connection's horizontal segments where a hop arc
    * should be drawn. Populated by `detectCrossings` after layout. Sorted by x.
@@ -129,11 +138,16 @@ export class LayoutEngine {
     const labelLeft = cfg.busBarLabelAnchor === 'center-left';
     const longestLabel = labelLeft ? Math.max(0, ...[...barLabels.values()].map((t) => barLabelWidth(t, cfg.busLabelFontSize))) : 0;
     const labelShift = longestLabel > 0 ? Math.max(0, longestLabel + BAR_LABEL_GAP + cfg.busBarOverhang - cfg.margin + BAR_LABEL_GAP) : 0;
-    const leftShift = Math.max(exitShift, labelShift);
+    // Vertical feeder labels are centred on their lane (or the column centre),
+    // so a long label on an outer column can run past the canvas edge. Widen
+    // that side just enough to fit; diagrams whose labels already fit are unchanged.
+    const overflow = this.verticalLabelOverflow(doc, innerWidth);
+    const leftShift = Math.max(exitShift, labelShift, overflow.left);
     const leftMargin = cfg.margin + leftShift;
+    const rightShift = Math.max(extraRight, overflow.right);
 
     const size = {
-      width: innerWidth + 2 * cfg.margin + leftShift + extraRight,
+      width: innerWidth + 2 * cfg.margin + leftShift + rightShift,
       height: innerHeight + 2 * cfg.margin
     };
 
@@ -300,6 +314,86 @@ export class LayoutEngine {
     }
     taps.sort((x, y) => Math.abs(x.bar.row - pos.row) - Math.abs(y.bar.row - pos.row));
     return taps;
+  }
+
+  /** Length of a three-winding branch stub, arrowhead included. */
+  private get branchLength(): number {
+    return this.cfg.externalStemLength / 2 + this.cfg.arrowSize;
+  }
+
+  /**
+   * A `transformer3w` external's third winding: a stub perpendicular to the
+   * feeder, leaving the glyph's side circle (up/down feeders, to the right) or
+   * its bottom circle (left/right feeders, downward), with an arrowhead and the
+   * branch label beyond it. Other externals are returned unchanged.
+   */
+  private withBranch(
+    geo: ConnectionGeometry,
+    dir: ExternalDirection,
+    external: Extract<Endpoint, { kind: 'external' }>
+  ): ConnectionGeometry {
+    if (external.asset !== 'transformer3w' || !external.branch || !geo.symbol) return geo;
+    const cfg = this.cfg;
+    const { box } = geo.symbol;
+    const k = box.width / TRANSFORMER3W_BRANCH_ANCHOR.size;
+    const len = this.branchLength;
+    if (dir === 'up' || dir === 'down') {
+      const a = TRANSFORMER3W_BRANCH_ANCHOR.side;
+      const start = { x: box.x + a.x * k, y: box.y + a.y * k };
+      const tip = { x: start.x + len, y: start.y };
+      return {
+        ...geo,
+        branch: {
+          points: [start, { x: tip.x - cfg.arrowSize, y: tip.y }],
+          arrow: { at: tip, angle: 0 },
+          labelAt: { at: { x: tip.x + 4, y: tip.y + cfg.labelFontSize * 0.35 }, anchor: 'start' }
+        }
+      };
+    }
+    const a = TRANSFORMER3W_BRANCH_ANCHOR.bottom;
+    const start = { x: box.x + a.x * k, y: box.y + a.y * k };
+    const tip = { x: start.x, y: start.y + len };
+    return {
+      ...geo,
+      branch: {
+        points: [start, { x: tip.x, y: tip.y - cfg.arrowSize }],
+        arrow: { at: tip, angle: 90 },
+        labelAt: { at: { x: tip.x, y: tip.y + cfg.labelFontSize + 4 }, anchor: 'middle' }
+      }
+    };
+  }
+
+  /**
+   * How far the labels of up/down feeders overflow the default margins, per
+   * side (0 when they fit). Measured before geometry exists, so it checks both
+   * places such a label can be centred: the column centre (straight stem) and
+   * the side lane (virtual-node routing). Widths are estimated, as for bar
+   * labels, since there is no DOM to measure in.
+   */
+  private verticalLabelOverflow(doc: SldDocument, innerWidth: number): { left: number; right: number } {
+    const cfg = this.cfg;
+    const laneOffset = cfg.cellWidth / 2 + cfg.cellGapX / 2;
+    let left = 0;
+    let right = 0;
+    for (const conn of doc.connections()) {
+      const ext = conn.from.kind === 'external' ? conn.from : conn.to.kind === 'external' ? conn.to : null;
+      const own = conn.from.kind === 'element' ? conn.from : conn.to.kind === 'element' ? conn.to : null;
+      if (!ext || !own || !ext.label || ext.direction === 'left' || ext.direction === 'right') continue;
+      const pos = doc.getElement(own.id);
+      if (!(pos instanceof Position)) continue;
+      const spanWidth = pos.colSpan * cfg.cellWidth + (pos.colSpan - 1) * cfg.cellGapX;
+      const cx = pos.col * (cfg.cellWidth + cfg.cellGapX) + spanWidth / 2;
+      const laneX = ext.side === 'left' ? cx - laneOffset : cx + laneOffset;
+      const half = barLabelWidth(ext.label, cfg.labelFontSize) / 2;
+      left = Math.max(left, half - Math.min(cx, laneX) - cfg.margin + LABEL_EDGE_PAD);
+      right = Math.max(right, Math.max(cx, laneX) + half - innerWidth - cfg.margin + LABEL_EDGE_PAD);
+      // A three-winding branch runs right from the glyph, its label after the arrow.
+      if (ext.asset === 'transformer3w' && ext.branch) {
+        const reach = cfg.symbolSize / 2 + this.branchLength + 4 + barLabelWidth(ext.branch.label, cfg.labelFontSize);
+        right = Math.max(right, Math.max(cx, laneX) + reach - innerWidth - cfg.margin + LABEL_EDGE_PAD);
+      }
+    }
+    return { left, right };
   }
 
   /**
@@ -634,7 +728,7 @@ export class LayoutEngine {
 
       if (dir === 'left' || dir === 'right') {
         const hasThrough = this.hasThroughConnection(doc, el, tap);
-        return this.sideExternalGeometry(
+        const side = this.sideExternalGeometry(
           posGeo,
           el,
           dir,
@@ -646,12 +740,17 @@ export class LayoutEngine {
           rank,
           hasThrough
         );
+        return this.withBranch(side, dir, external);
       }
 
       if (!this.hasThroughConnection(doc, el, tap)) {
-        return this.straightExternalGeometry(posGeo, dir, external, topBarY, bottomBarY);
+        return this.withBranch(this.straightExternalGeometry(posGeo, dir, external, topBarY, bottomBarY), dir, external);
       }
-      return this.nodeExternalGeometry(posGeo, el, dir, tap, external, topBarY, bottomBarY, rowBoundaryY, rank);
+      return this.withBranch(
+        this.nodeExternalGeometry(posGeo, el, dir, tap, external, topBarY, bottomBarY, rowBoundaryY, rank),
+        dir,
+        external
+      );
     }
 
     // position ↔ busbar

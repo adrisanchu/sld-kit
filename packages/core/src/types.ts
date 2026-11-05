@@ -42,8 +42,31 @@ export const DEFAULT_POSITION_TYPES = [
  */
 export type PositionType = (typeof DEFAULT_POSITION_TYPES)[number] | (string & {});
 
-/** Kind of asset an external connection arrow points to. */
-export type ExternalAssetKind = 'line' | 'transformer' | 'renewable' | 'storage' | 'demand';
+/**
+ * Kind of asset an external connection arrow points to. `reactor` is a shunt
+ * reactor (inductor coil glyph) and `machine` a synchronous machine (circle
+ * with "SM": generator, condenser or motor); unlike the others they have no
+ * default position type, but a bay typed `reactor` / `machine` (an open
+ * `PositionType`) auto-spawns the matching external.
+ *
+ * `transformer3w` is a three-winding transformer (three circles). Its endpoint
+ * carries a second end, `branch`, for the third winding (see {@link Endpoint});
+ * it is never auto-spawned, since that end needs its own label.
+ */
+export type ExternalAssetKind =
+  'line' | 'transformer' | 'transformer3w' | 'renewable' | 'storage' | 'demand' | 'reactor' | 'machine';
+
+/**
+ * The extra end of a three-winding transformer: the third winding, drawn as a
+ * stub off the glyph with its own arrow and label. Its `id` is an external id
+ * like a feeder connection's: unique in the document, and matched across
+ * composite children to auto-link (so a 33 kV tertiary can tie to a 33 kV
+ * diagram while the main end ties to the 220 kV one).
+ */
+export interface ExternalBranch {
+  id: ElementId;
+  label: string;
+}
 
 /** Which direction an external arrow leaves the diagram. */
 export type ExternalDirection = 'up' | 'down' | 'left' | 'right';
@@ -99,6 +122,11 @@ export const LABEL_ANCHORS: readonly LabelAnchor[] = [
  *  - `side` picks which side of the column the external's vertical lane runs
  *    on. Default `'right'`. Ignored (and greyed in the dialog) when `direction`
  *    is `'left'` or `'right'` — the direction itself says where the line goes.
+ *
+ * `branch` is required on a `transformer3w` external and rejected on any
+ * other: the third winding's end (see {@link ExternalBranch}). The endpoint's
+ * own `label` stays the main far winding ("220 kV"), exactly like a
+ * two-winding transformer.
  */
 export type Endpoint =
   | { kind: 'element'; id: ElementId; tap?: 'above' | 'below' }
@@ -108,6 +136,7 @@ export type Endpoint =
       label: string;
       direction?: ExternalDirection;
       side?: 'left' | 'right';
+      branch?: ExternalBranch;
     };
 
 export type ElementKind = 'busbar' | 'position' | 'connection';

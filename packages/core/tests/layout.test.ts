@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { LayoutEngine, SLD_LAYOUT } from '../src';
+import { LayoutEngine, SLD_LAYOUT, SldDocument, BusBar, Position, Connection, element, external } from '../src';
 import { buildSouth400 } from './fixtures';
 
 describe('LayoutEngine', () => {
@@ -79,5 +79,37 @@ describe('LayoutEngine — bus bar labels', () => {
     const estWidth = long.length * SLD_LAYOUT.busLabelFontSize * 0.62;
     expect(geo.labelAt.x - estWidth).toBeGreaterThanOrEqual(0);
     expect(left.size.width).toBeGreaterThan(base.size.width);
+  });
+});
+
+describe('vertical feeder label overflow', () => {
+  /** One col-0 bay under a bar with an up feeder running in the left lane. */
+  function leftLaneDoc(label: string): SldDocument {
+    const doc = new SldDocument({ id: 'o', name: 'overflow' }, { rows: 3, cols: 1 });
+    doc.addElement(new BusBar('b1', 'BB1', 0));
+    doc.addElement(new BusBar('b2', 'BB2', 2));
+    doc.addElement(new Position('p', 'P', 'line', 1, 0));
+    doc.addElement(new Connection('w1', '', element('p'), element('b1')));
+    doc.addElement(new Connection('w2', '', element('p'), element('b2')));
+    doc.addElement(
+      new Connection('f', '', element('p', 'below'), external({ asset: 'line', label, direction: 'down', side: 'left' }))
+    );
+    return doc;
+  }
+  const estWidth = (text: string) => text.length * SLD_LAYOUT.labelFontSize * 0.62;
+
+  it('widens the left margin so a long left-lane label stays on canvas', () => {
+    const label = 'COLECTORA MANZANARES 1';
+    const layout = new LayoutEngine().layout(leftLaneDoc(label));
+    const geo = layout.geometry.get('f');
+    expect(geo?.kind).toBe('connection');
+    const at = geo?.kind === 'connection' ? geo.labelAt!.at : { x: 0, y: 0 };
+    expect(at.x - estWidth(label) / 2).toBeGreaterThanOrEqual(0);
+  });
+
+  it('leaves the size unchanged when the label already fits', () => {
+    const short = new LayoutEngine().layout(leftLaneDoc('L1')).size;
+    const empty = new LayoutEngine().layout(leftLaneDoc('')).size;
+    expect(short).toEqual(empty);
   });
 });

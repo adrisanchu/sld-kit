@@ -12,6 +12,7 @@ import {
   SLD_LAYOUT,
   connectionPath,
   linkFormat,
+  hangerFormat,
   linkNodeDots,
   lineFormat,
   rotateSide,
@@ -533,6 +534,25 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         );
       })}
 
+      {/* Box view: every tie to an asset that ends at a child (generator, load,
+          reactor, machine…) leaves its box — lead + asset glyph — unless a line or
+          an auto-link takes it. Derived by the core layout, like the export. */}
+      {layout.hangers.map((h) => {
+        const hf = hangerFormat(h, layout.children, fmt);
+        return (
+          <g key={`hang:${h.instanceId}:${h.connectionId}`} className="pointer-events-none text-primary">
+            <polyline
+              points={h.points.map((p) => `${p.x},${p.y}`).join(' ')}
+              fill="none"
+              stroke={hf?.stroke ?? 'currentColor'}
+              strokeWidth={hf?.strokeWidth ?? cs.boxLineStrokeWidth}
+              strokeDasharray={hf?.dashArray ?? undefined}
+            />
+            <SymbolGlyph symbolKey={h.terminus.key} box={glyphBox(h.terminus)} style={style} />
+          </g>
+        );
+      })}
+
       {/* Children in z-order — an expanded child last, so its drawing sits above
           the neighbouring boxes it may overlap. */}
       {orderedChildren.map((child) => (
@@ -599,6 +619,22 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
           </g>
         );
       })}
+
+      {/* Hanging-tie labels above the children (as in the export). */}
+      {layout.hangers.map((h) =>
+        h.label ? (
+          <text
+            key={`hang-label:${h.instanceId}:${h.connectionId}`}
+            x={h.label.at.x}
+            y={h.label.at.y}
+            textAnchor={h.label.textAnchor}
+            fontSize={SLD_LAYOUT.labelFontSize}
+            className="pointer-events-none fill-foreground"
+          >
+            {h.label.text}
+          </text>
+        ) : null
+      )}
 
       {/* Selection (+ rotation) and hover chrome on top: one frame per child, its
           state in `data-state`. Styleable through its classes and CSS variables

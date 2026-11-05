@@ -1,4 +1,5 @@
 import { Connection } from '../elements/Connection';
+import { connectionForExternalId, externalBranch } from '../elements/branch';
 import { SldDocument } from '../SldDocument';
 import { Serializer } from '../serialization/Serializer';
 import type { ExternalDirection } from '../types';
@@ -13,19 +14,22 @@ import { chordFrame } from './lineFrame';
 import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
 import { OrthogonalRouter } from './OrthogonalRouter';
 import { PortResolver, feederKey } from './PortResolver';
-import { facingSide, rotateSide, type Port } from './ports';
+import { facingSide, rotateSide, type BoxSide, type Port } from './ports';
 import {
   BOX_SIZE,
   CABLE_DASH_ARRAY,
   CURVE_RADIUS,
   DEMAND_LEAD_LENGTH,
   DEMAND_SYMBOL,
+  HANGING_ASSETS,
+  HANGING_LABEL_GAP,
   LINE_LABEL_FONT_SIZE,
   LINE_LABEL_GLYPH_CLEARANCE,
   LINE_LABEL_LINE_HEIGHT,
   LINE_LABEL_OFFSET,
   LINE_LABEL_PAD,
-  TRANSFORMER_SYMBOL
+  TRANSFORMER_SYMBOL,
+  TRANSFORMER3W_SYMBOL
 } from './layout-constants';
 import { arcMidpoint, segmentAngleDeg, simplify } from './polyline';
 import { resolveFormat, type ElementFormat, type ElementFormatResolver, type FormatContext } from '../theme';
@@ -248,10 +252,17 @@ function connectionRefs(refs: Ref[], children: ChildLayout[]): { conn: Connectio
   const out: { conn: Connection; doc: SldDocument }[] = [];
   for (const { instanceId, connectionId } of refs) {
     const doc = children.find((c) => c.instance.id === instanceId)?.instance.resolved;
-    const el = doc?.getElement(connectionId);
-    if (doc && el instanceof Connection) out.push({ conn: el, doc });
+    // A link / anchor id is an external id: a feeder's own id or a three-winding branch id.
+    const el = doc ? connectionForExternalId(doc, connectionId) : undefined;
+    if (doc && el) out.push({ conn: el, doc });
   }
   return out;
+}
+
+/** The external ids a connection exposes: its own id, plus a three-winding branch id. */
+function externalIdsOf(conn: Connection): string[] {
+  const branch = externalBranch(conn);
+  return branch ? [conn.id, branch.id] : [conn.id];
 }
 
 /** Resolve child `Connection`s from `(instanceId, connectionId)` references. */
@@ -289,6 +300,16 @@ export function linkFormat(
   theme?: FormatContext['theme']
 ): ElementFormat | undefined {
   return firstResolved(linkRefs(link), children, resolve, theme);
+}
+
+/** The format of a box-view **hanging tie**, from its child feeder (see {@link linkFormat}). */
+export function hangerFormat(
+  hanger: HangingTieLayout,
+  children: ChildLayout[],
+  resolve?: ElementFormatResolver | null,
+  theme?: FormatContext['theme']
+): ElementFormat | undefined {
+  return firstResolved([{ instanceId: hanger.instanceId, connectionId: hanger.connectionId }], children, resolve, theme);
 }
 
 /**
@@ -354,8 +375,8 @@ export interface CompositeLineLayout {
   /** Structural default dash pattern for the kind (`cable` → dashed); else undefined. */
   dashArray?: string;
   /**
-   * The transformer glyph (two circles) at the polyline's arc-length midpoint —
-   * present only for `kind === 'transformer'`.
+   * The transformer glyph at the polyline's arc-length midpoint — two circles
+   * for `kind === 'transformer'`, three for `'transformer3w'`; absent otherwise.
    */
   glyph?: LineGlyph;
   /**
@@ -419,10 +440,38 @@ export function placeLineLabel(points: Point[], rows: readonly string[], clearan
   };
 }
 
+/**
+ * A hanging tie's label, just beyond its glyph along the lead: centred above or
+ * below a vertical lead, left- or right-aligned past a horizontal one.
+ */
+function hangingLabel(text: string, end: Point, side: BoxSide): NonNullable<HangingTieLayout['label']> {
+  const reach = SLD_LAYOUT.symbolSize / 2 + HANGING_LABEL_GAP;
+  const fs = SLD_LAYOUT.labelFontSize;
+  if (side === 'up') return { text, at: { x: end.x, y: end.y - reach }, textAnchor: 'middle' };
+  if (side === 'down') return { text, at: { x: end.x, y: end.y + reach + fs * 0.8 }, textAnchor: 'middle' };
+  if (side === 'right') return { text, at: { x: end.x + reach, y: end.y + fs * 0.35 }, textAnchor: 'start' };
+  return { text, at: { x: end.x - reach, y: end.y + fs * 0.35 }, textAnchor: 'end' };
+}
+
+/** Estimated extent of a hanging tie's label (no DOM to measure in), for bounds. */
+function hangingLabelBox(label: NonNullable<HangingTieLayout['label']>): Rect {
+  const fs = SLD_LAYOUT.labelFontSize;
+  const width = label.text.length * fs * 0.62;
+  const left = label.textAnchor === 'start' ? label.at.x : label.textAnchor === 'end' ? label.at.x - width : label.at.x - width / 2;
+  return { x: left, y: label.at.y - fs, width, height: fs * 1.25 };
+}
+
 /** Point at the polyline's arc-length midpoint, plus the angle of the segment it lies on. */
-function polylineMidpoint(points: Point[]): LineGlyph | null {
+function polylineMidpoint(points: Point[], key: string = TRANSFORMER_SYMBOL): LineGlyph | null {
   const mid = arcMidpoint(points);
-  return mid ? { key: TRANSFORMER_SYMBOL, at: mid.at, angleDeg: mid.angleDeg } : null;
+  return mid ? { key, at: mid.at, angleDeg: mid.angleDeg } : null;
+}
+
+/** The mid-line glyph a line kind carries: two circles (`transformer`) or three (`transformer3w`). */
+function midGlyphKey(kind: CompositeLineKind): string | null {
+  if (kind === 'transformer') return TRANSFORMER_SYMBOL;
+  if (kind === 'transformer3w') return TRANSFORMER3W_SYMBOL;
+  return null;
 }
 
 /** An external connection tip in world coordinates — snap/convert targets for the UI. */
@@ -432,11 +481,37 @@ export interface ExternalConnectionTip {
   point: Point;
 }
 
+/**
+ * Box view: a tie to an asset that ends at a child diagram (see
+ * {@link HANGING_ASSETS}) drawn leaving its box — a lead off the feeder's port,
+ * the asset glyph at its free end and the feeder label beyond it. Derived from
+ * the child's own feeders every layout; nothing is stored in the composite.
+ */
+export interface HangingTieLayout {
+  instanceId: string;
+  /** The child's feeder connection id. */
+  connectionId: string;
+  /** The feeder's asset kind (drives the glyph). */
+  asset: string;
+  /** The lead, from the box-perimeter port outward. */
+  points: Point[];
+  /** The asset glyph centred on the lead's free end. */
+  terminus: LineGlyph;
+  /** The feeder label beyond the glyph; absent when the feeder has none. */
+  label?: { text: string; at: Point; textAnchor: 'start' | 'middle' | 'end' };
+}
+
 export interface CompositeLayout {
   children: ChildLayout[];
   links: CompositeLink[];
   /** Manually-drawn lines, resolved to world polylines. */
   lines: CompositeLineLayout[];
+  /**
+   * Box view only: every hanging-asset feeder no line or auto-link takes, drawn
+   * leaving its box. Empty in detail view, where each child's own drawing shows
+   * its feeders.
+   */
+  hangers: HangingTieLayout[];
   /** Union of every child's worldBounds, every link point and every line point. */
   bounds: Rect;
   /**
@@ -541,8 +616,8 @@ export class CompositeLayoutEngine {
     const claimed = new Set<string>();
     for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
     const links = this.detectLinks(children, claimed, defaultRouting);
-    const bounds = this.unionBounds(children, links, lines);
-    return { children, links, lines, bounds, snapTips: this.externalConnectionTips(children) };
+    const bounds = this.unionBounds(children, links, lines, []);
+    return { children, links, lines, hangers: [], bounds, snapTips: this.externalConnectionTips(children) };
   }
 
   /**
@@ -694,10 +769,59 @@ export class CompositeLayoutEngine {
     const claimed = new Set<string>();
     for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
     const links = this.detectFloatingLinks(children, resolver, claimed, routingDefault, obstacles);
+    const hangers = boxMode ? this.hangingTies(children, resolver, claimed, links) : [];
 
     // Snap targets come from the same resolver that attached the lines, so a
     // ring always sits on the line end it would create (view + effective side).
-    return { children, links, lines, bounds: this.unionBounds(children, links, lines), snapTips: resolver.tips() };
+    return {
+      children,
+      links,
+      lines,
+      hangers,
+      bounds: this.unionBounds(children, links, lines, hangers),
+      snapTips: resolver.tips()
+    };
+  }
+
+  /**
+   * Box view: every feeder to an asset that ends at its diagram (a generator, a
+   * load, a reactor…) leaves its box as a lead with the asset glyph and the
+   * feeder label — generic for any hanging asset, so a consumer no longer adds a
+   * `demand` line per load. A feeder a manual line anchors (`claimed`) or an
+   * auto-link joins keeps that line; an expanded child draws its own feeders.
+   */
+  private hangingTies(
+    children: ChildLayout[],
+    resolver: PortResolver,
+    claimed: Set<string>,
+    links: CompositeLink[]
+  ): HangingTieLayout[] {
+    const linked = new Set(
+      links.flatMap((l) => [feederKey(l.a.instanceId, l.connectionId), feederKey(l.b.instanceId, l.connectionId)])
+    );
+    const out: HangingTieLayout[] = [];
+    for (const child of children) {
+      const { instance } = child;
+      if (!child.layout || !instance.resolved || child.expanded) continue;
+      for (const conn of instance.resolved.connections()) {
+        const ext = conn.to.kind === 'external' ? conn.to : conn.from.kind === 'external' ? conn.from : null;
+        if (!ext || !HANGING_ASSETS.includes(ext.asset)) continue;
+        if (claimed.has(conn.id) || linked.has(feederKey(instance.id, conn.id))) continue;
+        const port = resolver.resolve(instance.id, conn.id);
+        if (!port) continue;
+        const points = this.router.lead(port, DEMAND_LEAD_LENGTH);
+        const end = points[points.length - 1];
+        out.push({
+          instanceId: instance.id,
+          connectionId: conn.id,
+          asset: ext.asset,
+          points,
+          terminus: { key: `external:${ext.asset}`, at: end, angleDeg: segmentAngleDeg(points[0], end) },
+          ...(ext.label ? { label: hangingLabel(ext.label, end, port.side) } : {})
+        });
+      }
+    }
+    return out;
   }
 
   /**
@@ -835,9 +959,10 @@ export class CompositeLayoutEngine {
 
     if (line.kind === 'cable') layout.dashArray = CABLE_DASH_ARRAY;
 
-    if (line.kind === 'transformer') {
+    const midKey = midGlyphKey(line.kind);
+    if (midKey) {
       const mid = arcMidpoint(points);
-      if (mid) layout.glyph = { key: TRANSFORMER_SYMBOL, at: mid.at, angleDeg: mid.angleDeg };
+      if (mid) layout.glyph = { key: midKey, at: mid.at, angleDeg: mid.angleDeg };
     }
 
     // The lead always emits `[feeder, freeEnd]`, so the triangle sits on the last
@@ -878,13 +1003,15 @@ export class CompositeLayoutEngine {
       const { layout, instance } = child;
       if (!layout || !instance.resolved) continue;
       for (const conn of instance.resolved.connections()) {
-        if (suppressed.has(conn.id)) continue;
         const isExternal = conn.from.kind === 'external' || conn.to.kind === 'external';
         if (!isExternal) continue;
-        if (!resolver.resolve(instance.id, conn.id)) continue;
-        const ends = index.get(conn.id) ?? [];
-        ends.push(instance.id);
-        index.set(conn.id, ends);
+        for (const id of externalIdsOf(conn)) {
+          if (suppressed.has(id)) continue;
+          if (!resolver.resolve(instance.id, id)) continue;
+          const ends = index.get(id) ?? [];
+          ends.push(instance.id);
+          index.set(id, ends);
+        }
       }
     }
 
@@ -917,12 +1044,15 @@ export class CompositeLayoutEngine {
   private externalTip(child: ChildLayout, connectionId: string): Point | null {
     const { layout, instance, transform } = child;
     if (!layout || !instance.resolved) return null;
-    const el = instance.resolved.getElement(connectionId);
-    if (!(el instanceof Connection)) return null;
+    const el = connectionForExternalId(instance.resolved, connectionId);
+    if (!el) return null;
     const isExternal = el.from.kind === 'external' || el.to.kind === 'external';
     if (!isExternal) return null;
-    const geo = layout.geometry.get(connectionId);
-    if (geo?.kind !== 'connection' || !geo.arrow) return null;
+    const geo = layout.geometry.get(el.id);
+    if (geo?.kind !== 'connection') return null;
+    // A branch id resolves to the third winding's arrow tip, not the feeder's.
+    if (el.id !== connectionId) return geo.branch ? transform.apply(geo.branch.arrow.at) : null;
+    if (!geo.arrow) return null;
     return transform.apply(geo.arrow.at);
   }
 
@@ -987,8 +1117,9 @@ export class CompositeLayoutEngine {
 
     if (line.kind === 'cable') layout.dashArray = CABLE_DASH_ARRAY;
 
-    if (line.kind === 'transformer') {
-      const glyph = polylineMidpoint(points);
+    const midKey = midGlyphKey(line.kind);
+    if (midKey) {
+      const glyph = polylineMidpoint(points, midKey);
       if (glyph) layout.glyph = glyph;
     }
 
@@ -1019,8 +1150,10 @@ export class CompositeLayoutEngine {
       for (const conn of instance.resolved.connections()) {
         const isExternal = conn.from.kind === 'external' || conn.to.kind === 'external';
         if (!isExternal) continue;
-        const point = this.externalTip(child, conn.id);
-        if (point) tips.push({ instanceId: instance.id, connectionId: conn.id, point });
+        for (const id of externalIdsOf(conn)) {
+          const point = this.externalTip(child, id);
+          if (point) tips.push({ instanceId: instance.id, connectionId: id, point });
+        }
       }
     }
     return tips;
@@ -1045,14 +1178,16 @@ export class CompositeLayoutEngine {
       const { layout, instance } = child;
       if (!layout || !instance.resolved) continue;
       for (const conn of instance.resolved.connections()) {
-        if (suppressed.has(conn.id)) continue;
         const isExternal = conn.from.kind === 'external' || conn.to.kind === 'external';
         if (!isExternal) continue;
-        const tip = this.externalTip(child, conn.id);
-        if (!tip) continue;
-        const ends = index.get(conn.id) ?? [];
-        ends.push({ instanceId: instance.id, tip });
-        index.set(conn.id, ends);
+        for (const id of externalIdsOf(conn)) {
+          if (suppressed.has(id)) continue;
+          const tip = this.externalTip(child, id);
+          if (!tip) continue;
+          const ends = index.get(id) ?? [];
+          ends.push({ instanceId: instance.id, tip });
+          index.set(id, ends);
+        }
       }
     }
 
@@ -1074,7 +1209,12 @@ export class CompositeLayoutEngine {
     return links;
   }
 
-  private unionBounds(children: ChildLayout[], links: CompositeLink[], lines: CompositeLineLayout[]): Rect {
+  private unionBounds(
+    children: ChildLayout[],
+    links: CompositeLink[],
+    lines: CompositeLineLayout[],
+    hangers: HangingTieLayout[]
+  ): Rect {
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
@@ -1095,6 +1235,14 @@ export class CompositeLayoutEngine {
       for (const p of line.points) extend(p);
       if (line.label) {
         const b = line.label.box;
+        extend({ x: b.x, y: b.y });
+        extend({ x: b.x + b.width, y: b.y + b.height });
+      }
+    }
+    for (const h of hangers) {
+      for (const p of h.points) extend(p);
+      if (h.label) {
+        const b = hangingLabelBox(h.label);
         extend({ x: b.x, y: b.y });
         extend({ x: b.x + b.width, y: b.y + b.height });
       }

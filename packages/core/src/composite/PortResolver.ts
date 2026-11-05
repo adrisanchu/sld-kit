@@ -1,4 +1,5 @@
 import { Connection } from '../elements/Connection';
+import { externalBranch } from '../elements/branch';
 import type { ConnectionGeometry } from '../layout/LayoutEngine';
 import type { Point, Rect } from '../layout/geometry';
 import type { ChildLayout, ExternalConnectionTip } from './CompositeLayoutEngine';
@@ -115,6 +116,21 @@ export class PortResolver {
           peerCenter,
           box: sectionBoxOf(child.boxes, conn.id)?.frame ?? child.frame
         });
+        // A three-winding transformer's third winding is an external end of its
+        // own, keyed by its branch id: a snap target, a line anchor and an
+        // auto-link key. Its side is fixed (perpendicular to the feeder).
+        const branch = externalBranch(conn);
+        if (branch && geo.branch) {
+          const side = sideFromAngle(geo.branch.arrow.angle);
+          raw.push({
+            connectionId: branch.id,
+            localAt: geo.branch.arrow.at,
+            localSide: side,
+            worldSide: rotateSide(side, instance.angleDeg),
+            peerCenter: null,
+            box: sectionBoxOf(child.boxes, conn.id)?.frame ?? child.frame
+          });
+        }
       }
     }
 

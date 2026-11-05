@@ -118,6 +118,40 @@ export class SvgExporter {
         this.renderSymbol(b, geo.symbol.key, geo.symbol.box, theme);
       }
 
+      // A three-winding transformer's third winding: stub, arrowhead, label.
+      const branchLabel =
+        conn.from.kind === 'external' ? conn.from.branch?.label : conn.to.kind === 'external' ? conn.to.branch?.label : undefined;
+      if (geo.branch) {
+        b.element('path', {
+          d: connectionPath(geo.branch.points, undefined, cfg.hopRadius),
+          fill: 'none',
+          stroke: connFmt?.stroke ?? theme.structure.connection,
+          'stroke-width': connFmt?.strokeWidth ?? theme.structure.connectionStrokeWidth,
+          'stroke-dasharray': connFmt?.dashArray
+        });
+        b.element('path', {
+          d: arrowheadPath(geo.branch.arrow.at, geo.branch.arrow.angle, cfg.arrowSize),
+          fill: connFmt?.stroke ?? theme.structure.connection
+        });
+        if (branchLabel) {
+          this.emitLabel(
+            b,
+            {
+              x: geo.branch.labelAt.at.x,
+              y: geo.branch.labelAt.at.y,
+              'text-anchor': geo.branch.labelAt.anchor,
+              'font-family': cfg.fontFamily,
+              'font-size': cfg.labelFontSize,
+              fill: theme.structure.label
+            },
+            branchLabel,
+            geo.branch.labelAt.at.x,
+            geo.branch.labelAt.at.y,
+            labelAngleDeg
+          );
+        }
+      }
+
       if (geo.labelAt) {
         const label =
           conn.from.kind === 'external' ? conn.from.label : conn.to.kind === 'external' ? conn.to.label : conn.label;

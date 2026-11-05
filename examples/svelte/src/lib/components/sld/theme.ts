@@ -149,9 +149,12 @@ export const SLD_EXTERNAL_ASSET_LABELS: ExternalAssetPopoverLabels = {
   kinds: {
     line: 'Line',
     transformer: 'Transformer',
+    transformer3w: 'Three-winding transformer',
     renewable: 'Renewable',
     storage: 'Storage',
-    demand: 'Demand'
+    demand: 'Demand',
+    reactor: 'Reactor',
+    machine: 'Synchronous machine'
   }
 };
 

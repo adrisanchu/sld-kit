@@ -30,17 +30,19 @@ export type LineVertexJson =
 /**
  * The functional type of a composite line — drives its stroke style and any
  * structural glyph the layout places on it. Open string, mirroring
- * `PositionType`: the four defaults seed autocompletion, but any non-empty
+ * `PositionType`: the five defaults seed autocompletion, but any non-empty
  * string is accepted and renders as a plain solid line.
  *
  *  - `line` — overhead line: a plain solid stroke (the default).
  *  - `cable` — underground cable: a dashed stroke.
  *  - `transformer` — a solid stroke with the two-circle transformer glyph at
  *    its midpoint.
+ *  - `transformer3w` — the same, with the three-circle three-winding
+ *    transformer glyph.
  *  - `demand` — a solid stroke ending in a filled triangle (a simplified
  *    distribution demand) at its free (non-anchored) end.
  */
-export type CompositeLineKind = 'line' | 'cable' | 'transformer' | 'demand' | (string & {});
+export type CompositeLineKind = 'line' | 'cable' | 'transformer' | 'transformer3w' | 'demand' | (string & {});
 
 export const DEFAULT_LINE_KIND: CompositeLineKind = 'line';
 

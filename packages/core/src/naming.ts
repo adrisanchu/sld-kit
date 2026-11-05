@@ -17,15 +17,20 @@ export const POSITION_LABEL_PREFIX: Record<string, string> = {
   renewable: 'ren',
   reserve: 'res',
   storage: 'sto',
-  demand: 'dem'
+  demand: 'dem',
+  reactor: 'rea',
+  machine: 'mac'
 };
 
 export const EXTERNAL_LABEL_PREFIX: Record<ExternalAssetKind, string> = {
   line: 'line',
   transformer: 'trf',
+  transformer3w: 'trf3',
   renewable: 'ren',
   storage: 'sto',
-  demand: 'dem'
+  demand: 'dem',
+  reactor: 'rea',
+  machine: 'mac'
 };
 
 /** Escape a prefix for safe embedding in the suffix-matching RegExp. */

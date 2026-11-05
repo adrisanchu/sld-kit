@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildDocument,
+  Serializer,
   SldParseError,
   DuplicateIdError,
   SldDocument,
@@ -291,5 +292,76 @@ describe('Duplicate ids', () => {
     doc.addLine(new CompositeLine('l', pts));
     expect(() => doc.addLine(new CompositeLine('l', pts, 'cable'))).toThrow(DuplicateIdError);
     expect(doc.getLine('l')!.kind).toBe('line');
+  });
+});
+
+describe('buildDocument — feeder tap/side and extra bars', () => {
+  it('passes a feeder tap to the position endpoint and side to the external one', () => {
+    // Breaker-and-a-half: the line taps between the top and central positions,
+    // runs up on the left of the column.
+    const doc = buildDocument({
+      busbars: [
+        { label: 'BB1', row: 0 },
+        { label: 'BB2', row: 4 }
+      ],
+      bays: [
+        {
+          col: 0,
+          positions: [
+            { type: 'line', row: 1, feeder: { asset: 'line', label: 'UP', direction: 'up', tap: 'below', side: 'left' } },
+            { type: 'central', row: 2 },
+            { type: 'line', row: 3 }
+          ]
+        }
+      ]
+    });
+    const { conn, ext } = feederFor(doc, 'UP')!;
+    const own = [conn.from, conn.to].find((e) => e.kind === 'element');
+    expect(own).toMatchObject({ kind: 'element', tap: 'below' });
+    expect(ext.side).toBe('left');
+  });
+
+  it('omits tap/side when not given (layout derives them)', () => {
+    const doc = twoColumn();
+    const { conn, ext } = feederFor(doc, 'FEEDER A')!;
+    const own = [conn.from, conn.to].find((e) => e.kind === 'element');
+    expect(own && 'tap' in own).toBe(false);
+    expect('side' in ext).toBe(false);
+  });
+
+  it('wires a bay to every listed bar when both sit on the same side', () => {
+    // Double busbar drawn REE-style: the bay above both bars.
+    const doc = buildDocument({
+      busbars: [
+        { id: 'b1', label: 'JBP1', row: 1 },
+        { id: 'b2', label: 'JBP2', row: 2 }
+      ],
+      bays: [{ col: 0, positions: [{ id: 'p', type: 'line', row: 0, bars: ['JBP1', 'b2'] }] }]
+    });
+    const linked = doc.connectionsOf('p').flatMap((c) => c.elementIds().filter((id) => id !== 'p'));
+    expect(linked.sort()).toEqual(['b1', 'b2']); // autoWire's nearest bar is not duplicated
+  });
+
+  it("puts a feeder's data on its connection, deep-copied", () => {
+    const data = { ree: { cod: 'L-1', dates: ['2026-01-01'] } };
+    const doc = buildDocument({
+      busbars: [{ label: 'BB1', row: 1 }],
+      bays: [{ col: 0, positions: [{ type: 'line', row: 0, feeder: { asset: 'line', label: 'L1', id: 'f', data } }] }]
+    });
+    const feeder = doc.getElement('f')!;
+    expect(feeder.data).toEqual(data);
+    expect(feeder.data).not.toBe(data);
+    data.ree.dates.push('mutated');
+    expect((feeder.data as typeof data).ree.dates).toEqual(['2026-01-01']);
+    expect(Serializer.toJSON(doc).elements.find((e) => e.id === 'f')?.data).toEqual({ ree: { cod: 'L-1', dates: ['2026-01-01'] } });
+  });
+
+  it('rejects an unknown extra bar', () => {
+    expect(() =>
+      buildDocument({
+        busbars: [{ label: 'BB1', row: 1 }],
+        bays: [{ col: 0, positions: [{ type: 'line', row: 0, bars: ['NOPE'] }] }]
+      })
+    ).toThrow(SldParseError);
   });
 });
