@@ -10,7 +10,7 @@ export interface ExternalAssetPopoverProps {
   onCancel?: () => void;
 }
 
-const ORDER: ExternalAssetKind[] = ['line', 'transformer', 'renewable', 'storage', 'demand'];
+const ORDER: ExternalAssetKind[] = ['line', 'transformer', 'renewable', 'storage', 'demand', 'reactor'];
 
 /**
  * Small HTML form shown when the user ends a connection in the margin (outside

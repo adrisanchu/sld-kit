@@ -140,7 +140,8 @@ export const DEFAULT_EXTERNAL_ASSET_LABELS: ExternalAssetPopoverLabels = {
     transformer: 'Transformer',
     renewable: 'Renewable',
     storage: 'Storage',
-    demand: 'Demand'
+    demand: 'Demand',
+    reactor: 'Reactor'
   }
 };
 

@@ -19,7 +19,7 @@
     cancel: void;
   }>();
 
-  const order: ExternalAssetKind[] = ['line', 'transformer', 'renewable', 'storage', 'demand'];
+  const order: ExternalAssetKind[] = ['line', 'transformer', 'renewable', 'storage', 'demand', 'reactor'];
 
   let asset: ExternalAssetKind = 'line';
   let label = '';
