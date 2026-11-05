@@ -17,7 +17,8 @@ export const POSITION_LABEL_PREFIX: Record<string, string> = {
   renewable: 'ren',
   reserve: 'res',
   storage: 'sto',
-  demand: 'dem'
+  demand: 'dem',
+  reactor: 'rea'
 };
 
 export const EXTERNAL_LABEL_PREFIX: Record<ExternalAssetKind, string> = {
@@ -25,7 +26,8 @@ export const EXTERNAL_LABEL_PREFIX: Record<ExternalAssetKind, string> = {
   transformer: 'trf',
   renewable: 'ren',
   storage: 'sto',
-  demand: 'dem'
+  demand: 'dem',
+  reactor: 'rea'
 };
 
 /** Escape a prefix for safe embedding in the suffix-matching RegExp. */

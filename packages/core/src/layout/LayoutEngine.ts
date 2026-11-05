@@ -34,6 +34,8 @@ const BAR_LABEL_GAP = 8;
 
 /** Estimated rendered width of a bar label (bold-ish sans; no DOM to measure in). */
 const barLabelWidth = (text: string, fontSize: number) => text.length * fontSize * 0.62;
+/** Clearance kept between an estimated label edge and the canvas edge. */
+const LABEL_EDGE_PAD = 6;
 
 export interface PositionGeometry {
   kind: 'position';
@@ -129,11 +131,16 @@ export class LayoutEngine {
     const labelLeft = cfg.busBarLabelAnchor === 'center-left';
     const longestLabel = labelLeft ? Math.max(0, ...[...barLabels.values()].map((t) => barLabelWidth(t, cfg.busLabelFontSize))) : 0;
     const labelShift = longestLabel > 0 ? Math.max(0, longestLabel + BAR_LABEL_GAP + cfg.busBarOverhang - cfg.margin + BAR_LABEL_GAP) : 0;
-    const leftShift = Math.max(exitShift, labelShift);
+    // Vertical feeder labels are centred on their lane (or the column centre),
+    // so a long label on an outer column can run past the canvas edge. Widen
+    // that side just enough to fit; diagrams whose labels already fit are unchanged.
+    const overflow = this.verticalLabelOverflow(doc, innerWidth);
+    const leftShift = Math.max(exitShift, labelShift, overflow.left);
     const leftMargin = cfg.margin + leftShift;
+    const rightShift = Math.max(extraRight, overflow.right);
 
     const size = {
-      width: innerWidth + 2 * cfg.margin + leftShift + extraRight,
+      width: innerWidth + 2 * cfg.margin + leftShift + rightShift,
       height: innerHeight + 2 * cfg.margin
     };
 
@@ -300,6 +307,34 @@ export class LayoutEngine {
     }
     taps.sort((x, y) => Math.abs(x.bar.row - pos.row) - Math.abs(y.bar.row - pos.row));
     return taps;
+  }
+
+  /**
+   * How far the labels of up/down feeders overflow the default margins, per
+   * side (0 when they fit). Measured before geometry exists, so it checks both
+   * places such a label can be centred: the column centre (straight stem) and
+   * the side lane (virtual-node routing). Widths are estimated, as for bar
+   * labels, since there is no DOM to measure in.
+   */
+  private verticalLabelOverflow(doc: SldDocument, innerWidth: number): { left: number; right: number } {
+    const cfg = this.cfg;
+    const laneOffset = cfg.cellWidth / 2 + cfg.cellGapX / 2;
+    let left = 0;
+    let right = 0;
+    for (const conn of doc.connections()) {
+      const ext = conn.from.kind === 'external' ? conn.from : conn.to.kind === 'external' ? conn.to : null;
+      const own = conn.from.kind === 'element' ? conn.from : conn.to.kind === 'element' ? conn.to : null;
+      if (!ext || !own || !ext.label || ext.direction === 'left' || ext.direction === 'right') continue;
+      const pos = doc.getElement(own.id);
+      if (!(pos instanceof Position)) continue;
+      const spanWidth = pos.colSpan * cfg.cellWidth + (pos.colSpan - 1) * cfg.cellGapX;
+      const cx = pos.col * (cfg.cellWidth + cfg.cellGapX) + spanWidth / 2;
+      const laneX = ext.side === 'left' ? cx - laneOffset : cx + laneOffset;
+      const half = barLabelWidth(ext.label, cfg.labelFontSize) / 2;
+      left = Math.max(left, half - Math.min(cx, laneX) - cfg.margin + LABEL_EDGE_PAD);
+      right = Math.max(right, Math.max(cx, laneX) + half - innerWidth - cfg.margin + LABEL_EDGE_PAD);
+    }
+    return { left, right };
   }
 
   /**

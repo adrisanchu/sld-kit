@@ -42,8 +42,12 @@ export const DEFAULT_POSITION_TYPES = [
  */
 export type PositionType = (typeof DEFAULT_POSITION_TYPES)[number] | (string & {});
 
-/** Kind of asset an external connection arrow points to. */
-export type ExternalAssetKind = 'line' | 'transformer' | 'renewable' | 'storage' | 'demand';
+/**
+ * Kind of asset an external connection arrow points to. `reactor` is a shunt
+ * reactor (inductor coil glyph); unlike the others it has no default position
+ * type, but a bay typed `reactor` (an open `PositionType`) auto-spawns it.
+ */
+export type ExternalAssetKind = 'line' | 'transformer' | 'renewable' | 'storage' | 'demand' | 'reactor';
 
 /** Which direction an external arrow leaves the diagram. */
 export type ExternalDirection = 'up' | 'down' | 'left' | 'right';

@@ -2,7 +2,7 @@ import type { ElementJson, Endpoint, ExternalAssetKind, SldDocumentJson } from '
 
 export const SLD_SCHEMA_VERSION = 2;
 
-const EXTERNAL_ASSETS: ExternalAssetKind[] = ['line', 'transformer', 'renewable', 'storage', 'demand'];
+const EXTERNAL_ASSETS: ExternalAssetKind[] = ['line', 'transformer', 'renewable', 'storage', 'demand', 'reactor'];
 
 /**
  * Thrown by `Serializer.fromJSON` on malformed input, and collected (not

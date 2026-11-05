@@ -126,7 +126,7 @@ autoWire(doc); // series-wires every bay to its column, spawns each feeder…
 `autoWire(doc, { externals })` is the batch form of `AddPositionCommand`: it adds
 every series connection (bar↔bay, bay↔bay) each column needs and, unless
 `externals: false`, the outgoing feeder for each external-typed bay
-(`line`/`transformer`/`renewable`/`storage`/`demand`). It never double-wires a
+(`line`/`transformer`/`renewable`/`storage`/`demand`/`reactor`). It never double-wires a
 link, so it can top up a partially-wired document. It mutates directly (a
 construction step, not an undoable edit); reach for `AddPositionCommand` when you
 need one interactive, undoable insertion instead.
@@ -175,6 +175,10 @@ optional `id` (to address them later, e.g. switch state) and an opaque `data`
 value (e.g. a bus number). A position between two bars wires to both, which is
 how you express a double bus with a coupler. Anything the spec can't express
 stays reachable through the explicit element/command API.
+
+External assets are `line`, `transformer`, `renewable`, `storage`, `demand` and
+`reactor` (a shunt reactor, drawn as an inductor coil). A long feeder label on
+an outer column widens that side of the canvas just enough to stay visible.
 
 Start without ids or data (ids are generated) and add them as you enrich the
 model. Explicit ids must be unique, and core catches clashes where they happen:

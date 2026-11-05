@@ -40,6 +40,21 @@ export function registerDefaultSymbols(registry: SymbolRegistry): void {
     size: [24, 24],
     shapes: [{ type: 'path', d: 'M 6.5 7 H 17.5 L 12 17.5 Z', fill: 'token', strokeWidth: 1.4 }]
   });
+
+  // Reactor: inductor coil — four humps along the stem axis (shunt reactor).
+  registry.register('external:reactor', {
+    size: [24, 24],
+    shapes: [
+      {
+        type: 'path',
+        d:
+          'M 12 2.5 C 17 2.5, 17 7.25, 12 7.25 C 17 7.25, 17 12, 12 12 ' +
+          'C 17 12, 17 16.75, 12 16.75 C 17 16.75, 17 21.5, 12 21.5',
+        fill: 'none',
+        strokeWidth: 1.6
+      }
+    ]
+  });
 }
 
 export function createDefaultSymbolRegistry(): SymbolRegistry {
