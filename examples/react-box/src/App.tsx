@@ -88,6 +88,7 @@ const LINE_KINDS: { kind: CompositeLineKind; label: string }[] = [
   { kind: 'line', label: 'Overhead' },
   { kind: 'cable', label: 'Cable' },
   { kind: 'transformer', label: 'Transformer' },
+  { kind: 'transformer3w', label: 'Three-winding transformer' },
   { kind: 'demand', label: 'Demand' }
 ];
 

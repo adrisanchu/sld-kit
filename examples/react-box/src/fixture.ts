@@ -152,18 +152,6 @@ const SUBS: Sub[] = [
 
 const anchor = (instanceId: string, connectionId: string): LineVertexJson => ({ kind: 'anchor', instanceId, connectionId });
 
-/**
- * A demand line: one anchored feeder end plus a placeholder free end. The box
- * router recomputes the free end as a node-relative *lead* (a stub off the
- * feeder's side), so the stored coordinate is never used — hence `(0, 0)`. This
- * is what replaces the old absolute-demand-point hack; the lead stays attached
- * and vertical in both the box and detail views.
- */
-const demandLead = (instanceId: string, connectionId: string): LineVertexJson[] => [
-  anchor(instanceId, connectionId),
-  { kind: 'point', x: 0, y: 0 }
-];
-
 // ── Line ratings (numeric labels) ────────────────────────────────────────────
 /**
  * A rating reading for one composite line, mimicking a feed from the consumer's
@@ -203,7 +191,7 @@ export const LINE_RATINGS: LineRating[] = [
   { id: 'l-alpha-charlie', mva: 600 },
   { id: 'l-charlie-delta', capacity: [575, 510, 370, 455] },
   { id: 'l-delta-echo', capacity: [150, undefined, 100, undefined] } // winter/summer only
-  // l-echo-foxtrot and the demand: deliberately unlabelled.
+  // l-echo-foxtrot: deliberately unlabelled.
 ];
 
 /** A line's `data` from its rating reading, if it has one (folded in when the line is built). */
@@ -270,10 +258,9 @@ export function buildBoxComposite(): CompositeDocument {
   addLine('l-delta-echo', [anchor('lib-delta', 'delta-echo'), anchor('lib-echo', 'echo-delta')], 'cable');
   addLine('l-echo-foxtrot', [anchor('lib-echo', 'echo-foxtrot'), anchor('lib-foxtrot', 'foxtrot-echo')], 'line');
 
-  // Demands hang off a 'down' feeder as a node-relative lead — the router keeps
-  // them attached and vertical in both views (no alignment pass, no absolute point).
-  addLine('l-foxtrot-dem', demandLead('lib-foxtrot', 'foxtrot-dem'), 'demand');
-  addLine('l-charlie-dem', demandLead('lib-charlie', 'charlie-dem'), 'demand');
+  // The demands (D1, D2) need no line: in box view the layout draws every
+  // feeder to an asset that ends at a child (load, generator, reactor…) leaving
+  // its box, with its glyph and label.
 
   composite.resolveChildren(resolver);
 

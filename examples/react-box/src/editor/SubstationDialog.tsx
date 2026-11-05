@@ -185,10 +185,11 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
     setCursor(null);
   };
 
-  const createExternal = (asset: ExternalAssetKind, label: string) => {
+  const createExternal = (asset: ExternalAssetKind, label: string, branch?: { label: string }) => {
     if (!pendingFrom || !external) return;
     const geo = layout.geometry.get(pendingFrom);
     const cy = geo && 'rect' in geo ? geo.rect.y + geo.rect.height / 2 : external.point.y;
+    const finalLabel = label.trim() || nextExternalLabel(doc, asset);
     run(
       new AddElementCommand(
         new Connection(
@@ -198,8 +199,10 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
           {
             kind: 'external',
             asset,
-            label: label.trim() || nextExternalLabel(doc, asset),
-            direction: external.point.y < cy ? 'up' : 'down'
+            label: finalLabel,
+            direction: external.point.y < cy ? 'up' : 'down',
+            // A three-winding transformer's third winding: its own id + label.
+            ...(branch ? { branch: { id: newId(), label: branch.label || `${finalLabel}-3` } } : {})
           }
         )
       )
@@ -466,7 +469,7 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
             <ExternalAssetPopover
               x={external.x}
               y={external.y}
-              onConfirm={({ asset, label }) => createExternal(asset, label)}
+              onConfirm={({ asset, label, branch }) => createExternal(asset, label, branch)}
               onCancel={() => setExternal(null)}
             />
           )}
