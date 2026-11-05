@@ -171,8 +171,9 @@ what leaves the diagram, and a column can carry several feeders (e.g. one off th
 top position toward the top bar and one off the bottom). Give a feeder an `id`
 for a stable, shareable connection id — e.g. a tie-line a composite auto-links by
 matching the same id across two diagrams. Busbars and positions also accept an
-optional `id` (to address them later, e.g. switch state) and an opaque `data`
-value (e.g. a bus number). A position between two bars wires to both, which is
+optional `id` (to address them later, e.g. switch state). Busbars, positions and
+feeders all accept an opaque `data` value (e.g. a bus number, or a line's
+commissioning date). A position between two bars wires to both, which is
 how you express a double bus with a coupler. Anything the spec can't express
 stays reachable through the explicit element/command API.
 

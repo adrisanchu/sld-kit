@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildDocument,
+  Serializer,
   SldParseError,
   DuplicateIdError,
   SldDocument,
@@ -339,6 +340,20 @@ describe('buildDocument — feeder tap/side and extra bars', () => {
     });
     const linked = doc.connectionsOf('p').flatMap((c) => c.elementIds().filter((id) => id !== 'p'));
     expect(linked.sort()).toEqual(['b1', 'b2']); // autoWire's nearest bar is not duplicated
+  });
+
+  it("puts a feeder's data on its connection, deep-copied", () => {
+    const data = { ree: { cod: 'L-1', dates: ['2026-01-01'] } };
+    const doc = buildDocument({
+      busbars: [{ label: 'BB1', row: 1 }],
+      bays: [{ col: 0, positions: [{ type: 'line', row: 0, feeder: { asset: 'line', label: 'L1', id: 'f', data } }] }]
+    });
+    const feeder = doc.getElement('f')!;
+    expect(feeder.data).toEqual(data);
+    expect(feeder.data).not.toBe(data);
+    data.ree.dates.push('mutated');
+    expect((feeder.data as typeof data).ree.dates).toEqual(['2026-01-01']);
+    expect(Serializer.toJSON(doc).elements.find((e) => e.id === 'f')?.data).toEqual({ ree: { cod: 'L-1', dates: ['2026-01-01'] } });
   });
 
   it('rejects an unknown extra bar', () => {

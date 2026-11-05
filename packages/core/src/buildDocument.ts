@@ -31,6 +31,11 @@ export interface FeederSpec {
    * by matching the same id across two diagrams.
    */
   id?: ElementId;
+  /**
+   * Opaque consumer metadata for the feeder's connection (see `SldElement.data`):
+   * roundtripped, never read. Deep-copied, like a position's `data`.
+   */
+  data?: unknown;
 }
 
 /** One bay position: its functional type + row. `label` is optional (auto-named). */
@@ -159,7 +164,8 @@ export function buildDocument(spec: BuildDocumentSpec): SldDocument {
       Connection.of({
         id: feeder.id,
         from: element(pos.id, feeder.tap),
-        to: external({ asset: feeder.asset, label: feeder.label, direction: feeder.direction, side: feeder.side })
+        to: external({ asset: feeder.asset, label: feeder.label, direction: feeder.direction, side: feeder.side }),
+        data: cloneData(feeder.data)
       })
     );
   }
