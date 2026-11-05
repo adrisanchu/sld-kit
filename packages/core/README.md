@@ -176,6 +176,34 @@ value (e.g. a bus number). A position between two bars wires to both, which is
 how you express a double bus with a coupler. Anything the spec can't express
 stays reachable through the explicit element/command API.
 
+Two finer controls cover layouts drawn the utility way:
+
+- **`feeder.tap` / `feeder.side`** pin where a feeder leaves. `tap: 'below'`
+  taps the row gap under its position (e.g. between the top and central breaker
+  of a breaker-and-a-half diameter), and `side: 'left'` runs its lane on the
+  left of the column. `tap: 'above'` on a top-row bay leaves straight from the
+  box edge. Omitted, the layout derives both.
+- **`position.bars`** lists extra bus bars (by `id` or `label`) a position also
+  wires to. Series wiring only reaches the nearest element on each side, so a
+  bay drawn on one side of a double busbar (both bars below it) lists both:
+
+```ts
+buildDocument({
+  busbars: [
+    { label: 'JBP1', row: 1 },
+    { label: 'JBP2', row: 2 }
+  ],
+  bays: [
+    {
+      col: 0,
+      positions: [
+        { type: 'line', row: 0, bars: ['JBP1', 'JBP2'], feeder: { asset: 'line', label: 'NORTH 1', direction: 'up', tap: 'above' } }
+      ]
+    }
+  ]
+});
+```
+
 External assets are `line`, `transformer`, `renewable`, `storage`, `demand` and
 `reactor` (a shunt reactor, drawn as an inductor coil). A long feeder label on
 an outer column widens that side of the canvas just enough to stay visible.

@@ -16,6 +16,16 @@ export interface FeederSpec {
   /** Arrow direction; omit to let the layout derive it (up toward the nearer bar). */
   direction?: ExternalDirection;
   /**
+   * Which row gap of the position the feeder taps (the virtual junction node),
+   * as on an element endpoint. Omit to let the layout derive it (toward
+   * mid-bay). Set `'above'` / `'below'` to leave from the box's own edge when
+   * nothing sits on that side, or to pin a breaker-and-a-half tap between two
+   * positions of the same column.
+   */
+  tap?: 'above' | 'below';
+  /** Side of the column the feeder's vertical lane runs on (default `'right'`). Ignored for left/right exits. */
+  side?: 'left' | 'right';
+  /**
    * Explicit connection id; defaults to a fresh `newId()`. Set it to give a
    * feeder a stable, shareable id — e.g. a tie-line that a composite auto-links
    * by matching the same id across two diagrams.
@@ -37,6 +47,13 @@ export interface BayPositionSpec {
   label?: string;
   /** Columns the position spans (default 1). */
   colSpan?: number;
+  /**
+   * Extra bus bars (by `id` or `label`) this position also wires to, on top of
+   * its series neighbours. Series wiring only reaches the nearest element on
+   * each side, so a bay drawn on one side of a double busbar (both bars below
+   * it) lists both bars here; each farther bar branches off its own lane.
+   */
+  bars?: string[];
   /** The outgoing line this position feeds, if any. */
   feeder?: FeederSpec;
 }
@@ -104,6 +121,7 @@ export function buildDocument(spec: BuildDocumentSpec): SldDocument {
   // per-type counter (line-1, line-2, …) sees the labels already placed. Keep
   // each position paired with its feeder spec so we can wire it after autoWire.
   const feeders: Array<{ pos: Position; feeder: FeederSpec }> = [];
+  const extraBars: Array<{ pos: Position; bars: string[] }> = [];
   for (const bay of spec.bays) {
     for (const p of bay.positions) {
       const pos = Position.of({
@@ -118,6 +136,7 @@ export function buildDocument(spec: BuildDocumentSpec): SldDocument {
       });
       doc.addElement(pos);
       if (p.feeder) feeders.push({ pos, feeder: p.feeder });
+      if (p.bars?.length) extraBars.push({ pos, bars: p.bars });
     }
   }
 
@@ -125,12 +144,22 @@ export function buildDocument(spec: BuildDocumentSpec): SldDocument {
   // below, so suppress autoWire's type-driven auto-spawning.
   autoWire(doc, { externals: false });
 
+  // Top up the explicit extra-bar wiring, skipping links autoWire already made.
+  for (const { pos, bars } of extraBars) {
+    for (const ref of bars) {
+      const bar = doc.busBars().find((b) => b.id === ref) ?? doc.busBars().find((b) => b.label === ref);
+      if (!bar) throw new SldParseError(`buildDocument: position "${pos.label}" references unknown bus bar "${ref}"`);
+      const linked = doc.connectionsOf(pos.id).some((c) => c.elementIds().includes(bar.id));
+      if (!linked) doc.addElement(Connection.of({ from: element(pos.id), to: element(bar.id) }));
+    }
+  }
+
   for (const { pos, feeder } of feeders) {
     doc.addElement(
       Connection.of({
         id: feeder.id,
-        from: element(pos.id),
-        to: external({ asset: feeder.asset, label: feeder.label, direction: feeder.direction })
+        from: element(pos.id, feeder.tap),
+        to: external({ asset: feeder.asset, label: feeder.label, direction: feeder.direction, side: feeder.side })
       })
     );
   }
