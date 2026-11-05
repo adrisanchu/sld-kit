@@ -159,6 +159,13 @@ describe('three-winding transformer: buildDocument', () => {
       bays: [{ col: 0, positions: [{ type: 'x', row: 0, feeder: { asset: 'transformer3w', label: 'A' } }] }]
     };
     expect(() => buildDocument(spec as Parameters<typeof buildDocument>[0])).toThrow(SldParseError);
+
+    // …and a branch on a two-winding asset.
+    const onLine = {
+      busbars: [{ label: 'BB1', row: 1 }],
+      bays: [{ col: 0, positions: [{ type: 'x', row: 0, feeder: { asset: 'line', label: 'A', branch: { label: 'B' } } }] }]
+    };
+    expect(() => buildDocument(onLine as Parameters<typeof buildDocument>[0])).toThrow(/only a three-winding transformer/);
   });
 
   it('types the variant: branch required on transformer3w, refused elsewhere', () => {
