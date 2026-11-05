@@ -284,7 +284,7 @@
     cursorPoint = null;
   }
 
-  function createExternal(asset: ExternalAssetKind, label: string) {
+  function createExternal(asset: ExternalAssetKind, label: string, branch?: { label: string }) {
     if (!pendingFrom || !externalPopover) return;
     const srcGeo = layout.geometry.get(pendingFrom);
     const srcCenterY = srcGeo && 'rect' in srcGeo ? srcGeo.rect.y + srcGeo.rect.height / 2 : externalPopover.point.y;
@@ -296,7 +296,14 @@
           newId(),
           '',
           { kind: 'element', id: pendingFrom },
-          { kind: 'external', asset, label: finalLabel, direction }
+          {
+            kind: 'external',
+            asset,
+            label: finalLabel,
+            direction,
+            // A three-winding transformer's third winding: its own id + label.
+            ...(branch ? { branch: { id: newId(), label: branch.label || `${finalLabel}-3` } } : {})
+          }
         )
       )
     );
@@ -650,7 +657,7 @@
       x={externalPopover.screenX}
       y={externalPopover.screenY}
       labels={SLD_EXTERNAL_ASSET_LABELS}
-      on:confirm={(e) => createExternal(e.detail.asset, e.detail.label)}
+      on:confirm={(e) => createExternal(e.detail.asset, e.detail.label, e.detail.branch)}
       on:cancel={() => (externalPopover = null)}
     />
   {/if}
