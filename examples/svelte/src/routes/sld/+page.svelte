@@ -8,6 +8,7 @@
   import { Input } from '$lib/components/ui/input';
   import ConfirmationDialog from '$lib/components/confirmation-dialog/ConfirmationDialog.svelte';
   import NewDiagramDialog from '$lib/components/new-diagram-dialog/NewDiagramDialog.svelte';
+  import BulkImportDialog from '$lib/components/bulk-import-dialog/BulkImportDialog.svelte';
   import Workflow from 'lucide-svelte/icons/workflow';
   import Layers from 'lucide-svelte/icons/layers';
   import CirclePlus from 'lucide-svelte/icons/circle-plus';
@@ -19,11 +20,15 @@
   import { SldDocument, CompositeDocument, Serializer, CompositeSerializer, SldParseError, newId } from '@sld-kit/core';
   import { SLD_DEMOS, SLD_COMPOSITE_DEMOS, buildDemoById } from '$lib/sld/demoFixture';
   import { sldLibrary, detectDocumentKind, type SldLibraryEntry } from '$lib/stores/sldLibrary';
-  import { importFiles } from '$lib/sld/bulkImport';
+  import { importFiles, type ImportResult } from '$lib/sld/bulkImport';
 
   let fileInput: HTMLInputElement;
   let folderInput: HTMLInputElement;
   let importing = false;
+  let importOpen = false;
+  let importDone = 0;
+  let importTotal = 0;
+  let importResults: ImportResult[] = [];
   let deleteTarget: SldLibraryEntry | null = null;
   let deleteOpen = false;
   let newDiagramOpen = false;
@@ -103,16 +108,19 @@
     input.value = '';
     if (files.length === 0) return;
     importing = true;
+    importDone = 0;
+    importTotal = files.length;
+    importResults = [];
+    importOpen = true;
     try {
-      const results = await importFiles(files);
-      const count = (status: string) => results.filter((r) => r.status === status).length;
-      // Phase 1: temporary report until the summary dialog lands.
-      console.table(results.map((r) => ({ ...r, messages: r.messages.join(' | ') })));
-      toast.info(
-        `${count('imported')} imported · ${count('warning')} warnings · ${count('error')} errors · ${count('skipped')} skipped`
-      );
+      importResults = await importFiles(files, (done, total) => {
+        importDone = done;
+        importTotal = total;
+      });
     } finally {
       importing = false;
+      // Reopen with the summary even if the user hid the progress dialog.
+      importOpen = true;
     }
   }
 
@@ -292,6 +300,14 @@
 </div>
 
 <NewDiagramDialog bind:open={newDiagramOpen} on:create={createNew} />
+
+<BulkImportDialog
+  bind:open={importOpen}
+  running={importing}
+  done={importDone}
+  total={importTotal}
+  results={importResults}
+/>
 
 <ConfirmationDialog
   bind:open={deleteOpen}
