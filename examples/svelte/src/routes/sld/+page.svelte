@@ -12,14 +12,18 @@
   import Layers from 'lucide-svelte/icons/layers';
   import CirclePlus from 'lucide-svelte/icons/circle-plus';
   import Upload from 'lucide-svelte/icons/upload';
+  import FolderOpen from 'lucide-svelte/icons/folder-open';
   import Search from 'lucide-svelte/icons/search';
   import Copy from 'lucide-svelte/icons/copy';
   import Trash2 from 'lucide-svelte/icons/trash-2';
   import { SldDocument, CompositeDocument, Serializer, CompositeSerializer, SldParseError, newId } from '@sld-kit/core';
   import { SLD_DEMOS, SLD_COMPOSITE_DEMOS, buildDemoById } from '$lib/sld/demoFixture';
   import { sldLibrary, detectDocumentKind, type SldLibraryEntry } from '$lib/stores/sldLibrary';
+  import { importFiles } from '$lib/sld/bulkImport';
 
   let fileInput: HTMLInputElement;
+  let folderInput: HTMLInputElement;
+  let importing = false;
   let deleteTarget: SldLibraryEntry | null = null;
   let deleteOpen = false;
   let newDiagramOpen = false;
@@ -36,6 +40,8 @@
   $: compositions = filtered.filter((e) => e.kind === 'composite');
 
   onMount(() => {
+    // Not typed as an attribute in Svelte 4's elements.d.ts, so set the property.
+    folderInput.webkitdirectory = true;
     // Ensure each demo diagram exists, so newly added demos reach returning
     // users too (only seeds a demo whose id is missing — never overwrites an
     // edited one).
@@ -91,6 +97,25 @@
     }
   }
 
+  async function onImportFolder(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    input.value = '';
+    if (files.length === 0) return;
+    importing = true;
+    try {
+      const results = await importFiles(files);
+      const count = (status: string) => results.filter((r) => r.status === status).length;
+      // Phase 1: temporary report until the summary dialog lands.
+      console.table(results.map((r) => ({ ...r, messages: r.messages.join(' | ') })));
+      toast.info(
+        `${count('imported')} imported · ${count('warning')} warnings · ${count('error')} errors · ${count('skipped')} skipped`
+      );
+    } finally {
+      importing = false;
+    }
+  }
+
   function duplicate(entry: SldLibraryEntry) {
     const id = sldLibrary.duplicate(entry.id);
     if (id) toast.success('Diagram duplicated');
@@ -128,6 +153,7 @@
   <div class="min-h-0 flex-1 overflow-auto p-6">
     <div class="mx-auto max-w-6xl">
       <input bind:this={fileInput} type="file" accept="application/json,.json" class="hidden" on:change={onImport} />
+      <input bind:this={folderInput} type="file" multiple class="hidden" on:change={onImportFolder} />
 
       <!-- Toolbar: search (name or substation) + import -->
       <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -143,6 +169,10 @@
         <Button variant="outline" size="sm" on:click={() => fileInput.click()}>
           <Upload class="mr-2 h-4 w-4" />
           Import JSON
+        </Button>
+        <Button variant="outline" size="sm" disabled={importing} on:click={() => folderInput.click()}>
+          <FolderOpen class="mr-2 h-4 w-4" />
+          {importing ? 'Importing…' : 'Import folder'}
         </Button>
       </div>
 
