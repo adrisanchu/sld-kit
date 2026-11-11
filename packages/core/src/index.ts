@@ -24,6 +24,7 @@ export {
   type FormatContext
 } from './theme';
 export { getElementData } from './data';
+export { tallyPositions, type PositionTally, type TallyOptions } from './tally';
 
 export { SldElement } from './elements/Element';
 export { BusBar, type BusBarOptions } from './elements/BusBar';
@@ -191,6 +192,7 @@ export {
   type SectionBox,
   type SectionTie
 } from './composite/sections';
+export { tallyComposite, type CompositeTally } from './composite/tally';
 export {
   AddChildCommand,
   RemoveChildCommand,

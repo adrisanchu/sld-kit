@@ -490,6 +490,33 @@ passed as the engine's third constructor argument (`minJog`: jogs shorter than t
 are straightened when possible; `0` keeps them). `SetDefaultRoutingCommand`
 changes the default routing undoably.
 
+### Asset counts (`tallyComposite`)
+
+`tallyComposite(composite, { category })` counts the positions of every
+**resolved** child by type, by a category you define, and as a type × category
+cross-tab, for an "assets at a glance" legend. The library never reads `data`
+for this. Your `category` callback returns the key (`undefined` → the `''`
+bucket):
+
+```ts
+import { tallyComposite } from '@sld-kit/core';
+
+const t = tallyComposite(composite, {
+  category: (pos) => getElementData<{ status?: string }>(pos)?.status ?? 'existing'
+});
+t.total;               // every counted position
+t.byType.renewable;    // per type (t.types lists them in display order)
+t.cells.line?.future;  // the cross-tab
+t.unresolved;          // children left out (missing/corrupt → placeholder)
+```
+
+- Every placed instance counts, so a library diagram placed twice is counted twice.
+- Unresolved children have no content. They are **excluded** from every count and
+  reported in `unresolved`, so a UI can say "1 diagram not found".
+- `types` lists the `DEFAULT_POSITION_TYPES` first, in their canonical order, then
+  custom types in first-seen order.
+- `tallyPositions(docs, opts)` does the same over plain `SldDocument`s.
+
 ## Serialization & compatibility
 
 `Serializer` validates and (if needed) migrates unknown input, throwing an
@@ -564,7 +591,8 @@ and `buildDocument`, `Serializer` / `SldParseError`,
 `SvgExporter` / `SvgBuilder`, the `SymbolRegistry` and default symbols, the
 theme (`SldTheme`, `DEFAULT_THEME`, `resolveTheme`, `positionColors`, and the
 generic formatting seam `ElementFormat` / `elementFormat` / `firstFormat`),
-the metadata helper `getElementData`,
+the metadata helper `getElementData`, the asset counters `tallyPositions` /
+`tallyComposite`,
 and the composite classes (`CompositeDocument`,
 `DiagramInstance`, `CompositeLayoutEngine`, `CompositeSerializer`,
 `CompositeSvgExporter`, `Transform2D`, `MapResolver`, and the box-view section
