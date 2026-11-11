@@ -101,8 +101,9 @@
               {#if result.id}
                 <a
                   href="{base}/sld/{result.id}"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   class="block truncate text-sm font-medium hover:underline"
-                  on:click={() => (open = false)}
                 >
                   {result.name || result.path}
                 </a>
