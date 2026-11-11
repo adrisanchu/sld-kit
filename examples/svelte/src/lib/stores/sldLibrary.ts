@@ -3,6 +3,8 @@ import { browser } from '$app/environment';
 import {
   Serializer,
   newId,
+  detectDocumentKind,
+  type DocumentKind,
   type SldDocument,
   type SldDocumentJson,
   type DocumentResolver,
@@ -20,7 +22,7 @@ import {
  * library and storage keys; the stored JSON's `kind` field (absent = diagram)
  * disambiguates on read.
  */
-export type SldLibraryKind = 'diagram' | 'composite';
+export type SldLibraryKind = DocumentKind;
 
 export interface SldLibraryEntry {
   id: string;
@@ -35,13 +37,9 @@ export interface SldLibraryEntry {
 const INDEX_KEY = 'sld:index';
 const docKey = (id: string) => `sld:doc:${id}`;
 
-/** Discriminate stored/imported JSON without fully parsing it. */
-export function detectDocumentKind(input: unknown): SldLibraryKind {
-  if (input && typeof input === 'object' && (input as { kind?: unknown }).kind === 'composite') {
-    return 'composite';
-  }
-  return 'diagram';
-}
+// Discriminates stored/imported JSON without fully parsing it; re-exported from
+// core for the library's importers.
+export { detectDocumentKind };
 
 function isQuotaError(err: unknown): boolean {
   return err instanceof DOMException && (err.name === 'QuotaExceededError' || err.code === 22);

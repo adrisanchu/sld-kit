@@ -47,6 +47,18 @@ export {
   type FeederBranchSpec
 } from './buildDocument';
 export { nextPositionLabel, nextExternalLabel, POSITION_LABEL_PREFIX, EXTERNAL_LABEL_PREFIX } from './naming';
+export {
+  ImportPlan,
+  planImport,
+  detectDocumentKind,
+  type DocumentKind,
+  type ImportStatus,
+  type ImportInput,
+  type ImportResult,
+  type ImportContext,
+  type PlannedDocument,
+  type SaveOutcome
+} from './batchImport';
 
 export { type Point, type Rect, rectCenter, rectContains, arrowheadPath } from './layout/geometry';
 export { connectionPath } from './layout/paths';

@@ -519,6 +519,40 @@ they throw the first error `check` reports.
 passes through transiently-invalid states while dragging), so call `validate()`
 when you want to check — e.g. before an export or a save.
 
+### Batch import
+
+`ImportPlan` plans an import of many diagram and composite files at once, such
+as a whole folder. It is pure and storage-free. Per file, it:
+
+- reports `Invalid JSON: …`, or every validation error (through the two
+  `check`s);
+- warns about an id seen earlier in the batch and a name already in your library;
+- gives every valid document a fresh id, so an import never overwrites;
+- relinks composite children to the new ids of the batch's diagrams, keeps
+  children already in your library, and warns about the rest.
+
+Saving stays yours, and the flow is two-step so a composite only relinks to
+diagrams that were actually saved:
+
+```ts
+const plan = new ImportPlan({ existingIds, existingNames }); // anything with has(): a Set, a storage lookup…
+for (const file of files) plan.add({ path: file.name, text: isJson ? await file.text() : undefined });
+const diagrams = plan.diagrams(); // re-identified JSON, ready to persist
+save(diagrams).forEach((outcome, i) => plan.markSaved(diagrams[i], outcome)); // { ok } | { ok: false, error }
+const composites = plan.composites(); // relinked to the diagrams that saved
+save(composites).forEach((outcome, i) => plan.markSaved(composites[i], outcome));
+const results = plan.results(); // one per file, in input order
+```
+
+- **Statuses:** each result's `status` is `imported`, `warning` (imported, with
+  messages), `error` or `skipped` (a file passed without `text`).
+- **`add()` is synchronous:** you can yield between files to repaint a
+  progress bar.
+- **One-shot:** `planImport(inputs, context)` adds them all at once. A diagram
+  you never mark counts as saved.
+- **What stays in your app:** reading files (filtering dotfiles), persisting,
+  handling full storage, and the UI.
+
 ## API surface
 
 Everything is exported from the package root: document + elements
