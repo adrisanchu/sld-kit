@@ -54,6 +54,15 @@ const ext = (asset: ExternalAssetKind, label: string, direction: ExternalDirecti
   external({ asset, label, direction, side });
 
 /**
+ * A commissioning tag in the app's reserved `data.sld` namespace (see
+ * `components/sld/commissioning.ts`), so the demos show new/future assets on the
+ * canvas and in the composite asset legend.
+ */
+function commissioned(category: string) {
+  return { sld: { commissioning: { category } } };
+}
+
+/**
  * South 400 kV (explicit authoring): two bars, 3+4+3 positions, two empty slots.
  * Two feeders are the tie-lines to West 400 kV — they carry the shared ids
  * `south-west-1` / `south-west-2` and the labels "WEST 1" / "WEST 2".
@@ -67,7 +76,7 @@ export function buildSouth400(): SldDocument {
   doc.addElement(BusBar.of({ id: 'bb-1', label: 'BB1', row: 0 }));
   doc.addElement(BusBar.of({ id: 'bb-2', label: 'BB2', row: 4 }));
 
-  doc.addElement(Position.of({ id: 'pos-c0t', label: 'R1', type: 'renewable', row: 1, col: 0 }));
+  doc.addElement(Position.of({ id: 'pos-c0t', label: 'R1', type: 'renewable', row: 1, col: 0, data: commissioned('future') }));
   doc.addElement(Position.of({ id: 'pos-c1t', label: 'L1', type: 'line', row: 1, col: 1 }));
   doc.addElement(Position.of({ id: 'pos-c2t', label: 'L2', type: 'line', row: 1, col: 2 }));
 
@@ -139,7 +148,7 @@ export function buildSouth220(): SldDocument {
   doc.addElement(Connection.of({ id: 'cn-b2-b1', from: el('pos-b2'), to: el('bb-1') }));
   doc.addElement(Connection.of({ id: 'cn-b2-b2', from: el('pos-b2'), to: el('bb-2') }));
 
-  doc.addElement(Position.of({ id: 'pos-b3', label: 'R1', type: 'renewable', row: 0, col: 4 }));
+  doc.addElement(Position.of({ id: 'pos-b3', label: 'R1', type: 'renewable', row: 0, col: 4, data: commissioned('decree-x') }));
   doc.addElement(Connection.of({ id: 'cn-b3-b1', from: el('pos-b3'), to: el('bb-1') }));
   doc.addElement(Connection.of({ id: 'cn-b3-b2', from: el('pos-b3'), to: el('bb-2') }));
   doc.addElement(Connection.of({ id: 'cn-b3-ext', from: el('pos-b3', 'above'), to: ext('renewable', 'SOLAR PARK 2', 'up') }));
@@ -149,7 +158,7 @@ export function buildSouth220(): SldDocument {
   doc.addElement(Connection.of({ id: 'cn-b4-b2', from: el('pos-b4'), to: el('bb-2') }));
   doc.addElement(Connection.of({ id: 'cn-b4-ext', from: el('pos-b4', 'above'), to: ext('line', 'FEEDER G', 'up') }));
 
-  doc.addElement(Position.of({ id: 'pos-b5', label: 'L4', type: 'line', row: 0, col: 7 }));
+  doc.addElement(Position.of({ id: 'pos-b5', label: 'L4', type: 'line', row: 0, col: 7, data: commissioned('future') }));
   doc.addElement(Connection.of({ id: 'cn-b5-b1', from: el('pos-b5'), to: el('bb-1') }));
   doc.addElement(Connection.of({ id: 'cn-b5-b2', from: el('pos-b5'), to: el('bb-2') }));
   doc.addElement(Connection.of({ id: 'cn-b5-ext', from: el('pos-b5', 'above'), to: ext('line', 'FEEDER H', 'up') }));

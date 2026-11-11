@@ -14,7 +14,9 @@ import {
   type ExternalAssetPopoverLabels,
   type LaneOverlayLabels,
   type LaneActionChipLabels,
-  type CompositeToolbarLabels
+  type CompositeToolbarLabels,
+  type AssetLegendLabels,
+  type AssetLegendCategory
 } from '@sld-kit/svelte';
 import { SLD_LAYOUT, type SldLayoutConfig, type ElementFormat } from '@sld-kit/core';
 
@@ -195,7 +197,38 @@ export const SLD_COMPOSITE_TOOLBAR_LABELS: CompositeToolbarLabels = {
       ? 'Labels: all (click to hide names)'
       : mode === 'topology'
         ? 'Labels: bus bars & lines (click to hide all)'
-        : 'Labels: hidden (click to show all)'
+        : 'Labels: hidden (click to show all)',
+  legend: 'Asset legend'
+};
+
+/**
+ * Asset-legend columns: the commissioning categories in picker order (minus the
+ * "Untagged" clear option, which `commissioningCategory` counts as existing),
+ * each with the same format the canvas draws, so the swatches act as a key.
+ */
+export const SLD_LEGEND_CATEGORIES: AssetLegendCategory[] = COMMISSIONING_CATEGORY_OPTIONS.filter((o) => o.value).map(
+  (o) => ({ key: o.value, label: o.label, format: COMMISSIONING_FORMATS[o.value] })
+);
+
+/** Short row names for the asset legend (`POSITION_TYPE_LABELS` reads "Line position"). */
+export const SLD_LEGEND_TYPE_LABELS: Record<string, string> = {
+  line: 'Line',
+  transformer: 'Transformer',
+  central: 'Central',
+  renewable: 'Renewable',
+  reserve: 'Reserve',
+  storage: 'Storage',
+  demand: 'Demand'
+};
+
+export const SLD_ASSET_LEGEND_LABELS: AssetLegendLabels = {
+  heading: 'Assets',
+  total: 'Total',
+  count: 'Count',
+  empty: 'No positions yet',
+  uncategorised: 'Other',
+  close: 'Close legend',
+  unresolved: (n) => `${n} ${n !== 1 ? 'diagrams' : 'diagram'} not found — not counted`
 };
 
 /** Fallback text for an unresolved composite child. */

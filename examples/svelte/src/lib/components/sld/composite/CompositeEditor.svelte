@@ -17,6 +17,7 @@
     CompositeLine,
     chordFrame,
     newId,
+    tallyComposite,
     type CompositeDocument,
     type Command,
     type Point,
@@ -28,7 +29,7 @@
   } from '@sld-kit/core';
   import { sldLibrary } from '$lib/stores/sldLibrary';
   import { sldEditorSettings } from '$lib/stores/sldEditorSettings';
-  import { CompositeCanvas, CompositeToolbar, createDocStore, downloadText, slugify } from '@sld-kit/svelte';
+  import { AssetLegend, CompositeCanvas, CompositeToolbar, createDocStore, downloadText, slugify } from '@sld-kit/svelte';
   import ImportDiagramDialog from './ImportDiagramDialog.svelte';
   import DiagramLabelDialog from './DiagramLabelDialog.svelte';
   import {
@@ -38,9 +39,12 @@
     SLD_CHILD_NOT_FOUND,
     COMPACT_LAYOUT,
     voltageToken,
-    SLD_VIEW_STYLE
+    SLD_VIEW_STYLE,
+    SLD_LEGEND_CATEGORIES,
+    SLD_LEGEND_TYPE_LABELS,
+    SLD_ASSET_LEGEND_LABELS
   } from '$lib/components/sld/theme';
-  import { commissioningResolver } from '$lib/components/sld/commissioning';
+  import { commissioningResolver, commissioningCategory } from '$lib/components/sld/commissioning';
 
   /**
    * Composition root of the composite ("diagram of diagrams") editor. A small
@@ -61,6 +65,9 @@
     new LayoutEngine($sldEditorSettings.labelMode === 'all' ? undefined : COMPACT_LAYOUT)
   );
   $: layout = engine.layout($docStore);
+  // Asset legend: position counts over every resolved child, re-derived on each
+  // mutation (import, delete, undo/redo) because it reads the store.
+  $: tally = tallyComposite($docStore, { category: commissioningCategory });
 
   // Display toggles (shared with the single-diagram editor, persisted).
   $: childColorClass = (child: ChildLayout): string | null =>
@@ -630,6 +637,20 @@
     </div>
   {/if}
 
+  {#if $sldEditorSettings.showLegend}
+    <!-- Pinned top-left (the link chip is top-centre); scrolls when taller than the canvas. -->
+    <div class="absolute left-4 top-4 z-10 flex max-h-[calc(100%-7rem)] max-w-[calc(100%-2rem)]">
+      <AssetLegend
+        {tally}
+        tokens={POSITION_TYPE_TOKENS}
+        typeLabels={SLD_LEGEND_TYPE_LABELS}
+        categories={SLD_LEGEND_CATEGORIES}
+        labels={SLD_ASSET_LEGEND_LABELS}
+        style={SLD_VIEW_STYLE}
+        on:close={() => sldEditorSettings.update((s) => ({ ...s, showLegend: false }))}
+      />
+    </div>
+  {/if}
 
   <CompositeToolbar
     {userRole}
@@ -640,6 +661,7 @@
     {drawActive}
     colorMode={$sldEditorSettings.colorMode}
     labelMode={$sldEditorSettings.labelMode}
+    legendOpen={$sldEditorSettings.showLegend}
     labels={SLD_COMPOSITE_TOOLBAR_LABELS}
     exportLabels={SLD_EXPORT_LABELS}
     on:import={() => (importOpen = true)}
@@ -653,6 +675,7 @@
     on:exportSvg={exportSvg}
     on:setcolormode={(e) => sldEditorSettings.update((s) => ({ ...s, colorMode: e.detail }))}
     on:setlabelmode={(e) => sldEditorSettings.update((s) => ({ ...s, labelMode: e.detail }))}
+    on:togglelegend={() => sldEditorSettings.update((s) => ({ ...s, showLegend: !s.showLegend }))}
   />
 </div>
 

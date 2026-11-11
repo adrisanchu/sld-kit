@@ -4,8 +4,8 @@ import type { PositionType } from '@sld-kit/core';
 
 /**
  * Persisted SLD editor UI preferences (not diagram content): the position type
- * used by the "add position" tool, plus the display toggles (color mode and
- * label visibility). Follows the mapDrawingSettings localStorage store pattern.
+ * used by the "add position" tool, plus the display toggles (color mode,
+ * label visibility and the composite asset legend). Follows the mapDrawingSettings localStorage store pattern.
  */
 export interface SldEditorSettings {
   positionType: PositionType;
@@ -13,6 +13,8 @@ export interface SldEditorSettings {
   colorMode: 'by-type' | 'by-voltage';
   /** Which labels to show; hiding position labels compacts the layout. */
   labelMode: 'all' | 'topology' | 'none';
+  /** Show the composite editor's asset-count legend. */
+  showLegend: boolean;
 }
 
 const STORAGE_KEY = 'sldEditorSettings';
@@ -20,7 +22,8 @@ const STORAGE_KEY = 'sldEditorSettings';
 const defaultSettings: SldEditorSettings = {
   positionType: 'line',
   colorMode: 'by-type',
-  labelMode: 'all'
+  labelMode: 'all',
+  showLegend: false
 };
 
 function createSldEditorSettingsStore() {

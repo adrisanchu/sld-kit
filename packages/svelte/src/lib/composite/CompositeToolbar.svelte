@@ -12,13 +12,14 @@
   import Download from 'lucide-svelte/icons/download';
   import Zap from 'lucide-svelte/icons/zap';
   import Tag from 'lucide-svelte/icons/tag';
+  import Sigma from 'lucide-svelte/icons/sigma';
   import ExportFlyout from '../ExportFlyout.svelte';
   import { DEFAULT_COMPOSITE_TOOLBAR_LABELS, type CompositeToolbarLabels, type ExportFlyoutLabels } from '../labels';
 
   /**
    * Deliberately poorer than `SldToolbar`: the composite editor has no
    * position/bus-bar/connection drawing tools. Only Import, Select, Draw line,
-   * Remove selected, Undo/Redo, Zoom-to-fit and Export.
+   * Remove selected, Undo/Redo, Zoom-to-fit, Export and (opt-in) the asset legend.
    */
   export let userRole: string = 'viewer';
   export let canUndo: boolean = false;
@@ -32,6 +33,11 @@
   export let colorMode: 'by-type' | 'by-voltage' = 'by-type';
   /** Label-visibility mode, owned by the editor. */
   export let labelMode: 'all' | 'topology' | 'none' = 'all';
+  /**
+   * Whether the asset legend is open, owned by the editor. `null` (the default)
+   * hides the toggle, so the button only appears for editors that render a legend.
+   */
+  export let legendOpen: boolean | null = null;
   export let labels: Partial<CompositeToolbarLabels> = {};
   export let exportLabels: Partial<ExportFlyoutLabels> = {};
 
@@ -50,6 +56,8 @@
     exportSvg: void;
     setcolormode: 'by-type' | 'by-voltage';
     setlabelmode: 'all' | 'topology' | 'none';
+    /** Show / hide the asset legend (only dispatched when `legendOpen` is set). */
+    togglelegend: void;
   }>();
 
   // Label visibility cycles all → topology → none → all.
@@ -158,6 +166,19 @@
           {/if}
         </Tag>
       </button>
+
+      <!-- Asset legend (position counts) — opt-in, available to viewers too -->
+      {#if legendOpen !== null}
+        <button
+          title={L.legend}
+          class="{btnBase} {legendOpen ? btnActive : btnIdle}"
+          aria-pressed={legendOpen}
+          on:click={() => dispatch('togglelegend')}
+        >
+          <span class="sr-only">{L.legend}</span>
+          <Sigma class="h-4 w-4" />
+        </button>
+      {/if}
     </div>
 
     <!-- Edit cluster: mutation tools. Inside the shared pill on ≥sm; its own pill
