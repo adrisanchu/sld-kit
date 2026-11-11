@@ -43,6 +43,10 @@ export function detectDocumentKind(input: unknown): SldLibraryKind {
   return 'diagram';
 }
 
+function isQuotaError(err: unknown): boolean {
+  return err instanceof DOMException && (err.name === 'QuotaExceededError' || err.code === 22);
+}
+
 function readIndex(): SldLibraryEntry[] {
   if (!browser) return [];
   try {
@@ -73,6 +77,17 @@ function entryOfComposite(json: CompositeDocumentJson): SldLibraryEntry {
     kind: 'composite'
   };
 }
+
+/** Merge entries into an index (replacing by id), newest first. */
+function mergeEntries(entries: SldLibraryEntry[], incoming: SldLibraryEntry[]): SldLibraryEntry[] {
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  for (const entry of incoming) byId.set(entry.id, entry);
+  return [...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export type SaveResult = { ok: true } | { ok: false; error: string };
+
+const STORAGE_FULL = 'Browser storage is full';
 
 function createLibrary() {
   const store = writable<SldLibraryEntry[]>(readIndex());
@@ -118,13 +133,7 @@ function createLibrary() {
   }
 
   function upsertEntry(entry: SldLibraryEntry) {
-    const entries = readIndex();
-    const idx = entries.findIndex((e) => e.id === entry.id);
-    if (idx >= 0) entries[idx] = entry;
-    else entries.unshift(entry);
-    // Newest first.
-    entries.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    persistIndex(entries);
+    persistIndex(mergeEntries(readIndex(), [entry]));
   }
 
   function save(json: SldDocumentJson) {
@@ -139,6 +148,57 @@ function createLibrary() {
   function saveComposite(json: CompositeDocumentJson) {
     if (browser) localStorage.setItem(docKey(json.meta.id), JSON.stringify(json));
     upsertEntry(entryOfComposite(json));
+  }
+
+  /**
+   * Bulk save for imports: writes every document, then the index once (one
+   * store emission instead of one per file). Stops writing at the first quota
+   * error — that item and the rest report `Browser storage is full`. If the
+   * grown index no longer fits, the most recently written documents are removed
+   * again until it does, so no orphaned `sld:doc:*` keys are left behind.
+   */
+  function saveMany(jsons: Array<SldDocumentJson | CompositeDocumentJson>): SaveResult[] {
+    if (!browser) return jsons.map(() => ({ ok: false, error: 'Storage unavailable' }));
+    const results: SaveResult[] = [];
+    const saved: { index: number; entry: SldLibraryEntry }[] = [];
+    let full = false;
+    jsons.forEach((json, index) => {
+      if (full) {
+        results.push({ ok: false, error: STORAGE_FULL });
+        return;
+      }
+      try {
+        localStorage.setItem(docKey(json.meta.id), JSON.stringify(json));
+        const entry =
+          detectDocumentKind(json) === 'composite'
+            ? entryOfComposite(json as CompositeDocumentJson)
+            : entryOf(json as SldDocumentJson);
+        saved.push({ index, entry });
+        results.push({ ok: true });
+      } catch (err) {
+        full = isQuotaError(err);
+        results.push({ ok: false, error: full ? STORAGE_FULL : 'Could not write to storage' });
+      }
+    });
+    const current = readIndex();
+    while (saved.length > 0) {
+      try {
+        persistIndex(
+          mergeEntries(
+            current,
+            saved.map((s) => s.entry)
+          )
+        );
+        break;
+      } catch {
+        const dropped = saved.pop();
+        if (dropped) {
+          localStorage.removeItem(docKey(dropped.entry.id));
+          results[dropped.index] = { ok: false, error: STORAGE_FULL };
+        }
+      }
+    }
+    return results;
   }
 
   function remove(id: string) {
@@ -189,6 +249,7 @@ function createLibrary() {
     save,
     saveDoc,
     saveComposite,
+    saveMany,
     remove,
     duplicate,
     exists,

@@ -8,18 +8,27 @@
   import { Input } from '$lib/components/ui/input';
   import ConfirmationDialog from '$lib/components/confirmation-dialog/ConfirmationDialog.svelte';
   import NewDiagramDialog from '$lib/components/new-diagram-dialog/NewDiagramDialog.svelte';
+  import BulkImportDialog from '$lib/components/bulk-import-dialog/BulkImportDialog.svelte';
   import Workflow from 'lucide-svelte/icons/workflow';
   import Layers from 'lucide-svelte/icons/layers';
   import CirclePlus from 'lucide-svelte/icons/circle-plus';
   import Upload from 'lucide-svelte/icons/upload';
+  import FolderOpen from 'lucide-svelte/icons/folder-open';
   import Search from 'lucide-svelte/icons/search';
   import Copy from 'lucide-svelte/icons/copy';
   import Trash2 from 'lucide-svelte/icons/trash-2';
-  import { SldDocument, CompositeDocument, Serializer, CompositeSerializer, SldParseError, newId } from '@sld-kit/core';
+  import { SldDocument, CompositeDocument, CompositeSerializer } from '@sld-kit/core';
   import { SLD_DEMOS, SLD_COMPOSITE_DEMOS, buildDemoById } from '$lib/sld/demoFixture';
-  import { sldLibrary, detectDocumentKind, type SldLibraryEntry } from '$lib/stores/sldLibrary';
+  import { sldLibrary, type SldLibraryEntry } from '$lib/stores/sldLibrary';
+  import { importFiles, type ImportResult } from '$lib/sld/bulkImport';
 
   let fileInput: HTMLInputElement;
+  let folderInput: HTMLInputElement;
+  let importing = false;
+  let importOpen = false;
+  let importDone = 0;
+  let importTotal = 0;
+  let importResults: ImportResult[] = [];
   let deleteTarget: SldLibraryEntry | null = null;
   let deleteOpen = false;
   let newDiagramOpen = false;
@@ -36,6 +45,8 @@
   $: compositions = filtered.filter((e) => e.kind === 'composite');
 
   onMount(() => {
+    // Not typed as an attribute in Svelte 4's elements.d.ts, so set the property.
+    folderInput.webkitdirectory = true;
     // Ensure each demo diagram exists, so newly added demos reach returning
     // users too (only seeds a demo whose id is missing — never overwrites an
     // edited one).
@@ -67,27 +78,47 @@
 
   async function onImport(e: Event) {
     const input = e.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
+    const files = Array.from(input.files ?? []);
+    input.value = '';
+    if (files.length === 0) return;
+    // One picked JSON file keeps the quick path: toast and open it. Folders and
+    // multi-file picks get the progress + summary dialog.
+    if (input === fileInput && files.length === 1) await importSingle(files[0]);
+    else await importMany(files);
+  }
+
+  async function importSingle(file: File) {
+    importing = true;
     try {
-      const parsed = JSON.parse(await file.text());
-      if (detectDocumentKind(parsed) === 'composite') {
-        const composite = CompositeSerializer.fromJSON(parsed);
-        composite.meta.id = newId(); // import as a new composite, never overwrite
-        sldLibrary.saveComposite(CompositeSerializer.toJSON(composite));
-        toast.success('Composition imported');
-        goto(`${base}/sld/${composite.meta.id}`);
+      const [result] = await importFiles([file]);
+      if (!result) return;
+      if (!result.id) {
+        toast.error(`Could not import ${result.path}`, { description: result.messages.join(' · ') });
         return;
       }
-      const doc = Serializer.fromJSON(parsed);
-      doc.meta.id = newId(); // import as a new diagram, never overwrite
-      sldLibrary.saveDoc(doc);
-      toast.success('Diagram imported');
-      goto(`${base}/sld/${doc.meta.id}`);
-    } catch (err) {
-      toast.error(err instanceof SldParseError ? `Invalid document: ${err.message}` : 'Invalid JSON file');
+      toast.success(result.kind === 'composite' ? 'Composition imported' : 'Diagram imported');
+      if (result.messages.length > 0) toast.warning(result.messages.join(' · '));
+      goto(`${base}/sld/${result.id}`);
     } finally {
-      input.value = '';
+      importing = false;
+    }
+  }
+
+  async function importMany(files: File[]) {
+    importing = true;
+    importDone = 0;
+    importTotal = files.length;
+    importResults = [];
+    importOpen = true;
+    try {
+      importResults = await importFiles(files, (done, total) => {
+        importDone = done;
+        importTotal = total;
+      });
+    } finally {
+      importing = false;
+      // Reopen with the summary even if the user hid the progress dialog.
+      importOpen = true;
     }
   }
 
@@ -127,7 +158,15 @@
 
   <div class="min-h-0 flex-1 overflow-auto p-6">
     <div class="mx-auto max-w-6xl">
-      <input bind:this={fileInput} type="file" accept="application/json,.json" class="hidden" on:change={onImport} />
+      <input
+        bind:this={fileInput}
+        type="file"
+        accept="application/json,.json"
+        multiple
+        class="hidden"
+        on:change={onImport}
+      />
+      <input bind:this={folderInput} type="file" multiple class="hidden" on:change={onImport} />
 
       <!-- Toolbar: search (name or substation) + import -->
       <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -140,9 +179,13 @@
             Showing {filtered.length} of {$sldLibrary.length}
           </p>
         {/if}
-        <Button variant="outline" size="sm" on:click={() => fileInput.click()}>
+        <Button variant="outline" size="sm" disabled={importing} on:click={() => fileInput.click()}>
           <Upload class="mr-2 h-4 w-4" />
           Import JSON
+        </Button>
+        <Button variant="outline" size="sm" disabled={importing} on:click={() => folderInput.click()}>
+          <FolderOpen class="mr-2 h-4 w-4" />
+          {importing ? 'Importing…' : 'Import folder'}
         </Button>
       </div>
 
@@ -262,6 +305,14 @@
 </div>
 
 <NewDiagramDialog bind:open={newDiagramOpen} on:create={createNew} />
+
+<BulkImportDialog
+  bind:open={importOpen}
+  running={importing}
+  done={importDone}
+  total={importTotal}
+  results={importResults}
+/>
 
 <ConfirmationDialog
   bind:open={deleteOpen}

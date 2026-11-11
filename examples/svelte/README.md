@@ -34,16 +34,17 @@ BASE_PATH=/sld-kit pnpm run build:example # when hosting under a sub-path
 The packages are intentionally headless; an app supplies the "glue". This split is the
 main thing the example demonstrates:
 
-| Concern                                                    | Lives in                                                         |
-| ---------------------------------------------------------- | ---------------------------------------------------------------- |
-| Document model, grid layout, undo/redo commands, JSON, SVG | `@sld-kit/core`                                                  |
-| Pan/zoom canvas, element views, event-dispatching toolbar  | `@sld-kit/svelte`                                                |
-| Editor orchestration (tool state → commands)               | `src/lib/components/sld/SldEditor.svelte`                        |
-| Composite ("diagram of diagrams") orchestration            | `.../composite/CompositeEditor.svelte`                           |
-| Property / import dialogs (shadcn + bits-ui)               | `.../ElementEditDialog.svelte`, `.../ImportDiagramDialog.svelte` |
-| Labels, position-type colour tokens                        | `src/lib/components/sld/theme.ts`                                |
-| Diagram storage (localStorage index + docs)                | `src/lib/stores/sldLibrary.ts`                                   |
-| Demo fixtures (fictional data)                             | `src/lib/sld/demoFixture.ts`                                     |
+| Concern                                                    | Lives in                                                              |
+| ---------------------------------------------------------- | --------------------------------------------------------------------- |
+| Document model, grid layout, undo/redo commands, JSON, SVG | `@sld-kit/core`                                                       |
+| Pan/zoom canvas, element views, event-dispatching toolbar  | `@sld-kit/svelte`                                                     |
+| Editor orchestration (tool state → commands)               | `src/lib/components/sld/SldEditor.svelte`                             |
+| Composite ("diagram of diagrams") orchestration            | `.../composite/CompositeEditor.svelte`                                |
+| Property / import dialogs (shadcn + bits-ui)               | `.../ElementEditDialog.svelte`, `.../ImportDiagramDialog.svelte`      |
+| Labels, position-type colour tokens                        | `src/lib/components/sld/theme.ts`                                     |
+| Folder / multi-file JSON import (validate, summary report) | `src/lib/sld/bulkImport.ts`, `src/lib/components/bulk-import-dialog/` |
+| Diagram storage (localStorage index + docs)                | `src/lib/stores/sldLibrary.ts`                                        |
+| Demo fixtures (fictional data)                             | `src/lib/sld/demoFixture.ts`                                          |
 
 The library components ship **English default labels**; this app injects its own copy via
 each component's `labels` prop (see `theme.ts`) — swap those strings to localise.
