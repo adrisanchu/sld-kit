@@ -1,4 +1,12 @@
-import type { ElementId, Endpoint, ExternalAssetKind, ExternalBranch, ExternalDirection } from '../types';
+import type {
+  ElementId,
+  Endpoint,
+  ExternalAssetKind,
+  ExternalBranch,
+  ExternalDirection,
+  ExternalEndpoint
+} from '../types';
+import { newId } from '../ids';
 
 /**
  * Typed constructors for the two `Endpoint` shapes, so authoring a `Connection`
@@ -38,4 +46,38 @@ export function external(opts: {
     ...(opts.side !== undefined ? { side: opts.side } : {}),
     ...(opts.branch !== undefined ? { branch: { ...opts.branch } } : {})
   };
+}
+
+/**
+ * Rewrite an existing external endpoint from edited fields — what a properties
+ * dialog does on save — keeping the document valid across asset changes:
+ *
+ *  - staying a `transformer3w` keeps the third winding's `branch.id` (other
+ *    diagrams may link to it) and its label unless `branchLabel` is given;
+ *  - switching *to* `transformer3w` mints a branch (fresh id; label from
+ *    `branchLabel`, else `${label}-3`);
+ *  - switching *away* drops the branch, which any other asset rejects.
+ *
+ * Pass `prev = undefined` to create one from scratch. `direction` / `side` are
+ * taken as given (omit them to let the layout derive them), like `external()`.
+ */
+export function updateExternal(
+  prev: ExternalEndpoint | undefined,
+  next: {
+    asset: ExternalAssetKind;
+    label: string;
+    direction?: ExternalDirection;
+    side?: 'left' | 'right';
+    /** The third winding's label (`transformer3w` only); blank keeps the previous one. */
+    branchLabel?: string;
+  }
+): Endpoint {
+  const branch: ExternalBranch | undefined =
+    next.asset === 'transformer3w'
+      ? {
+          id: prev?.branch?.id ?? newId(),
+          label: next.branchLabel?.trim() || prev?.branch?.label || `${next.label}-3`
+        }
+      : undefined;
+  return external({ asset: next.asset, label: next.label, direction: next.direction, side: next.side, branch });
 }

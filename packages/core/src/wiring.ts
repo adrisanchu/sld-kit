@@ -1,3 +1,4 @@
+import { EXTERNAL_POSITION_TYPES } from './types';
 import type { ElementId, Endpoint, ExternalAssetKind, ExternalDirection, PositionType } from './types';
 import { SldDocument } from './SldDocument';
 import { Grid } from './Grid';
@@ -69,16 +70,8 @@ export function planPositionWiring(doc: SldDocument, position: Position): Wiring
   return plan;
 }
 
-/** Position types that carry an external asset arrow, mapped 1:1 to its kind. */
-const EXTERNAL_POSITION_TYPES: readonly PositionType[] = [
-  'line',
-  'transformer',
-  'renewable',
-  'storage',
-  'demand',
-  'reactor',
-  'machine'
-];
+/** {@link EXTERNAL_POSITION_TYPES}, widened so any open `PositionType` can be looked up. */
+const EXTERNAL_TYPES: readonly PositionType[] = EXTERNAL_POSITION_TYPES;
 
 /**
  * Default direction for an external arrow leaving `position`: toward the
@@ -104,7 +97,7 @@ function externalDirectionFor(doc: SldDocument, position: Position): ExternalDir
  * the layout). Returns null for `central`/`reserve`, which carry no external.
  */
 export function planPositionExternal(doc: SldDocument, position: Position): { from: Endpoint; to: Endpoint } | null {
-  if (!EXTERNAL_POSITION_TYPES.includes(position.type)) return null;
+  if (!EXTERNAL_TYPES.includes(position.type)) return null;
   const asset = position.type as ExternalAssetKind; // 1:1 (each is a valid ExternalAssetKind)
   return {
     from: { kind: 'element', id: position.id },

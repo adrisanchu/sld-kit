@@ -125,8 +125,8 @@ autoWire(doc); // series-wires every bay to its column, spawns each feeder…
 
 `autoWire(doc, { externals })` is the batch form of `AddPositionCommand`: it adds
 every series connection (bar↔bay, bay↔bay) each column needs and, unless
-`externals: false`, the outgoing feeder for each external-typed bay
-(`line`/`transformer`/`renewable`/`storage`/`demand`/`reactor`/`machine`). It never double-wires a
+`externals: false`, the outgoing feeder for each external-typed bay (the
+`EXTERNAL_POSITION_TYPES`: `line`/`transformer`/`renewable`/`storage`/`demand`/`reactor`/`machine`). It never double-wires a
 link, so it can top up a partially-wired document. It mutates directly (a
 construction step, not an undoable edit); reach for `AddPositionCommand` when you
 need one interactive, undoable insertion instead.
@@ -207,7 +207,11 @@ buildDocument({
 
 External assets are `line`, `transformer`, `transformer3w`, `renewable`,
 `storage`, `demand`, `reactor` (a shunt reactor, drawn as an inductor coil) and
-`machine` (a synchronous machine, drawn as a circle with "SM").
+`machine` (a synchronous machine, drawn as a circle with "SM"). Build pickers
+from the exported, ordered `EXTERNAL_ASSET_KINDS` (and position-type pickers
+from `DEFAULT_POSITION_TYPES`) rather than a hand-written list, so a future kind
+shows up everywhere at once. `EXTERNAL_POSITION_TYPES` lists the bay types that
+auto-spawn the external of the same name.
 
 ### Three-winding transformers (`transformer3w`)
 
@@ -230,6 +234,17 @@ while the branch ties to a 33 kV one. Give each document's branch an id only its
 intended peer shares. `connectionForExternalId(doc, id)` finds the connection
 behind either kind of id. A long feeder label on
 an outer column widens that side of the canvas just enough to stay visible.
+
+When a properties dialog edits an existing external endpoint, rebuild it with
+`updateExternal(prev, { asset, label, direction?, side?, branchLabel? })`
+instead of by hand: it keeps a `transformer3w`'s branch id (and label, unless a
+new one is given), mints a branch when switching *to* `transformer3w`, and drops
+it when switching away — so the saved document always validates.
+
+```ts
+const prev = json.to.kind === 'external' ? json.to : undefined; // json: a ConnectionJson
+json.to = updateExternal(prev, { asset: 'transformer3w', label: '220 kV' });
+```
 
 Start without ids or data (ids are generated) and add them as you enrich the
 model. Explicit ids must be unique, and core catches clashes where they happen:
@@ -329,8 +344,9 @@ it's absent, the bay is closed. Switching state is part of the electrical model
 
 ## Open position types
 
-The five defaults — `line`, `transformer`, `central`, `renewable`, `reserve` —
-are suggestions, not a closed set. `PositionType` accepts **any string**, so you
+The defaults (`DEFAULT_POSITION_TYPES`) — `line`, `transformer`, `central`,
+`renewable`, `reserve`, `storage`, `demand`, `reactor`, `machine` — are
+suggestions, not a closed set. `PositionType` accepts **any string**, so you
 can model domain-specific bays:
 
 ```ts

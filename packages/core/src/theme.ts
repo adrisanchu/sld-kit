@@ -100,7 +100,8 @@ export interface SldTheme {
 
 /**
  * The default light theme. Values are exactly the historical `EXPORT_COLORS`
- * + `EXPORT_STRUCTURE_COLORS`, so default exports match legacy output. The
+ * + `EXPORT_STRUCTURE_COLORS`, so default exports match legacy output
+ * (`reactor` / `machine` were added later, with their own colors). The
  * fallback palette is the neutral `reserve` slate — an unknown position type
  * renders legibly instead of crashing.
  */
@@ -114,7 +115,11 @@ export const DEFAULT_THEME: SldTheme = {
     // Storage (battery): teal — distinct from renewable green.
     storage: { fill: '#ccfbf1', stroke: '#14b8a6', text: '#134e4a' },
     // Demand (consumer/load): red.
-    demand: { fill: '#fee2e2', stroke: '#ef4444', text: '#7f1d1d' }
+    demand: { fill: '#fee2e2', stroke: '#ef4444', text: '#7f1d1d' },
+    // Shunt reactor: pink.
+    reactor: { fill: '#fce7f3', stroke: '#ec4899', text: '#831843' },
+    // Synchronous machine (generator, condenser, motor): orange.
+    machine: { fill: '#ffedd5', stroke: '#f97316', text: '#7c2d12' }
   },
   fallbackPositionType: { fill: '#f1f5f9', stroke: '#94a3b8', text: '#334155' },
   structure: {

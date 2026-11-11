@@ -29,7 +29,7 @@ export { SldElement } from './elements/Element';
 export { BusBar, type BusBarOptions } from './elements/BusBar';
 export { Position, effectiveState, type PositionOptions } from './elements/Position';
 export { Connection, type ConnectionOptions } from './elements/Connection';
-export { element, external } from './elements/endpoints';
+export { element, external, updateExternal } from './elements/endpoints';
 export { externalBranch, connectionForExternalId } from './elements/branch';
 export { elementFromJson } from './elements/factory';
 

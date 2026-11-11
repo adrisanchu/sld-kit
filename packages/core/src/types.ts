@@ -16,11 +16,12 @@ export interface Cell {
 }
 
 /**
- * The position types shipped as defaults. They seed IDE autocompletion and the
- * default theme / naming-prefix maps, but `PositionType` is open (see below):
- * consumers may use any string to model domain-specific bay types. `storage`
- * and `demand` double as `ExternalAssetKind`s — a storage/demand bay auto-spawns
- * the matching external glyph, mirroring line/transformer/renewable.
+ * The position types shipped as defaults. They seed IDE autocompletion, the
+ * default theme / naming-prefix maps and the adapters' type pickers, but
+ * `PositionType` is open (see below): consumers may use any string to model
+ * domain-specific bay types. The ones listed in {@link EXTERNAL_POSITION_TYPES}
+ * double as `ExternalAssetKind`s — such a bay auto-spawns the matching external
+ * glyph.
  */
 export const DEFAULT_POSITION_TYPES = [
   'line',
@@ -29,7 +30,9 @@ export const DEFAULT_POSITION_TYPES = [
   'renewable',
   'reserve',
   'storage',
-  'demand'
+  'demand',
+  'reactor',
+  'machine'
 ] as const;
 
 /**
@@ -43,18 +46,47 @@ export const DEFAULT_POSITION_TYPES = [
 export type PositionType = (typeof DEFAULT_POSITION_TYPES)[number] | (string & {});
 
 /**
- * Kind of asset an external connection arrow points to. `reactor` is a shunt
- * reactor (inductor coil glyph) and `machine` a synchronous machine (circle
- * with "SM": generator, condenser or motor); unlike the others they have no
- * default position type, but a bay typed `reactor` / `machine` (an open
- * `PositionType`) auto-spawns the matching external.
+ * Every kind of asset an external connection arrow can point to, in display
+ * order. The single source for UI pickers (the adapters' external-asset
+ * popover, an app's properties dialog) and for the validator, so a new kind
+ * can't be forgotten in one of them.
+ *
+ * `reactor` is a shunt reactor (inductor coil glyph) and `machine` a
+ * synchronous machine (circle with "SM": generator, condenser or motor).
  *
  * `transformer3w` is a three-winding transformer (three circles). Its endpoint
  * carries a second end, `branch`, for the third winding (see {@link Endpoint});
  * it is never auto-spawned, since that end needs its own label.
  */
-export type ExternalAssetKind =
-  'line' | 'transformer' | 'transformer3w' | 'renewable' | 'storage' | 'demand' | 'reactor' | 'machine';
+export const EXTERNAL_ASSET_KINDS = [
+  'line',
+  'transformer',
+  'transformer3w',
+  'renewable',
+  'storage',
+  'demand',
+  'reactor',
+  'machine'
+] as const;
+
+/** Kind of asset an external connection arrow points to (see {@link EXTERNAL_ASSET_KINDS}). */
+export type ExternalAssetKind = (typeof EXTERNAL_ASSET_KINDS)[number];
+
+/**
+ * Position types that carry an external asset arrow, mapped 1:1 to the
+ * `ExternalAssetKind` of the same name: inserting such a bay auto-spawns the
+ * matching external (see `AddPositionCommand`). `transformer3w` is absent — its
+ * third winding needs its own label, so it is never auto-spawned.
+ */
+export const EXTERNAL_POSITION_TYPES = [
+  'line',
+  'transformer',
+  'renewable',
+  'storage',
+  'demand',
+  'reactor',
+  'machine'
+] as const satisfies readonly ExternalAssetKind[];
 
 /**
  * The extra end of a three-winding transformer: the third winding, drawn as a
@@ -138,6 +170,9 @@ export type Endpoint =
       side?: 'left' | 'right';
       branch?: ExternalBranch;
     };
+
+/** The external variant of {@link Endpoint}: an arrow leaving the diagram. */
+export type ExternalEndpoint = Extract<Endpoint, { kind: 'external' }>;
 
 export type ElementKind = 'busbar' | 'position' | 'connection';
 
