@@ -126,18 +126,18 @@ async function validateFile(
   const rawName = (parsed as { meta?: { name?: unknown } } | null)?.meta?.name;
   if (typeof rawName === 'string') result.name = rawName;
 
-  if (kind === 'composite') {
-    try {
-      return { kind, result, json: CompositeSerializer.validate(parsed) };
-    } catch (err) {
-      result.status = 'error';
-      result.messages.push(err instanceof Error ? err.message : String(err));
-      return null;
-    }
-  }
-
   // `check` collects every problem at once; `validate` then returns the
   // normalized (and migrated) JSON.
+  if (kind === 'composite') {
+    const { ok, errors } = CompositeSerializer.check(parsed);
+    if (!ok) {
+      result.status = 'error';
+      result.messages.push(...errors.map((e) => e.message));
+      return null;
+    }
+    return { kind, result, json: CompositeSerializer.validate(parsed) };
+  }
+
   const { ok, errors } = Serializer.check(parsed);
   if (!ok) {
     result.status = 'error';

@@ -505,7 +505,15 @@ self-correcting generated JSON), use the non-throwing validators that return the
 ```ts
 const { ok, errors } = Serializer.check(untrustedJson); // errors: SldParseError[]
 const liveErrors = doc.validate();                      // same rules, in-memory doc
+const composite = CompositeSerializer.check(untrustedComposite); // same shape, for composites
 ```
+
+`CompositeSerializer.check` is the composite twin: it lists every problem with
+the children, port pins and manual lines in one pass. Only a few problems stop
+it early, because nothing else can be checked: input that isn't an object, a
+missing or too-new `version`, a `kind` other than `'composite'`, or a missing
+`children` list. `CompositeSerializer.validate` / `fromJSON` still throw, and
+they throw the first error `check` reports.
 
 `SldDocument` mutations are intentionally not validated on the fly (an editor
 passes through transiently-invalid states while dragging), so call `validate()`
