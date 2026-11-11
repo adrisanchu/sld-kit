@@ -201,11 +201,14 @@ export interface CompositeToolbarLabels {
   colorMode: string;
   /** Label-visibility cycle button; receives the active mode. */
   labelMode: (mode: 'all' | 'topology' | 'none') => string;
-  /** Asset-legend toggle (shown only when the editor passes `legendOpen`). */
-  legend: string;
+  /**
+   * Asset-legend toggle. Optional: the button only shows when the editor passes
+   * `legendOpen`, so apps without a legend can leave it out (English default).
+   */
+  legend?: string;
 }
 
-export const DEFAULT_COMPOSITE_TOOLBAR_LABELS: CompositeToolbarLabels = {
+export const DEFAULT_COMPOSITE_TOOLBAR_LABELS: Required<CompositeToolbarLabels> = {
   fit: 'Zoom to fit (Shift+1)',
   export: 'Export',
   select: 'Select',
