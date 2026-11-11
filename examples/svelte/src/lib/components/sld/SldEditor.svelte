@@ -22,6 +22,7 @@
     nextPositionLabel,
     nextExternalLabel,
     newId,
+    updateExternal,
     type Command,
     type LaneKind,
     type SldDocument,
@@ -33,6 +34,7 @@
     type ExternalAssetKind,
     type ElementGeometry
   } from '@sld-kit/core';
+  import { toast } from 'svelte-sonner';
   import { sldEditorSettings } from '$lib/stores/sldEditorSettings';
   import {
     SldCanvas,
@@ -296,14 +298,8 @@
           newId(),
           '',
           { kind: 'element', id: pendingFrom },
-          {
-            kind: 'external',
-            asset,
-            label: finalLabel,
-            direction,
-            // A three-winding transformer's third winding: its own id + label.
-            ...(branch ? { branch: { id: newId(), label: branch.label || `${finalLabel}-3` } } : {})
-          }
+          // A three-winding transformer also gets its third winding (own id + label).
+          updateExternal(undefined, { asset, label: finalLabel, direction, branchLabel: branch?.label })
         )
       )
     );
@@ -333,6 +329,20 @@
     // repoint every connection that referenced it (UpdateElementCommand's
     // replaceElement is keyed by id and can't rename).
     after.id = before.id;
+
+    // Refuse an edit that would make the document invalid: autosave would
+    // persist it and the diagram could no longer be opened. Only problems the
+    // edit introduces count, so an already-broken document stays editable.
+    const current = Serializer.toJSON(doc);
+    const known = new Set(Serializer.check(current).errors.map((err) => err.message));
+    const next = { ...current, elements: current.elements.map((el) => (el.id === before.id ? after : el)) };
+    const introduced = Serializer.check(next).errors.filter((err) => !known.has(err.message));
+    if (introduced.length > 0) {
+      toast.error('Could not save changes', { description: introduced.map((err) => err.message).join(' · ') });
+      editElement = null;
+      return;
+    }
+
     run(new UpdateElementCommand(before, after));
     if (renaming) run(new RenameElementCommand(before.id, newId));
 

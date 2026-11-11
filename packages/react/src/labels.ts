@@ -25,7 +25,9 @@ export const DEFAULT_POSITION_TOKENS: PositionTokens = {
   renewable: 'sld-pos-renewable',
   reserve: 'sld-pos-reserve',
   storage: 'sld-pos-storage',
-  demand: 'sld-pos-demand'
+  demand: 'sld-pos-demand',
+  reactor: 'sld-pos-reactor',
+  machine: 'sld-pos-machine'
 };
 
 /** Human-readable label per position type (used in tooltips + the type picker). */
@@ -36,7 +38,9 @@ export const DEFAULT_POSITION_TYPE_LABELS: Record<string, string> = {
   renewable: 'Renewable position',
   reserve: 'Reserve position',
   storage: 'Storage position',
-  demand: 'Demand position'
+  demand: 'Demand position',
+  reactor: 'Reactor position',
+  machine: 'Machine position'
 };
 
 export interface SldToolbarLabels {

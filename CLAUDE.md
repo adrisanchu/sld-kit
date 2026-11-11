@@ -83,7 +83,7 @@ Elements reference each other **only by id** (stable UUIDs via `newId()`), never
 
 ### Open types & the opaque `data` channel
 
-- `PositionType` is `(five defaults) | (string & {})` — any string is accepted; unknown types use `fallbackPositionType` and auto-name from the type string. (This is why eslint's `no-empty-object-type` is disabled.)
+- `PositionType` is `(the DEFAULT_POSITION_TYPES) | (string & {})` — any string is accepted; unknown types use `fallbackPositionType` and auto-name from the type string. (This is why eslint's `no-empty-object-type` is disabled.)
 - `SldElement`/`DocumentMeta` carry optional `data?: unknown`: the library roundtrips it (deep-copied via `structuredClone`) but **never reads it** — it must be structured-cloneable (no functions, no `Date`; use ISO strings). Narrow it with `getElementData<T>()`.
 
 ### Composite ("diagram of diagrams")

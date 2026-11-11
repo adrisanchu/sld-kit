@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import type { ExternalAssetKind } from '@sld-kit/core';
+  import { EXTERNAL_ASSET_KINDS, type ExternalAssetKind } from '@sld-kit/core';
   import { DEFAULT_EXTERNAL_ASSET_LABELS, type ExternalAssetPopoverLabels } from './labels';
 
   /**
@@ -20,16 +20,7 @@
     cancel: void;
   }>();
 
-  const order: ExternalAssetKind[] = [
-    'line',
-    'transformer',
-    'transformer3w',
-    'renewable',
-    'storage',
-    'demand',
-    'reactor',
-    'machine'
-  ];
+  const order: readonly ExternalAssetKind[] = EXTERNAL_ASSET_KINDS;
 
   let asset: ExternalAssetKind = 'line';
   let label = '';

@@ -56,7 +56,9 @@ export const POSITION_TYPE_TOKENS: Record<string, string> = {
   renewable: 'sld-pos-renewable',
   reserve: 'sld-pos-reserve',
   storage: 'sld-pos-storage',
-  demand: 'sld-pos-demand'
+  demand: 'sld-pos-demand',
+  reactor: 'sld-pos-reactor',
+  machine: 'sld-pos-machine'
 };
 
 /**
@@ -100,7 +102,9 @@ export const POSITION_TYPE_LABELS: Record<string, string> = {
   renewable: 'Renewable position',
   reserve: 'Reserve position',
   storage: 'Storage position',
-  demand: 'Demand position'
+  demand: 'Demand position',
+  reactor: 'Reactor position',
+  machine: 'Machine position'
 };
 
 /** Strings for the `@sld-kit/svelte` editor toolbar. */
@@ -144,6 +148,7 @@ export const SLD_EXPORT_LABELS: ExportFlyoutLabels = {
 export const SLD_EXTERNAL_ASSET_LABELS: ExternalAssetPopoverLabels = {
   heading: 'External asset',
   placeholder: 'Label (optional, e.g. FEEDER A)',
+  branchPlaceholder: 'Third winding label (optional)',
   cancel: 'Cancel',
   confirm: 'Add',
   kinds: {

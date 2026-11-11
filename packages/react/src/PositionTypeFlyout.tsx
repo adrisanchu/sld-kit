@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { ChevronUp } from 'lucide-react';
-import type { PositionType } from '@sld-kit/core';
+import { DEFAULT_POSITION_TYPES, type PositionType } from '@sld-kit/core';
 import { DEFAULT_POSITION_TYPE_LABELS } from './labels';
 
-const DEFAULT_TYPES: PositionType[] = ['line', 'transformer', 'central', 'renewable', 'reserve', 'storage', 'demand'];
+const DEFAULT_TYPES: PositionType[] = [...DEFAULT_POSITION_TYPES];
 
 export interface PositionTypeFlyoutProps {
   isActive?: boolean;

@@ -17,7 +17,7 @@ import {
   ZoomIn,
   ZoomOut
 } from 'lucide-react';
-import type { PositionType } from '@sld-kit/core';
+import { DEFAULT_POSITION_TYPES, type PositionType } from '@sld-kit/core';
 import { MatrixCreatorFlyout } from './MatrixCreatorFlyout';
 import { ExportFlyout } from './ExportFlyout';
 import { PositionTypeFlyout } from './PositionTypeFlyout';
@@ -34,7 +34,7 @@ export type SldTool = 'select' | 'busbar' | 'position' | 'connection';
 export type ColorMode = 'by-type' | 'by-voltage';
 export type LabelMode = 'all' | 'topology' | 'none';
 
-const DEFAULT_TYPES: PositionType[] = ['line', 'transformer', 'central', 'renewable', 'reserve', 'storage', 'demand'];
+const DEFAULT_TYPES: PositionType[] = [...DEFAULT_POSITION_TYPES];
 
 export interface SldToolbarProps {
   userRole?: string;

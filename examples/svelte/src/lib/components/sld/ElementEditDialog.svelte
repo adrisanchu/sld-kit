@@ -8,14 +8,22 @@
   import {
     Position,
     Connection,
+    DEFAULT_POSITION_TYPES,
+    EXTERNAL_ASSET_KINDS,
+    updateExternal,
     type SldElement,
     type ElementJson,
     type ConnectionJson,
     type PositionType,
     type ExternalAssetKind,
-    type ExternalDirection
+    type ExternalDirection,
+    type ExternalEndpoint
   } from '@sld-kit/core';
-  import { POSITION_TYPE_LABELS, COMMISSIONING_CATEGORY_OPTIONS } from '$lib/components/sld/theme';
+  import {
+    POSITION_TYPE_LABELS,
+    COMMISSIONING_CATEGORY_OPTIONS,
+    SLD_EXTERNAL_ASSET_LABELS
+  } from '$lib/components/sld/theme';
   import { getCommissioning, withCommissioning } from '$lib/components/sld/commissioning';
 
   /**
@@ -28,22 +36,12 @@
 
   const dispatch = createEventDispatcher<{ save: { json: ElementJson } }>();
 
-  const positionTypes: PositionType[] = [
-    'line',
-    'transformer',
-    'central',
-    'renewable',
-    'reserve',
-    'storage',
-    'demand'
-  ];
-  const externalAssets: { value: ExternalAssetKind; label: string }[] = [
-    { value: 'line', label: 'Line' },
-    { value: 'transformer', label: 'Transformer' },
-    { value: 'renewable', label: 'Renewable' },
-    { value: 'storage', label: 'Storage' },
-    { value: 'demand', label: 'Demand' }
-  ];
+  // Both lists come from core, so a kind added there shows up here too.
+  const positionTypes: readonly PositionType[] = DEFAULT_POSITION_TYPES;
+  const externalAssets: { value: ExternalAssetKind; label: string }[] = EXTERNAL_ASSET_KINDS.map((k) => ({
+    value: k,
+    label: SLD_EXTERNAL_ASSET_LABELS.kinds[k]
+  }));
   // `{ value, label }` option lists for the shadcn Select components.
   const positionTypeOptions = positionTypes.map((t) => ({ value: t, label: POSITION_TYPE_LABELS[t] }));
   const directionOptions: { value: 'auto' | ExternalDirection; label: string }[] = [
@@ -68,6 +66,11 @@
   let posType: PositionType = 'line';
   let extAsset: ExternalAssetKind = 'line';
   let extLabel = '';
+  // Third winding of a transformer3w; blank keeps the existing label.
+  let extBranchLabel = '';
+  // The endpoint as it was when the dialog opened: `updateExternal` keeps its
+  // branch id when the asset stays transformer3w.
+  let seededExt: ExternalEndpoint | undefined;
   let extDirection: 'auto' | ExternalDirection = 'auto';
   let extTap: 'auto' | 'above' | 'below' = 'auto';
   let extLaneSide: 'left' | 'right' = 'right';
@@ -84,6 +87,8 @@
     elId = element.id;
     label = element.label;
     externalSide = null;
+    seededExt = undefined;
+    extBranchLabel = '';
     extTap = 'auto';
     extLaneSide = 'right';
     const comm = getCommissioning(element);
@@ -94,8 +99,10 @@
       externalSide = element.from.kind === 'external' ? 'from' : element.to.kind === 'external' ? 'to' : null;
       const ext = externalSide === 'from' ? element.from : externalSide === 'to' ? element.to : null;
       if (ext && ext.kind === 'external') {
+        seededExt = ext;
         extAsset = ext.asset;
         extLabel = ext.label;
+        extBranchLabel = ext.branch?.label ?? '';
         extDirection = ext.direction ?? 'auto';
         extLaneSide = ext.side ?? 'right';
       }
@@ -137,13 +144,15 @@
       // ignore `side` (the direction itself picks the edge).
       const dirToSave: ExternalDirection | undefined = extDirection !== 'auto' ? extDirection : undefined;
       const isHorizontal = dirToSave === 'left' || dirToSave === 'right';
-      conn[externalSide] = {
-        kind: 'external',
+      // `updateExternal` keeps, mints or drops the transformer3w branch so the
+      // document stays valid whatever the asset change.
+      conn[externalSide] = updateExternal(seededExt, {
         asset: extAsset,
         label: extLabel.trim() || 'NEW',
-        ...(dirToSave !== undefined ? { direction: dirToSave } : {}),
-        ...(!isHorizontal && extLaneSide !== 'right' ? { side: extLaneSide } : {})
-      };
+        direction: dirToSave,
+        side: !isHorizontal && extLaneSide !== 'right' ? extLaneSide : undefined,
+        branchLabel: extBranchLabel
+      });
       // Write the tap override onto the element endpoint; 'auto' means derived.
       const elKey = externalSide === 'from' ? 'to' : 'from';
       const elEnd = conn[elKey];
@@ -261,6 +270,16 @@
               </Select.Content>
             </Select.Root>
           </div>
+          {#if extAsset === 'transformer3w'}
+            <div class="space-y-1.5">
+              <Label for="sld-branch">Third winding</Label>
+              <Input
+                id="sld-branch"
+                bind:value={extBranchLabel}
+                placeholder={SLD_EXTERNAL_ASSET_LABELS.branchPlaceholder}
+              />
+            </div>
+          {/if}
           <div class="space-y-1.5">
             <Label for="sld-dir">Direction</Label>
             <Select.Root selected={selectedDirection} onSelectedChange={(s) => s && (extDirection = s.value)}>

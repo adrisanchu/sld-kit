@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import ChevronUp from 'lucide-svelte/icons/chevron-up';
-  import type { PositionType } from '@sld-kit/core';
+  import { DEFAULT_POSITION_TYPES, type PositionType } from '@sld-kit/core';
   import { DEFAULT_POSITION_TYPE_LABELS } from './labels';
 
   /**
@@ -14,15 +14,7 @@
   /** Currently selected position type (owned by the parent). */
   export let positionType: PositionType = 'line';
   /** Selectable types, in display order. */
-  export let positionTypes: PositionType[] = [
-    'line',
-    'transformer',
-    'central',
-    'renewable',
-    'reserve',
-    'storage',
-    'demand'
-  ];
+  export let positionTypes: PositionType[] = [...DEFAULT_POSITION_TYPES];
   /** Label per position type. */
   export let labels: Record<string, string> = DEFAULT_POSITION_TYPE_LABELS;
   /** Tooltip on the chevron trigger. */
