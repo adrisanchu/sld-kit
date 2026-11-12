@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ExternalAssetKind } from '@sld-kit/core';
+import { EXTERNAL_ASSET_KINDS, type ExternalAssetKind } from '@sld-kit/core';
 import { DEFAULT_EXTERNAL_ASSET_LABELS, type ExternalAssetPopoverLabels } from './labels';
 
 export interface ExternalAssetPopoverProps {
@@ -11,16 +11,7 @@ export interface ExternalAssetPopoverProps {
   onCancel?: () => void;
 }
 
-const ORDER: ExternalAssetKind[] = [
-  'line',
-  'transformer',
-  'transformer3w',
-  'renewable',
-  'storage',
-  'demand',
-  'reactor',
-  'machine'
-];
+const ORDER: readonly ExternalAssetKind[] = EXTERNAL_ASSET_KINDS;
 
 /**
  * Small HTML form shown when the user ends a connection in the margin (outside

@@ -92,6 +92,8 @@
   --sld-pos-reserve: hsl(215 20% 65%);
   --sld-pos-storage: hsl(173 80% 40%); /* teal — distinct from renewable green */
   --sld-pos-demand: hsl(0 84% 60%); /* red — consumer/load */
+  --sld-pos-reactor: hsl(330 81% 60%); /* pink — shunt reactor */
+  --sld-pos-machine: hsl(25 95% 53%); /* orange — synchronous machine */
 
   --sld-volt-hv: hsl(0 84% 60%); /* ≥ 400 kV */
   --sld-volt-mv: hsl(142 71% 45%); /* 200–< 400 kV */
@@ -106,6 +108,8 @@
   --sld-pos-reserve: hsl(215 16% 57%);
   --sld-pos-storage: hsl(173 66% 55%);
   --sld-pos-demand: hsl(0 90% 68%);
+  --sld-pos-reactor: hsl(329 86% 70%);
+  --sld-pos-machine: hsl(27 96% 61%);
 
   --sld-volt-hv: hsl(0 84% 68%);
   --sld-volt-mv: hsl(142 69% 55%);
@@ -136,6 +140,12 @@
 }
 .sld-pos-demand {
   --sld-pos: var(--sld-pos-demand);
+}
+.sld-pos-reactor {
+  --sld-pos: var(--sld-pos-reactor);
+}
+.sld-pos-machine {
+  --sld-pos: var(--sld-pos-machine);
 }
 
 /* Voltage buckets reuse the same slot, passed to a canvas as `colorClass`. */

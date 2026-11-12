@@ -71,74 +71,94 @@ export class CompositeSerializer {
     return doc;
   }
 
-  /** Validate (and migrate) unknown input into a well-formed composite JSON. */
+  /**
+   * Validate (and migrate) unknown input into a well-formed composite JSON,
+   * throwing the first `SldParseError` on malformed data. Use `check` to
+   * collect every problem instead of throwing on the first.
+   */
   static validate(input: unknown): CompositeDocumentJson {
-    if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-      throw new SldParseError('Composite is not a valid JSON object');
-    }
-    const json = input as Record<string, unknown>;
+    const { errors, doc } = parseComposite(input);
+    if (!doc) throw errors[0];
+    return doc;
+  }
 
-    // Accept the current schema and any older one; reject only versions newer
-    // than we understand (forward compat we can't honor). There are no versions
-    // below the current one yet — when past versions actually diverge in shape,
-    // per-version migrations slot in here.
-    if (typeof json.version !== 'number' || !Number.isInteger(json.version)) {
-      throw new SldParseError('Missing composite schema version number');
-    }
-    if (json.version > COMPOSITE_SCHEMA_VERSION) {
-      throw new SldParseError(`Unsupported composite version ${json.version} (maximum: ${COMPOSITE_SCHEMA_VERSION})`);
-    }
+  /**
+   * Non-throwing validation: returns `{ ok, errors }` with the full list of
+   * problems (English, user-presentable) — the composite twin of
+   * `Serializer.check`, for an import report or an LLM fixing generated JSON
+   * in one pass.
+   */
+  static check(input: unknown): { ok: boolean; errors: SldParseError[] } {
+    const { errors } = parseComposite(input);
+    return { ok: errors.length === 0, errors };
+  }
+}
 
-    if (json.kind !== 'composite') throw new SldParseError('Document is not a composite');
+type Fail = (message: string) => void;
 
-    const meta = json.meta as Record<string, unknown> | undefined;
-    if (!meta || typeof meta !== 'object') throw new SldParseError('Missing meta block');
-    if (typeof meta.id !== 'string' || !meta.id) throw new SldParseError('Invalid meta.id');
-    if (typeof meta.name !== 'string') throw new SldParseError('Invalid meta.name');
+/**
+ * Validate (and migrate) unknown input, collecting every problem instead of
+ * throwing on the first; mirrors `parseDocument`. Returns the errors and, when
+ * there are none, the normalized composite JSON.
+ *
+ * Errors are pushed in the order the throw-on-first path used, so `errors[0]`
+ * is exactly what `validate` throws. A few failures are fatal (nothing more
+ * can be checked) and stop collection early; the rest accumulate.
+ */
+function parseComposite(input: unknown): { errors: SldParseError[]; doc?: CompositeDocumentJson } {
+  const errors: SldParseError[] = [];
+  const fail: Fail = (msg) => errors.push(new SldParseError(msg));
 
-    if (!Array.isArray(json.children)) throw new SldParseError('Missing child list');
-    const rawChildren = json.children as Record<string, unknown>[];
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    fail('Composite is not a valid JSON object');
+    return { errors };
+  }
+  const json = input as Record<string, unknown>;
 
-    const ids = new Set<string>();
-    const children: DiagramInstanceJson[] = [];
-    for (const child of rawChildren) {
-      if (typeof child?.id !== 'string' || !child.id) throw new SldParseError('Child without id');
-      if (ids.has(child.id)) throw new SldParseError(`Duplicate child id: ${child.id}`);
-      ids.add(child.id);
-      if (typeof child.libraryId !== 'string' || !child.libraryId) {
-        throw new SldParseError(`Child ${child.id}: invalid libraryId`);
-      }
-      if (!isFinite(child.x) || !isFinite(child.y) || !isFinite(child.angleDeg)) {
-        throw new SldParseError(`Child ${child.id}: invalid transform`);
-      }
-      if (child.labelAnchor !== undefined && !LABEL_ANCHORS.includes(child.labelAnchor as LabelAnchor)) {
-        throw new SldParseError(`Child ${child.id}: invalid labelAnchor`);
-      }
-      if (child.labelDirection !== undefined && !isFinite(child.labelDirection)) {
-        throw new SldParseError(`Child ${child.id}: invalid labelDirection`);
-      }
-      const portDirections = this.validatePortDirections(child.portDirections, child.id as string);
-      children.push({
-        id: child.id,
-        libraryId: child.libraryId,
-        x: round2(child.x as number),
-        y: round2(child.y as number),
-        angleDeg: normalizeAngle(child.angleDeg as number),
-        labelAnchor: (child.labelAnchor as LabelAnchor | undefined) ?? 'top-left',
-        labelDirection: normalizeQuarterTurn((child.labelDirection as number | undefined) ?? 0),
-        ...(portDirections ? { portDirections } : {})
-      });
-    }
+  // Accept the current schema and any older one; reject only versions newer
+  // than we understand (forward compat we can't honor). There are no versions
+  // below the current one yet — when past versions actually diverge in shape,
+  // per-version migrations slot in here.
+  if (typeof json.version !== 'number' || !Number.isInteger(json.version)) {
+    fail('Missing composite schema version number');
+    return { errors };
+  }
+  if (json.version > COMPOSITE_SCHEMA_VERSION) {
+    fail(`Unsupported composite version ${json.version} (maximum: ${COMPOSITE_SCHEMA_VERSION})`);
+    return { errors };
+  }
 
-    const lines = this.validateLines(json.lines);
+  if (json.kind !== 'composite') {
+    fail('Document is not a composite');
+    return { errors };
+  }
 
-    const now = new Date().toISOString();
-    return {
+  const meta = json.meta as Record<string, unknown> | undefined;
+  if (!meta || typeof meta !== 'object') {
+    fail('Missing meta block');
+  } else {
+    if (typeof meta.id !== 'string' || !meta.id) fail('Invalid meta.id');
+    if (typeof meta.name !== 'string') fail('Invalid meta.name');
+  }
+
+  if (!Array.isArray(json.children)) {
+    fail('Missing child list');
+    return { errors };
+  }
+  const children = parseChildren(json.children as Record<string, unknown>[], fail);
+  const lines = parseLines(json.lines, fail);
+
+  if (errors.length > 0 || !meta) return { errors };
+
+  const now = new Date().toISOString();
+  return {
+    errors,
+    doc: {
       version: COMPOSITE_SCHEMA_VERSION,
       kind: 'composite',
       meta: {
-        id: meta.id,
-        name: meta.name,
+        id: meta.id as string,
+        name: meta.name as string,
         createdAt: typeof meta.createdAt === 'string' ? meta.createdAt : now,
         updatedAt: typeof meta.updatedAt === 'string' ? meta.updatedAt : now,
         ...(typeof meta.boxMode === 'boolean' ? { boxMode: meta.boxMode } : {}),
@@ -149,82 +169,152 @@ export class CompositeSerializer {
       },
       children,
       lines
+    }
+  };
+}
+
+/** Validate the child list; a child with any problem is reported and left out. */
+function parseChildren(rawChildren: Record<string, unknown>[], fail: Fail): DiagramInstanceJson[] {
+  const ids = new Set<string>();
+  const children: DiagramInstanceJson[] = [];
+  for (const child of rawChildren) {
+    if (typeof child?.id !== 'string' || !child.id) {
+      fail('Child without id');
+      continue;
+    }
+    const id = child.id;
+    let ok = true;
+    const childFail: Fail = (msg) => {
+      ok = false;
+      fail(msg);
     };
+    if (ids.has(id)) childFail(`Duplicate child id: ${id}`);
+    ids.add(id);
+    if (typeof child.libraryId !== 'string' || !child.libraryId) {
+      childFail(`Child ${id}: invalid libraryId`);
+    }
+    if (!isFinite(child.x) || !isFinite(child.y) || !isFinite(child.angleDeg)) {
+      childFail(`Child ${id}: invalid transform`);
+    }
+    if (child.labelAnchor !== undefined && !LABEL_ANCHORS.includes(child.labelAnchor as LabelAnchor)) {
+      childFail(`Child ${id}: invalid labelAnchor`);
+    }
+    if (child.labelDirection !== undefined && !isFinite(child.labelDirection)) {
+      childFail(`Child ${id}: invalid labelDirection`);
+    }
+    const portDirections = parsePortDirections(child.portDirections, id, childFail);
+    if (!ok) continue;
+    children.push({
+      id,
+      libraryId: child.libraryId as string,
+      x: round2(child.x as number),
+      y: round2(child.y as number),
+      angleDeg: normalizeAngle(child.angleDeg as number),
+      labelAnchor: (child.labelAnchor as LabelAnchor | undefined) ?? 'top-left',
+      labelDirection: normalizeQuarterTurn((child.labelDirection as number | undefined) ?? 0),
+      ...(portDirections ? { portDirections } : {})
+    });
+  }
+  return children;
+}
+
+/**
+ * Validate a child's feeder exit-direction pins: an object mapping connection
+ * ids to one of the four {@link ExternalDirection}s. Returns `undefined` when
+ * absent or empty (so it's omitted from the roundtrip, like an unset pin).
+ */
+function parsePortDirections(
+  input: unknown,
+  childId: string,
+  fail: Fail
+): Record<string, ExternalDirection> | undefined {
+  if (input === undefined) return undefined;
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    fail(`Child ${childId}: invalid portDirections`);
+    return undefined;
+  }
+  const out: Record<string, ExternalDirection> = {};
+  for (const [connectionId, dir] of Object.entries(input as Record<string, unknown>)) {
+    if (!EXTERNAL_DIRECTIONS.includes(dir as ExternalDirection)) {
+      fail(`Child ${childId}: invalid port direction "${String(dir)}" for ${connectionId}`);
+      continue;
+    }
+    out[connectionId] = dir as ExternalDirection;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * Validate the manual-line list; a line with any problem is reported and left
+ * out. Anchors may reference missing children — like dangling `libraryId`s,
+ * they simply don't resolve at layout time.
+ */
+function parseLines(input: unknown, fail: Fail): CompositeLineJson[] {
+  if (input === undefined) return [];
+  if (!Array.isArray(input)) {
+    fail('Invalid line list');
+    return [];
   }
 
-  /**
-   * Validate a child's feeder exit-direction pins: an object mapping connection
-   * ids to one of the four {@link ExternalDirection}s. Returns `undefined` when
-   * absent or empty (so it's omitted from the roundtrip, like an unset pin).
-   */
-  private static validatePortDirections(input: unknown, childId: string): Record<string, ExternalDirection> | undefined {
-    if (input === undefined) return undefined;
-    if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-      throw new SldParseError(`Child ${childId}: invalid portDirections`);
+  const ids = new Set<string>();
+  const lines: CompositeLineJson[] = [];
+  for (const raw of input as Record<string, unknown>[]) {
+    if (typeof raw?.id !== 'string' || !raw.id) {
+      fail('Line without id');
+      continue;
     }
-    const out: Record<string, ExternalDirection> = {};
-    for (const [connectionId, dir] of Object.entries(input as Record<string, unknown>)) {
-      if (!EXTERNAL_DIRECTIONS.includes(dir as ExternalDirection)) {
-        throw new SldParseError(`Child ${childId}: invalid port direction "${String(dir)}" for ${connectionId}`);
-      }
-      out[connectionId] = dir as ExternalDirection;
+    const id = raw.id;
+    let ok = true;
+    const lineFail: Fail = (msg) => {
+      ok = false;
+      fail(msg);
+    };
+    if (ids.has(id)) lineFail(`Duplicate line id: ${id}`);
+    ids.add(id);
+    if (raw.kind !== undefined && (typeof raw.kind !== 'string' || !raw.kind)) {
+      lineFail(`Line ${id}: invalid kind`);
     }
-    return Object.keys(out).length ? out : undefined;
-  }
-
-  /**
-   * Validate the manual-line list. Anchors may reference missing children —
-   * like dangling `libraryId`s, they simply don't resolve at layout time.
-   */
-  private static validateLines(input: unknown): CompositeLineJson[] {
-    if (input === undefined) return [];
-    if (!Array.isArray(input)) throw new SldParseError('Invalid line list');
-
-    const ids = new Set<string>();
-    const lines: CompositeLineJson[] = [];
-    for (const raw of input as Record<string, unknown>[]) {
-      if (typeof raw?.id !== 'string' || !raw.id) throw new SldParseError('Line without id');
-      if (ids.has(raw.id)) throw new SldParseError(`Duplicate line id: ${raw.id}`);
-      ids.add(raw.id);
-      if (raw.kind !== undefined && (typeof raw.kind !== 'string' || !raw.kind)) {
-        throw new SldParseError(`Line ${raw.id}: invalid kind`);
-      }
-      if (raw.routing !== undefined && (typeof raw.routing !== 'string' || !raw.routing)) {
-        throw new SldParseError(`Line ${raw.id}: invalid routing`);
-      }
-      if (!Array.isArray(raw.vertices) || raw.vertices.length < 2) {
-        throw new SldParseError(`Line ${raw.id}: needs at least two vertices`);
-      }
-      const vertices: LineVertexJson[] = [];
-      for (const v of raw.vertices as Record<string, unknown>[]) {
-        if (v?.kind === 'point') {
-          if (!isFinite(v.x) || !isFinite(v.y)) throw new SldParseError(`Line ${raw.id}: invalid point vertex`);
-          vertices.push({ kind: 'point', x: round2(v.x as number), y: round2(v.y as number) });
-        } else if (v?.kind === 'rel') {
-          if (!isFinite(v.t) || !isFinite(v.ox) || !isFinite(v.oy)) {
-            throw new SldParseError(`Line ${raw.id}: invalid rel vertex`);
-          }
-          vertices.push({ kind: 'rel', t: round2(v.t as number), ox: round2(v.ox as number), oy: round2(v.oy as number) });
-        } else if (v?.kind === 'anchor') {
-          if (typeof v.instanceId !== 'string' || !v.instanceId || typeof v.connectionId !== 'string' || !v.connectionId) {
-            throw new SldParseError(`Line ${raw.id}: invalid anchor vertex`);
-          }
-          vertices.push({ kind: 'anchor', instanceId: v.instanceId, connectionId: v.connectionId });
+    if (raw.routing !== undefined && (typeof raw.routing !== 'string' || !raw.routing)) {
+      lineFail(`Line ${id}: invalid routing`);
+    }
+    if (!Array.isArray(raw.vertices) || raw.vertices.length < 2) {
+      lineFail(`Line ${id}: needs at least two vertices`);
+      continue;
+    }
+    const vertices: LineVertexJson[] = [];
+    for (const v of raw.vertices as Record<string, unknown>[]) {
+      if (v?.kind === 'point') {
+        if (!isFinite(v.x) || !isFinite(v.y)) lineFail(`Line ${id}: invalid point vertex`);
+        else vertices.push({ kind: 'point', x: round2(v.x), y: round2(v.y) });
+      } else if (v?.kind === 'rel') {
+        if (!isFinite(v.t) || !isFinite(v.ox) || !isFinite(v.oy)) lineFail(`Line ${id}: invalid rel vertex`);
+        else vertices.push({ kind: 'rel', t: round2(v.t), ox: round2(v.ox), oy: round2(v.oy) });
+      } else if (v?.kind === 'anchor') {
+        if (
+          typeof v.instanceId !== 'string' ||
+          !v.instanceId ||
+          typeof v.connectionId !== 'string' ||
+          !v.connectionId
+        ) {
+          lineFail(`Line ${id}: invalid anchor vertex`);
         } else {
-          throw new SldParseError(`Line ${raw.id}: unknown vertex kind`);
+          vertices.push({ kind: 'anchor', instanceId: v.instanceId, connectionId: v.connectionId });
         }
+      } else {
+        lineFail(`Line ${id}: unknown vertex kind`);
       }
-      lines.push({
-        id: raw.id,
-        kind: (raw.kind as string | undefined) ?? DEFAULT_LINE_KIND,
-        ...(raw.routing !== undefined ? { routing: raw.routing as string } : {}),
-        vertices,
-        // Opaque, consumer-owned: passed through untouched, never validated.
-        ...(raw.data !== undefined ? { data: raw.data } : {})
-      });
     }
-    return lines;
+    if (!ok) continue;
+    lines.push({
+      id,
+      kind: (raw.kind as string | undefined) ?? DEFAULT_LINE_KIND,
+      ...(raw.routing !== undefined ? { routing: raw.routing as string } : {}),
+      vertices,
+      // Opaque, consumer-owned: passed through untouched, never validated.
+      ...(raw.data !== undefined ? { data: raw.data } : {})
+    });
   }
+  return lines;
 }
 
 function isFinite(v: unknown): v is number {

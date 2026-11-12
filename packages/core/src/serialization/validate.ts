@@ -1,17 +1,9 @@
-import type { ElementJson, Endpoint, ExternalAssetKind, SldDocumentJson } from '../types';
+import { EXTERNAL_ASSET_KINDS } from '../types';
+import type { ElementJson, Endpoint, SldDocumentJson } from '../types';
 
 export const SLD_SCHEMA_VERSION = 2;
 
-const EXTERNAL_ASSETS: ExternalAssetKind[] = [
-  'line',
-  'transformer',
-  'transformer3w',
-  'renewable',
-  'storage',
-  'demand',
-  'reactor',
-  'machine'
-];
+const EXTERNAL_ASSETS: readonly string[] = EXTERNAL_ASSET_KINDS;
 
 /**
  * Thrown by `Serializer.fromJSON` on malformed input, and collected (not
@@ -259,7 +251,7 @@ function validateEndpoint(ep: unknown, connId: string, side: 'from' | 'to', fail
   }
   if (e.kind === 'external') {
     const ext = e as { asset?: unknown; label?: unknown; direction?: unknown; side?: unknown; branch?: unknown };
-    if (!EXTERNAL_ASSETS.includes(ext.asset as ExternalAssetKind)) {
+    if (!EXTERNAL_ASSETS.includes(ext.asset as string)) {
       fail(`Connection ${connId}: unknown external asset "${ext.asset}"`);
     }
     if (typeof ext.label !== 'string') {

@@ -17,7 +17,7 @@
   import Zap from 'lucide-svelte/icons/zap';
   import Tag from 'lucide-svelte/icons/tag';
   import X from 'lucide-svelte/icons/x';
-  import type { PositionType } from '@sld-kit/core';
+  import { DEFAULT_POSITION_TYPES, type PositionType } from '@sld-kit/core';
   import MatrixCreatorFlyout from './MatrixCreatorFlyout.svelte';
   import ExportFlyout from './ExportFlyout.svelte';
   import PositionTypeFlyout from './PositionTypeFlyout.svelte';
@@ -42,15 +42,7 @@
   /** Label-visibility mode, owned by the editor. */
   export let labelMode: 'all' | 'topology' | 'none' = 'all';
   /** Selectable position types for the type flyout. */
-  export let positionTypes: PositionType[] = [
-    'line',
-    'transformer',
-    'central',
-    'renewable',
-    'reserve',
-    'storage',
-    'demand'
-  ];
+  export let positionTypes: PositionType[] = [...DEFAULT_POSITION_TYPES];
   /** Label per position type (hint bar + type flyout). */
   export let positionTypeLabels: Record<string, string> = DEFAULT_POSITION_TYPE_LABELS;
   /** Toolbar UI strings. */

@@ -125,8 +125,8 @@ autoWire(doc); // series-wires every bay to its column, spawns each feeder…
 
 `autoWire(doc, { externals })` is the batch form of `AddPositionCommand`: it adds
 every series connection (bar↔bay, bay↔bay) each column needs and, unless
-`externals: false`, the outgoing feeder for each external-typed bay
-(`line`/`transformer`/`renewable`/`storage`/`demand`/`reactor`/`machine`). It never double-wires a
+`externals: false`, the outgoing feeder for each external-typed bay (the
+`EXTERNAL_POSITION_TYPES`: `line`/`transformer`/`renewable`/`storage`/`demand`/`reactor`/`machine`). It never double-wires a
 link, so it can top up a partially-wired document. It mutates directly (a
 construction step, not an undoable edit); reach for `AddPositionCommand` when you
 need one interactive, undoable insertion instead.
@@ -207,7 +207,11 @@ buildDocument({
 
 External assets are `line`, `transformer`, `transformer3w`, `renewable`,
 `storage`, `demand`, `reactor` (a shunt reactor, drawn as an inductor coil) and
-`machine` (a synchronous machine, drawn as a circle with "SM").
+`machine` (a synchronous machine, drawn as a circle with "SM"). Build pickers
+from the exported, ordered `EXTERNAL_ASSET_KINDS` (and position-type pickers
+from `DEFAULT_POSITION_TYPES`) rather than a hand-written list, so a future kind
+shows up everywhere at once. `EXTERNAL_POSITION_TYPES` lists the bay types that
+auto-spawn the external of the same name.
 
 ### Three-winding transformers (`transformer3w`)
 
@@ -230,6 +234,17 @@ while the branch ties to a 33 kV one. Give each document's branch an id only its
 intended peer shares. `connectionForExternalId(doc, id)` finds the connection
 behind either kind of id. A long feeder label on
 an outer column widens that side of the canvas just enough to stay visible.
+
+When a properties dialog edits an existing external endpoint, rebuild it with
+`updateExternal(prev, { asset, label, direction?, side?, branchLabel? })`
+instead of by hand: it keeps a `transformer3w`'s branch id (and label, unless a
+new one is given), mints a branch when switching *to* `transformer3w`, and drops
+it when switching away — so the saved document always validates.
+
+```ts
+const prev = json.to.kind === 'external' ? json.to : undefined; // json: a ConnectionJson
+json.to = updateExternal(prev, { asset: 'transformer3w', label: '220 kV' });
+```
 
 Start without ids or data (ids are generated) and add them as you enrich the
 model. Explicit ids must be unique, and core catches clashes where they happen:
@@ -329,8 +344,9 @@ it's absent, the bay is closed. Switching state is part of the electrical model
 
 ## Open position types
 
-The five defaults — `line`, `transformer`, `central`, `renewable`, `reserve` —
-are suggestions, not a closed set. `PositionType` accepts **any string**, so you
+The defaults (`DEFAULT_POSITION_TYPES`) — `line`, `transformer`, `central`,
+`renewable`, `reserve`, `storage`, `demand`, `reactor`, `machine` — are
+suggestions, not a closed set. `PositionType` accepts **any string**, so you
 can model domain-specific bays:
 
 ```ts
@@ -489,11 +505,53 @@ self-correcting generated JSON), use the non-throwing validators that return the
 ```ts
 const { ok, errors } = Serializer.check(untrustedJson); // errors: SldParseError[]
 const liveErrors = doc.validate();                      // same rules, in-memory doc
+const composite = CompositeSerializer.check(untrustedComposite); // same shape, for composites
 ```
+
+`CompositeSerializer.check` is the composite twin: it lists every problem with
+the children, port pins and manual lines in one pass. Only a few problems stop
+it early, because nothing else can be checked: input that isn't an object, a
+missing or too-new `version`, a `kind` other than `'composite'`, or a missing
+`children` list. `CompositeSerializer.validate` / `fromJSON` still throw, and
+they throw the first error `check` reports.
 
 `SldDocument` mutations are intentionally not validated on the fly (an editor
 passes through transiently-invalid states while dragging), so call `validate()`
 when you want to check — e.g. before an export or a save.
+
+### Batch import
+
+`ImportPlan` plans an import of many diagram and composite files at once, such
+as a whole folder. It is pure and storage-free. Per file, it:
+
+- reports `Invalid JSON: …`, or every validation error (through the two
+  `check`s);
+- warns about an id seen earlier in the batch and a name already in your library;
+- gives every valid document a fresh id, so an import never overwrites;
+- relinks composite children to the new ids of the batch's diagrams, keeps
+  children already in your library, and warns about the rest.
+
+Saving stays yours, and the flow is two-step so a composite only relinks to
+diagrams that were actually saved:
+
+```ts
+const plan = new ImportPlan({ existingIds, existingNames }); // anything with has(): a Set, a storage lookup…
+for (const file of files) plan.add({ path: file.name, text: isJson ? await file.text() : undefined });
+const diagrams = plan.diagrams(); // re-identified JSON, ready to persist
+save(diagrams).forEach((outcome, i) => plan.markSaved(diagrams[i], outcome)); // { ok } | { ok: false, error }
+const composites = plan.composites(); // relinked to the diagrams that saved
+save(composites).forEach((outcome, i) => plan.markSaved(composites[i], outcome));
+const results = plan.results(); // one per file, in input order
+```
+
+- **Statuses:** each result's `status` is `imported`, `warning` (imported, with
+  messages), `error` or `skipped` (a file passed without `text`).
+- **`add()` is synchronous:** you can yield between files to repaint a
+  progress bar.
+- **One-shot:** `planImport(inputs, context)` adds them all at once. A diagram
+  you never mark counts as saved.
+- **What stays in your app:** reading files (filtering dotfiles), persisting,
+  handling full storage, and the UI.
 
 ## API surface
 
