@@ -201,9 +201,14 @@ export interface CompositeToolbarLabels {
   colorMode: string;
   /** Label-visibility cycle button; receives the active mode. */
   labelMode: (mode: 'all' | 'topology' | 'none') => string;
+  /**
+   * Asset-legend toggle. Optional: the button only shows when the editor passes
+   * `legendOpen`, so apps without a legend can leave it out (English default).
+   */
+  legend?: string;
 }
 
-export const DEFAULT_COMPOSITE_TOOLBAR_LABELS: CompositeToolbarLabels = {
+export const DEFAULT_COMPOSITE_TOOLBAR_LABELS: Required<CompositeToolbarLabels> = {
   fit: 'Zoom to fit (Shift+1)',
   export: 'Export',
   select: 'Select',
@@ -219,7 +224,47 @@ export const DEFAULT_COMPOSITE_TOOLBAR_LABELS: CompositeToolbarLabels = {
       ? 'Labels: all (click to hide names)'
       : mode === 'topology'
         ? 'Labels: bus bars & lines (click to hide all)'
-        : 'Labels: hidden (click to show all)'
+        : 'Labels: hidden (click to show all)',
+  legend: 'Asset legend'
+};
+
+/** Strings for `AssetLegend` (the position-count card). */
+export interface AssetLegendLabels {
+  heading: string;
+  /** Header of the totals row / column. */
+  total: string;
+  /** Header of the count column when there is no category axis. */
+  count: string;
+  /** Shown when there is nothing to count. */
+  empty: string;
+  /** Column label for positions the consumer's `category` callback left untagged. */
+  uncategorised: string;
+  close: string;
+  /** Footnote for unresolved composite children, which are not counted. */
+  unresolved: (count: number) => string;
+}
+
+export const DEFAULT_ASSET_LEGEND_LABELS: AssetLegendLabels = {
+  heading: 'Assets',
+  total: 'Total',
+  count: 'Count',
+  empty: 'No positions yet',
+  uncategorised: 'Other',
+  close: 'Close',
+  unresolved: (n) => `${n} ${n !== 1 ? 'diagrams' : 'diagram'} not found — not counted`
+};
+
+/** Short per-type names for the legend rows (the type string is the fallback). */
+export const DEFAULT_ASSET_LEGEND_TYPE_LABELS: Record<string, string> = {
+  line: 'Line',
+  transformer: 'Transformer',
+  central: 'Central',
+  renewable: 'Renewable',
+  reserve: 'Reserve',
+  storage: 'Storage',
+  demand: 'Demand',
+  reactor: 'Reactor',
+  machine: 'Machine'
 };
 
 /** Fallback text for a composite child whose diagram can't be resolved. */

@@ -27,6 +27,8 @@ export { MatrixCreatorFlyout, type MatrixCreatorFlyoutProps } from './MatrixCrea
 export { ExportFlyout, type ExportFlyoutProps } from './ExportFlyout';
 export { ExternalAssetPopover, type ExternalAssetPopoverProps } from './ExternalAssetPopover';
 export { LaneActionChip, type LaneActionChipProps } from './LaneActionChip';
+export { AssetLegend, type AssetLegendProps } from './AssetLegend';
+export type { AssetLegendCategory, AssetLegendTally } from './legend';
 
 // ── Composite ("diagram of diagrams") canvas primitives ───────────────────
 export { CompositeCanvas, type CompositeCanvasProps, type CompositeCanvasHandle } from './composite/CompositeCanvas';
@@ -71,6 +73,8 @@ export {
   DEFAULT_LANE_ACTION_CHIP_LABELS,
   DEFAULT_COMPOSITE_TOOLBAR_LABELS,
   DEFAULT_CHILD_NOT_FOUND,
+  DEFAULT_ASSET_LEGEND_LABELS,
+  DEFAULT_ASSET_LEGEND_TYPE_LABELS,
   type PositionTokens,
   type SldToolbarLabels,
   type PositionTypeFlyoutLabels,
@@ -79,5 +83,6 @@ export {
   type ExternalAssetPopoverLabels,
   type LaneOverlayLabels,
   type LaneActionChipLabels,
-  type CompositeToolbarLabels
+  type CompositeToolbarLabels,
+  type AssetLegendLabels
 } from './labels';

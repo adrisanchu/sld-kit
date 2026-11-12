@@ -5,6 +5,7 @@ import {
   Maximize,
   MousePointer2,
   Redo2,
+  Sigma,
   Spline,
   Tag,
   Trash2,
@@ -28,6 +29,8 @@ export interface CompositeToolbarProps {
   drawActive?: boolean;
   colorMode?: ColorMode;
   labelMode?: LabelMode;
+  /** Whether the asset legend is open (owned by the editor); highlights the toggle. */
+  legendOpen?: boolean;
   labels?: Partial<CompositeToolbarLabels>;
   exportLabels?: Partial<ExportFlyoutLabels>;
 
@@ -43,6 +46,8 @@ export interface CompositeToolbarProps {
   onExportSvg?: () => void;
   onSetColorMode?: (mode: ColorMode) => void;
   onSetLabelMode?: (mode: LabelMode) => void;
+  /** Show / hide the asset legend. The toggle only renders when this is passed. */
+  onToggleLegend?: () => void;
 }
 
 const NEXT_LABEL_MODE: Record<LabelMode, LabelMode> = { all: 'topology', topology: 'none', none: 'all' };
@@ -60,7 +65,8 @@ const divider = 'mx-1 h-5 w-px shrink-0 bg-border';
 /**
  * Deliberately poorer than `SldToolbar`: the composite editor has no
  * position/bus-bar/connection drawing tools. Only Import, Select, Draw line,
- * Remove selected, name placement, Undo/Redo, Zoom-to-fit and Export.
+ * Remove selected, name placement, Undo/Redo, Zoom-to-fit, Export and (opt-in)
+ * the asset legend.
  */
 export function CompositeToolbar({
   userRole = 'viewer',
@@ -71,6 +77,7 @@ export function CompositeToolbar({
   drawActive = false,
   colorMode = 'by-type',
   labelMode = 'all',
+  legendOpen = false,
   labels,
   exportLabels,
   onImport,
@@ -83,7 +90,8 @@ export function CompositeToolbar({
   onExportJson,
   onExportSvg,
   onSetColorMode,
-  onSetLabelMode
+  onSetLabelMode,
+  onToggleLegend
 }: CompositeToolbarProps) {
   useSldAnimations();
   const L = useMemo(() => ({ ...DEFAULT_COMPOSITE_TOOLBAR_LABELS, ...labels }), [labels]);
@@ -174,6 +182,20 @@ export function CompositeToolbar({
               {labelMode === 'none' && <path d="m2 22 20 -20" strokeWidth="2.5" />}
             </Tag>
           </button>
+
+          {/* Asset legend (position counts) — opt-in, available to viewers too. */}
+          {onToggleLegend && (
+            <button
+              type="button"
+              title={L.legend}
+              aria-pressed={legendOpen}
+              className={`${btnBase} ${legendOpen ? btnActive : btnIdle}`}
+              onClick={() => onToggleLegend()}
+            >
+              <span className="sr-only">{L.legend}</span>
+              <Sigma className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         {/* Edit cluster: mutation tools. */}

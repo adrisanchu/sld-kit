@@ -8,7 +8,7 @@
  * maps it to a generic `ElementFormat`. Swap this file to style by anything else
  * (a CIM class, a voltage, a date bucket) without touching the library.
  */
-import type { SldElement, ElementFormat } from '@sld-kit/core';
+import type { SldElement, ElementFormat, Position } from '@sld-kit/core';
 import { COMMISSIONING_FORMATS } from './theme';
 
 /**
@@ -57,4 +57,13 @@ export function withCommissioning(data: unknown, info: CommissioningInfo | undef
 export function commissioningResolver(el: SldElement): ElementFormat | undefined {
   const category = getCommissioning(el)?.category;
   return category ? COMMISSIONING_FORMATS[category] : undefined;
+}
+
+/**
+ * The app's counting policy for the asset legend (`tallyComposite`'s `category`):
+ * an untagged position counts as `existing`, matching the canvas, where an
+ * absent or `existing` category renders the same.
+ */
+export function commissioningCategory(pos: Position): string {
+  return getCommissioning(pos)?.category ?? 'existing';
 }

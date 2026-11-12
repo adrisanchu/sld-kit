@@ -25,6 +25,8 @@ export { default as MatrixCreatorFlyout } from './MatrixCreatorFlyout.svelte';
 export { default as ExportFlyout } from './ExportFlyout.svelte';
 export { default as ExternalAssetPopover } from './ExternalAssetPopover.svelte';
 export { default as LaneActionChip } from './LaneActionChip.svelte';
+export { default as AssetLegend } from './AssetLegend.svelte';
+export type { AssetLegendCategory, AssetLegendTally } from './legend';
 
 // ── Composite ("diagram of diagrams") canvas primitives ───────────────────
 export { default as CompositeCanvas } from './composite/CompositeCanvas.svelte';
@@ -60,6 +62,8 @@ export {
   DEFAULT_LANE_ACTION_CHIP_LABELS,
   DEFAULT_COMPOSITE_TOOLBAR_LABELS,
   DEFAULT_CHILD_NOT_FOUND,
+  DEFAULT_ASSET_LEGEND_LABELS,
+  DEFAULT_ASSET_LEGEND_TYPE_LABELS,
   type PositionTokens,
   type SldToolbarLabels,
   type PositionTypeFlyoutLabels,
@@ -68,5 +72,6 @@ export {
   type ExternalAssetPopoverLabels,
   type LaneOverlayLabels,
   type LaneActionChipLabels,
-  type CompositeToolbarLabels
+  type CompositeToolbarLabels,
+  type AssetLegendLabels
 } from './labels';

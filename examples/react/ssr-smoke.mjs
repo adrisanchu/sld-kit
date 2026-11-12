@@ -15,7 +15,8 @@ import {
   LayoutEngine,
   MapResolver,
   Serializer,
-  buildDocument
+  buildDocument,
+  tallyComposite
 } from '@sld-kit/core';
 import {
   SldCanvas,
@@ -25,6 +26,7 @@ import {
   CompositeCanvas,
   CompositeExplorer,
   CompositeToolbar,
+  AssetLegend,
   resolveViewStyle
 } from '@sld-kit/react';
 
@@ -296,6 +298,43 @@ const ctoolbar = renderToStaticMarkup(h(CompositeToolbar, { userRole: 'editor', 
 checks.push([
   'composite toolbar shows draw-line + import',
   ctoolbar.includes('Draw line') && ctoolbar.includes('Import diagram')
+]);
+checks.push(['composite toolbar hides the legend toggle by default', !ctoolbar.includes('Asset legend')]);
+const ctoolbarLegend = renderToStaticMarkup(h(CompositeToolbar, { legendOpen: true, onToggleLegend: () => {} }));
+checks.push([
+  'composite toolbar shows the legend toggle (pressed) with onToggleLegend',
+  ctoolbarLegend.includes('Asset legend') && ctoolbarLegend.includes('aria-pressed="true"')
+]);
+
+// Asset legend: a type-only tally collapses to one count column, one row per type.
+const tally = tallyComposite(composite);
+const legend = renderToStaticMarkup(h(AssetLegend, { tally }));
+checks.push([
+  'asset legend lists every counted type with its token and the total',
+  tally.total > 0 &&
+    tally.types.every((t) => legend.includes(`sld-pos-${t}`)) &&
+    legend.includes('Count') &&
+    !legend.includes('Total')
+]);
+const crossTab = renderToStaticMarkup(
+  h(AssetLegend, {
+    // Both levels hold one transformer: tag level B's as "new" so both columns fill.
+    tally: {
+      ...tallyComposite(composite, { category: (p) => (levelB.getElement(p.id) ? 'new' : 'old') }),
+      unresolved: 1
+    },
+    categories: [
+      { key: 'old', label: 'Existing' },
+      { key: 'new', label: 'New', format: { dashArray: '6 3' } }
+    ]
+  })
+);
+checks.push([
+  'asset legend cross-tab: category columns, dashed swatch, totals, unresolved footnote',
+  crossTab.includes('Existing') &&
+    crossTab.includes('stroke-dasharray="6 3"') &&
+    crossTab.includes('Total') &&
+    crossTab.includes('1 diagram not found')
 ]);
 
 let failed = 0;

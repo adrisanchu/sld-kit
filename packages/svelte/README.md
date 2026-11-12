@@ -198,7 +198,7 @@ Exported default label maps (`DEFAULT_TOOLBAR_LABELS`,
 Components: `SldCanvas`, `PositionView`, `BusBarView`, `ConnectionView`,
 `GhostPreview`, `GridOverlay`, `LaneOverlay`, `SldToolbar`,
 `PositionTypeFlyout`, `MatrixCreatorFlyout`, `ExportFlyout`,
-`ExternalAssetPopover`, `LaneActionChip`, `CompositeCanvas`,
+`ExternalAssetPopover`, `LaneActionChip`, `AssetLegend`, `CompositeCanvas`,
 `CompositeToolbar`, `ChildDiagramView`, `SelectionFrame`.
 
 Utilities: `createPanZoom`, `createDocStore`, `downloadText`, `slugify`.
