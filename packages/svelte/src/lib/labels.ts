@@ -262,7 +262,9 @@ export const DEFAULT_ASSET_LEGEND_TYPE_LABELS: Record<string, string> = {
   renewable: 'Renewable',
   reserve: 'Reserve',
   storage: 'Storage',
-  demand: 'Demand'
+  demand: 'Demand',
+  reactor: 'Reactor',
+  machine: 'Machine'
 };
 
 /** Fallback text for a composite child whose diagram can't be resolved. */

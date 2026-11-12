@@ -218,7 +218,9 @@ export const SLD_LEGEND_TYPE_LABELS: Record<string, string> = {
   renewable: 'Renewable',
   reserve: 'Reserve',
   storage: 'Storage',
-  demand: 'Demand'
+  demand: 'Demand',
+  reactor: 'Reactor',
+  machine: 'Machine'
 };
 
 export const SLD_ASSET_LEGEND_LABELS: AssetLegendLabels = {
