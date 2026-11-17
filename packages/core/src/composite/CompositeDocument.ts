@@ -1,6 +1,6 @@
 import { newId } from '../ids';
 import type { ExternalDirection } from '../types';
-import { CompositeLine, type CompositeLineKind, type LineVertexJson } from './CompositeLine';
+import { CompositeLine, type CompositeLineKind, type LineNamePlacement, type LineVertexJson } from './CompositeLine';
 import type { LineRouting } from './routing';
 import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
 import type { DocumentResolver } from './DocumentResolver';
@@ -211,6 +211,18 @@ export class CompositeDocument {
     const line = this.lines.get(id);
     if (!line) return;
     line.data = data === undefined ? undefined : structuredClone(data);
+    this.emit({ type: 'lines', ids: [id] });
+  }
+
+  /**
+   * Name (or unname, with `undefined`/empty) a line and set where its name sits.
+   * Call it only through {@link SetLineNameCommand}.
+   */
+  setLineName(id: string, name: string | undefined, placement: LineNamePlacement | undefined): void {
+    const line = this.lines.get(id);
+    if (!line) return;
+    line.name = name || undefined;
+    line.namePlacement = placement ? { ...placement } : undefined;
     this.emit({ type: 'lines', ids: [id] });
   }
 

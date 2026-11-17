@@ -20,6 +20,10 @@ import {
   AddLineCommand,
   UpdateLineKindCommand,
   SetLineDataCommand,
+  SetLineNameCommand,
+  RemoveLineCommand,
+  DEFAULT_LINE_NAME_PLACEMENT,
+  type LineNamePlacement,
   SetBoxModeCommand,
   SetPortDirectionCommand,
   SetAutoFacingCommand,
@@ -1482,5 +1486,104 @@ describe('Auto-facing policy', () => {
     doc.updateMeta({ autoFacing: true });
     expect(CompositeSerializer.toJSON(doc).meta.autoFacing).toBe(true);
     expect(CompositeSerializer.fromJSON(cycle(CompositeSerializer.toJSON(doc))).meta.autoFacing).toBe(true);
+  });
+});
+
+describe('Line names', () => {
+  const PLACEMENT: LineNamePlacement = { along: 'start', side: 'below', orientation: 'perpendicular' };
+
+  function linked() {
+    const doc = buildSouthComposite();
+    doc.resolveChildren(resolver());
+    const engine = new CompositeLayoutEngine();
+    const link = engine.layout(doc).links.find((l) => l.connectionId === SHARED_LINK_ID)!;
+    return { doc, engine, link };
+  }
+
+  it('leaves an unnamed line\'s JSON unchanged (no name fields)', () => {
+    const json = CompositeSerializer.toJSON(buildSouthCompositeWithLine());
+    expect(json.lines[0]).not.toHaveProperty('name');
+    expect(json.lines[0]).not.toHaveProperty('namePlacement');
+  });
+
+  it('roundtrips a name and its placement', () => {
+    const doc = buildSouthCompositeWithLine();
+    const id = doc.allLines()[0].id;
+    doc.setLineName(id, 'L-400 kV West-South 1', PLACEMENT);
+    const json1 = CompositeSerializer.toJSON(doc);
+    expect(json1.lines[0].name).toBe('L-400 kV West-South 1');
+    expect(json1.lines[0].namePlacement).toEqual(PLACEMENT);
+    const back = CompositeSerializer.fromJSON(cycle(json1));
+    expect(back.getLine(id)!.name).toBe('L-400 kV West-South 1');
+    expect(back.getLine(id)!.namePlacement).toEqual(PLACEMENT);
+    expect(CompositeSerializer.toJSON(back)).toEqual(json1);
+  });
+
+  it('normalizes an empty name to unnamed and drops an orphan placement', () => {
+    const line = CompositeLine.fromJSON({
+      id: 'x',
+      vertices: [
+        { kind: 'point', x: 0, y: 0 },
+        { kind: 'point', x: 10, y: 0 }
+      ],
+      name: '',
+      namePlacement: PLACEMENT
+    });
+    expect(line.name).toBeUndefined();
+    const json = line.toJSON();
+    expect(json).not.toHaveProperty('name');
+    expect(json).not.toHaveProperty('namePlacement');
+  });
+
+  it('rejects an invalid name or placement', () => {
+    const json = cycle(CompositeSerializer.toJSON(buildSouthCompositeWithLine()));
+    json.lines[0].namePlacement = { along: 'middle', side: 'left', orientation: 'parallel' };
+    expect(() => CompositeSerializer.fromJSON(json)).toThrow(/invalid name placement/);
+    json.lines[0].namePlacement = undefined;
+    json.lines[0].name = 42;
+    expect(() => CompositeSerializer.fromJSON(json)).toThrow(/invalid name/);
+  });
+
+  it('SetLineNameCommand renames and moves the label, undoably', () => {
+    const doc = buildSouthCompositeWithLine();
+    const id = doc.allLines()[0].id;
+    const stack = new CommandStack<CompositeDocument>();
+    stack.execute(new SetLineNameCommand(id, {}, { name: 'Tie 1', placement: DEFAULT_LINE_NAME_PLACEMENT }), doc);
+    expect(doc.getLine(id)!.name).toBe('Tie 1');
+    stack.execute(
+      new SetLineNameCommand(id, { name: 'Tie 1', placement: DEFAULT_LINE_NAME_PLACEMENT }, { name: 'Tie 1', placement: PLACEMENT }),
+      doc
+    );
+    expect(doc.getLine(id)!.namePlacement).toEqual(PLACEMENT);
+    stack.undo(doc);
+    expect(doc.getLine(id)!.namePlacement).toEqual(DEFAULT_LINE_NAME_PLACEMENT);
+    stack.undo(doc);
+    expect(doc.getLine(id)!.name).toBeUndefined();
+    expect(doc.getLine(id)!.namePlacement).toBeUndefined();
+  });
+
+  it('fromLink materializes an auto-link as a named line with id = connection id', () => {
+    const { doc, engine, link } = linked();
+    const line = CompositeLine.fromLink(link, { name: 'Tie 1' });
+    expect(line.id).toBe(SHARED_LINK_ID);
+    expect(line.name).toBe('Tie 1');
+    expect(line.vertices).toEqual([
+      { kind: 'anchor', instanceId: link.a.instanceId, connectionId: SHARED_LINK_ID },
+      { kind: 'anchor', instanceId: link.b.instanceId, connectionId: SHARED_LINK_ID }
+    ]);
+
+    const stack = new CommandStack<CompositeDocument>();
+    stack.execute(new AddLineCommand(line), doc);
+    const after = engine.layout(doc);
+    // The line replaces the auto-link, drawn on exactly the same chord.
+    expect(after.links.map((l) => l.connectionId)).not.toContain(SHARED_LINK_ID);
+    const drawn = after.lines.find((l) => l.line.id === SHARED_LINK_ID)!;
+    expect(drawn.points).toEqual(link.points);
+
+    // Deleting the named line brings back the unnamed auto-link.
+    stack.execute(new RemoveLineCommand(SHARED_LINK_ID), doc);
+    expect(engine.layout(doc).links.map((l) => l.connectionId)).toContain(SHARED_LINK_ID);
+    stack.undo(doc);
+    expect(doc.getLine(SHARED_LINK_ID)!.name).toBe('Tie 1');
   });
 });
