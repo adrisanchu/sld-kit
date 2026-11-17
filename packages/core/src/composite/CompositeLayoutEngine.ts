@@ -8,7 +8,13 @@ import { LayoutEngine, type DiagramLayout } from '../layout/LayoutEngine';
 import { Transform2D } from '../layout/Transform2D';
 import type { Point, Rect } from '../layout/geometry';
 import { CompositeDocument } from './CompositeDocument';
-import { CompositeLine, type CompositeLineKind, type LineVertexJson } from './CompositeLine';
+import {
+  CompositeLine,
+  DEFAULT_LINE_NAME_PLACEMENT,
+  type CompositeLineKind,
+  type LineNamePlacement,
+  type LineVertexJson
+} from './CompositeLine';
 import { isOrthogonalRouting, routePolyline, type LineRouting } from './routing';
 import { chordFrame } from './lineFrame';
 import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
@@ -28,10 +34,13 @@ import {
   LINE_LABEL_LINE_HEIGHT,
   LINE_LABEL_OFFSET,
   LINE_LABEL_PAD,
+  LINE_NAME_ALONG_FRACTION,
+  LINE_NAME_FONT_SIZE,
+  LINE_NAME_OFFSET,
   TRANSFORMER_SYMBOL,
   TRANSFORMER3W_SYMBOL
 } from './layout-constants';
-import { arcMidpoint, segmentAngleDeg, simplify } from './polyline';
+import { arcMidpoint, pointAtFraction, readableAngle, segmentAngleDeg, simplify } from './polyline';
 import { resolveFormat, type ElementFormat, type ElementFormatResolver, type FormatContext } from '../theme';
 import { feederBoxCenter, layoutSectionBoxes, type BoxSectionsResolver, type SectionBox, type SectionTie } from './sections';
 
@@ -386,6 +395,8 @@ export interface CompositeLineLayout {
   terminus?: LineGlyph;
   /** Stacked text label beside the line — present only when the `lineLabels` resolver returns rows. */
   label?: LineLabelLayout;
+  /** The line's own name (`CompositeLine.name`), placed per its `namePlacement` — present only when named. */
+  nameLabel?: LineNameLayout;
   /**
    * Set only for `curved` routing: draw each bend as a circular arc of this
    * radius (pass it to `connectionPath`). `points` stay the sharp polyline, so
@@ -437,6 +448,112 @@ export function placeLineLabel(points: Point[], rows: readonly string[], clearan
     textAnchor: horizontal ? 'middle' : 'start',
     fontSize,
     box: { x: left - LINE_LABEL_PAD, y: top - LINE_LABEL_PAD, width: width + 2 * LINE_LABEL_PAD, height: height + 2 * LINE_LABEL_PAD }
+  };
+}
+
+/**
+ * A line's resolved name label. Renderers draw one `<text>` at `(x, y)` (its
+ * baseline origin) with `textAnchor`, rotated by `rotation` degrees about
+ * `(x, y)` — nothing to compute. `rotation` is always in `[-100, 80)` (see
+ * `readableAngle`), so the name reads left→right — bottom→top on a (near-)
+ * vertical run — whichever way the line was drawn.
+ */
+export interface LineNameLayout {
+  text: string;
+  x: number;
+  y: number;
+  /** Rotation about `(x, y)`, degrees: 0 for `horizontal`, else along/across the line. */
+  rotation: number;
+  textAnchor: 'start' | 'middle' | 'end';
+  fontSize: number;
+  /** World AABB of the (estimated) rotated text — for bounds/fit, not hit-testing. */
+  box: Rect;
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Place a line's name. Everything is measured in the line's **reading frame** —
+ * the polyline walked left→right (bottom→top when vertical), regardless of
+ * vertex order — so swapping the two diagrams a line joins re-derives the same
+ * visual spot and keeps the text readable:
+ *
+ *  - `along` picks the point at 20% / 50% / 80% of the arc length in reading order;
+ *  - `side` picks the normal pointing *above* the text read along the local
+ *    segment (up on a horizontal run, left on a vertical one) or its opposite;
+ *  - `orientation` rotates the text along the segment (`parallel`), across it
+ *    (`perpendicular`) or not at all (`horizontal`).
+ *
+ * The text keeps `LINE_NAME_OFFSET + clearance` between the stroke and its
+ * nearest edge (pass `clearance` to clear a glyph at that point). Text width is
+ * estimated (no DOM), so a `parallel` name is centred on its point while the
+ * other orientations anchor the edge nearest the line, keeping the gap exact.
+ */
+export function placeLineName(
+  points: Point[],
+  text: string,
+  placement: LineNamePlacement = DEFAULT_LINE_NAME_PLACEMENT,
+  clearance = 0
+): LineNameLayout | null {
+  if (!text || points.length < 2) return null;
+  const first = points[0];
+  const last = points[points.length - 1];
+  const cdx = last.x - first.x;
+  const cdy = last.y - first.y;
+  // Reading order: left→right; a vertical chord reads bottom→top.
+  const reversed = Math.abs(cdx) > 1e-6 ? cdx < 0 : cdy > 0;
+  const reading = reversed ? [...points].reverse() : points;
+  const at = pointAtFraction(reading, LINE_NAME_ALONG_FRACTION[placement.along]);
+  if (!at) return null;
+
+  const toRad = Math.PI / 180;
+  const segDeg = (Math.atan2(at.dy, at.dx) * 180) / Math.PI;
+  // "Above" = the up vector of text read along the local segment.
+  const along = readableAngle(segDeg) * toRad;
+  const above = { x: Math.sin(along), y: -Math.cos(along) };
+  const n = placement.side === 'above' ? above : { x: -above.x, y: -above.y };
+
+  const rotation =
+    placement.orientation === 'horizontal' ? 0 : placement.orientation === 'perpendicular' ? readableAngle(segDeg + 90) : readableAngle(segDeg);
+  const r = rotation * toRad;
+  const adv = { x: Math.cos(r), y: Math.sin(r) }; // text advance
+  const up = { x: Math.sin(r), y: -Math.cos(r) }; // baseline → cap
+
+  const fontSize = LINE_NAME_FONT_SIZE;
+  const w = text.length * fontSize * 0.6;
+  const h = fontSize;
+  const gap = LINE_NAME_OFFSET + clearance;
+  const advN = adv.x * n.x + adv.y * n.y;
+  const upN = Math.abs(up.x * n.x + up.y * n.y);
+
+  // Mostly-across-the-line text anchors its near edge at the gap (exact even if
+  // the width estimate is off); mostly-along text is centred on its point.
+  const centred = Math.abs(advN) < 0.5;
+  const reach = gap + (upN * h) / 2 + (centred ? (Math.abs(advN) * w) / 2 : 0);
+  const textAnchor: LineNameLayout['textAnchor'] = centred ? 'middle' : advN > 0 ? 'start' : 'end';
+  const q = { x: at.at.x + n.x * reach, y: at.at.y + n.y * reach }; // text centre (cap axis) at the anchor
+  // Baseline sits ≈0.35em below the glyph centre, along the text's own up axis.
+  const x = q.x - up.x * fontSize * 0.35;
+  const y = q.y - up.y * fontSize * 0.35;
+
+  // Estimated rotated text rect → world AABB.
+  const a0 = textAnchor === 'start' ? 0 : textAnchor === 'end' ? -w : -w / 2;
+  const corners = [a0, a0 + w].flatMap((s) =>
+    [-h / 2, h / 2].map((u) => ({ x: q.x + adv.x * s + up.x * u, y: q.y + adv.y * s + up.y * u }))
+  );
+  const xs = corners.map((c) => c.x);
+  const ys = corners.map((c) => c.y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+
+  return {
+    text,
+    x: round2(x),
+    y: round2(y),
+    rotation: round2(rotation) || 0,
+    textAnchor,
+    fontSize,
+    box: { x: minX, y: minY, width: Math.max(...xs) - minX, height: Math.max(...ys) - minY }
   };
 }
 
@@ -973,7 +1090,7 @@ export class CompositeLayoutEngine {
       layout.terminus = { key: DEMAND_SYMBOL, at: b, angleDeg: segmentAngleDeg(a, b) };
     }
 
-    return this.withLabel(layout);
+    return this.withName(this.withLabel(layout));
   }
 
   /** Attach the consumer's label rows (if any), clearing the transformer glyph. */
@@ -982,6 +1099,17 @@ export class CompositeLayoutEngine {
     if (!rows?.length) return layout;
     const label = placeLineLabel(layout.points, rows, layout.glyph ? LINE_LABEL_GLYPH_CLEARANCE : 0);
     if (label) layout.label = label;
+    return layout;
+  }
+
+  /** Attach the line's own name (if any), clearing the transformer glyph when it sits at the midpoint. */
+  private withName(layout: CompositeLineLayout): CompositeLineLayout {
+    const { name, namePlacement } = layout.line;
+    if (!name) return layout;
+    const placement = namePlacement ?? DEFAULT_LINE_NAME_PLACEMENT;
+    const clearance = layout.glyph && placement.along === 'middle' ? LINE_LABEL_GLYPH_CLEARANCE : 0;
+    const nameLabel = placeLineName(layout.points, name, placement, clearance);
+    if (nameLabel) layout.nameLabel = nameLabel;
     return layout;
   }
 
@@ -1138,7 +1266,7 @@ export class CompositeLayoutEngine {
       }
     }
 
-    return this.withLabel(layout);
+    return this.withName(this.withLabel(layout));
   }
 
   /** Every child's external connection tips in world coordinates — the legacy (fixed-connector) snap targets. */
@@ -1233,8 +1361,8 @@ export class CompositeLayoutEngine {
     for (const link of links) for (const p of link.points) extend(p);
     for (const line of lines) {
       for (const p of line.points) extend(p);
-      if (line.label) {
-        const b = line.label.box;
+      for (const b of [line.label?.box, line.nameLabel?.box]) {
+        if (!b) continue;
         extend({ x: b.x, y: b.y });
         extend({ x: b.x + b.width, y: b.y + b.height });
       }

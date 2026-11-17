@@ -139,7 +139,14 @@ export { chordFrame, type ChordFrame, type RelCoord } from './composite/lineFram
 export { Port, SIDE_VECTORS, sideAxis, sideFromAngle, rotateSide, facingSide, type BoxSide } from './composite/ports';
 export { OrthogonalRouter, type OrthogonalRouterOptions } from './composite/OrthogonalRouter';
 export { PortResolver, feederKey, type PortResolverOptions } from './composite/PortResolver';
-export { segmentAngleDeg, simplify, arcMidpoint } from './composite/polyline';
+export {
+  segmentAngleDeg,
+  simplify,
+  arcMidpoint,
+  pointAtFraction,
+  readableAngle,
+  VERTICAL_READING_TOLERANCE
+} from './composite/polyline';
 export {
   STUB_LENGTH,
   ALIGN_TOLERANCE,
@@ -150,6 +157,9 @@ export {
   BOX_SIZE,
   LINE_LABEL_FONT_SIZE,
   LINE_LABEL_LINE_HEIGHT,
+  LINE_NAME_FONT_SIZE,
+  LINE_NAME_OFFSET,
+  LINE_NAME_ALONG_FRACTION,
   DEMAND_LEAD_LENGTH,
   HANGING_ASSETS,
   CABLE_DASH_ARRAY,
@@ -182,6 +192,8 @@ export {
   type LineLabelLayout,
   type LineLabelResolver,
   placeLineLabel,
+  placeLineName,
+  type LineNameLayout,
   type LineGlyph,
   type ExternalConnectionTip,
   type CompositeLayout

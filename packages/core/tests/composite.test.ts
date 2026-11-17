@@ -23,6 +23,13 @@ import {
   SetLineNameCommand,
   RemoveLineCommand,
   DEFAULT_LINE_NAME_PLACEMENT,
+  LINE_NAME_ORIENTATIONS,
+  LINE_NAME_ALONGS,
+  LINE_NAME_SIDES,
+  LINE_NAME_OFFSET,
+  placeLineName,
+  readableAngle,
+  pointAtFraction,
   type LineNamePlacement,
   SetBoxModeCommand,
   SetPortDirectionCommand,
@@ -1585,5 +1592,209 @@ describe('Line names', () => {
     expect(engine.layout(doc).links.map((l) => l.connectionId)).toContain(SHARED_LINK_ID);
     stack.undo(doc);
     expect(doc.getLine(SHARED_LINK_ID)!.name).toBe('Tie 1');
+  });
+});
+
+describe('Line names — placement', () => {
+  const P = (along: LineNamePlacement['along'], side: LineNamePlacement['side'], orientation: LineNamePlacement['orientation']) => ({
+    along,
+    side,
+    orientation
+  });
+  const H = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 }
+  ];
+  const V = [
+    { x: 0, y: 0 },
+    { x: 0, y: 100 }
+  ];
+  const ALL = LINE_NAME_ALONGS.flatMap((a) => LINE_NAME_SIDES.flatMap((s) => LINE_NAME_ORIENTATIONS.map((o) => P(a, s, o))));
+  // Signed side of point p relative to the reading-frame "above" normal at the line point.
+  const reading = (pts: Point[]) => {
+    const [a, b] = [pts[0], pts[pts.length - 1]];
+    return Math.abs(b.x - a.x) > 1e-6 ? (b.x < a.x ? [...pts].reverse() : pts) : b.y > a.y ? [...pts].reverse() : pts;
+  };
+
+  it('readableAngle reads left→right, and bottom→top within 10° of vertical', () => {
+    expect(readableAngle(0)).toBe(0);
+    expect(readableAngle(90)).toBe(-90);
+    expect(readableAngle(-90)).toBe(-90);
+    expect(readableAngle(180)).toBe(0);
+    expect(readableAngle(135)).toBe(-45);
+    expect(readableAngle(-135)).toBe(45);
+    expect(readableAngle(270)).toBe(-90);
+    // A hand-drawn "vertical" leaning just past vertical still reads upward.
+    expect(readableAngle(-90.1)).toBeCloseTo(-90.1, 6);
+    expect(readableAngle(89.9)).toBeCloseTo(-90.1, 6);
+    expect(readableAngle(85)).toBe(-95);
+    expect(readableAngle(75)).toBe(75);
+  });
+
+  it('pointAtFraction walks arc length and skips zero-length segments', () => {
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 100 }
+    ];
+    expect(pointAtFraction(pts, 0.25)).toEqual({ at: { x: 50, y: 0 }, dx: 1, dy: 0 });
+    expect(pointAtFraction(pts, 0.75)).toEqual({ at: { x: 100, y: 50 }, dx: 0, dy: 1 });
+    expect(pointAtFraction([{ x: 1, y: 1 }], 0.5)).toBeNull();
+  });
+
+  it('a horizontal line: parallel name centred above / below, clearing the stroke', () => {
+    const above = placeLineName(H, 'Tie 1', P('middle', 'above', 'parallel'))!;
+    expect(above).toMatchObject({ rotation: 0, textAnchor: 'middle', x: 50 });
+    expect(above.box.y + above.box.height).toBeCloseTo(-LINE_NAME_OFFSET, 6);
+    const below = placeLineName(H, 'Tie 1', P('middle', 'below', 'parallel'))!;
+    expect(below.box.y).toBeCloseTo(LINE_NAME_OFFSET, 6);
+  });
+
+  it('a vertical line reads bottom→top, "above" on its left', () => {
+    const n = placeLineName(V, 'Tie 1', P('middle', 'above', 'parallel'))!;
+    expect(n.rotation).toBe(-90);
+    expect(n.box.x + n.box.width).toBeCloseTo(-LINE_NAME_OFFSET, 6);
+  });
+
+  it('perpendicular grows away from the line on the chosen side', () => {
+    const up = placeLineName(H, 'Tie 1', P('middle', 'above', 'perpendicular'))!;
+    expect(up).toMatchObject({ rotation: -90, textAnchor: 'start' });
+    expect(up.box.y + up.box.height).toBeCloseTo(-LINE_NAME_OFFSET, 6);
+    const down = placeLineName(H, 'Tie 1', P('middle', 'below', 'perpendicular'))!;
+    expect(down).toMatchObject({ rotation: -90, textAnchor: 'end' });
+    expect(down.box.y).toBeCloseTo(LINE_NAME_OFFSET, 6);
+  });
+
+  it('horizontal text beside a vertical line anchors its near edge at the gap', () => {
+    const left = placeLineName(V, 'Tie 1', P('middle', 'above', 'horizontal'))!;
+    expect(left).toMatchObject({ rotation: 0, textAnchor: 'end', x: -LINE_NAME_OFFSET });
+    const right = placeLineName(V, 'Tie 1', P('middle', 'below', 'horizontal'))!;
+    expect(right).toMatchObject({ rotation: 0, textAnchor: 'start', x: LINE_NAME_OFFSET });
+  });
+
+  it('start / end follow reading order, not vertex order', () => {
+    const rev = [...H].reverse();
+    expect(placeLineName(rev, 'T', P('start', 'above', 'parallel'))!.x).toBeCloseTo(20, 6);
+    expect(placeLineName(rev, 'T', P('end', 'above', 'parallel'))!.x).toBeCloseTo(80, 6);
+    expect(placeLineName(V, 'T', P('start', 'above', 'parallel'))!.box.y).toBeGreaterThan(50); // bottom part
+  });
+
+  it('every direction × placement: readable, swap-invariant, on the chosen side', () => {
+    const dirs = [0, 30, 45, 60, 88, 90, 92, 120, 135, 150, 180, 210, 225, 268, 270, 272, 315].map((deg) => {
+      const r = (deg * Math.PI) / 180;
+      return [
+        { x: 10, y: 20 },
+        { x: 10 + 200 * Math.cos(r), y: 20 + 200 * Math.sin(r) }
+      ];
+    });
+    for (const pts of dirs) {
+      for (const pl of ALL) {
+        const a = placeLineName(pts, 'Line 1', pl)!;
+        const b = placeLineName([...pts].reverse(), 'Line 1', pl)!;
+        // Swapping the ends changes nothing.
+        expect(b).toEqual(a);
+        expect(a.rotation).toBeGreaterThanOrEqual(-100);
+        expect(a.rotation).toBeLessThan(80);
+        if (pl.orientation === 'horizontal') expect(a.rotation).toBe(0);
+        // The label's centre sits on the requested side of the line.
+        const [p0, p1] = reading(pts);
+        const len = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+        const d = { x: (p1.x - p0.x) / len, y: (p1.y - p0.y) / len };
+        const rd = readableAngle((Math.atan2(d.y, d.x) * 180) / Math.PI) * (Math.PI / 180);
+        const above = { x: Math.sin(rd), y: -Math.cos(rd) };
+        const c = { x: a.box.x + a.box.width / 2, y: a.box.y + a.box.height / 2 };
+        const signed = (c.x - p0.x) * above.x + (c.y - p0.y) * above.y;
+        if (pl.side === 'above') expect(signed).toBeGreaterThan(0);
+        else expect(signed).toBeLessThan(0);
+      }
+    }
+  });
+
+  it('returns null for an empty name or a degenerate line', () => {
+    expect(placeLineName(H, '')).toBeNull();
+    expect(placeLineName([{ x: 0, y: 0 }], 'T')).toBeNull();
+  });
+});
+
+describe('Line names — layout + export', () => {
+  function named(placement?: LineNamePlacement, kind?: string) {
+    const doc = buildSouthComposite();
+    doc.resolveChildren(resolver());
+    const engine = new CompositeLayoutEngine();
+    const link = engine.layout(doc).links.find((l) => l.connectionId === SHARED_LINK_ID)!;
+    const line = CompositeLine.fromLink(link, { name: 'Tie 1', namePlacement: placement });
+    if (kind) line.kind = kind;
+    doc.addLine(line);
+    return { doc, engine };
+  }
+
+  it('legacy path: a named line carries a nameLabel inside the bounds', () => {
+    const { doc, engine } = named();
+    const layout = engine.layout(doc);
+    const ln = layout.lines.find((l) => l.line.id === SHARED_LINK_ID)!;
+    expect(ln.nameLabel).toMatchObject({ text: 'Tie 1' });
+    const b = ln.nameLabel!.box;
+    expect(b.x).toBeGreaterThanOrEqual(layout.bounds.x);
+    expect(b.y).toBeGreaterThanOrEqual(layout.bounds.y);
+    expect(b.x + b.width).toBeLessThanOrEqual(layout.bounds.x + layout.bounds.width + 1e-9);
+  });
+
+  it('an unnamed line has no nameLabel', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.resolveChildren(resolver());
+    for (const ln of new CompositeLayoutEngine().layout(doc).lines) expect(ln.nameLabel).toBeUndefined();
+  });
+
+  it('floating path (box view): a named line carries a nameLabel', () => {
+    const sub = (id: string, dir: ExternalDirection) =>
+      buildDocument({
+        meta: { id, name: id.toUpperCase(), substation: id, voltageKv: 220 },
+        busbars: [{ label: 'BB', row: 0 }],
+        bays: [{ col: 0, positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'T', direction: dir, id: 'tie' } }] }]
+      });
+    const doc = new CompositeDocument({ id: 'c', name: 'c', boxMode: true, defaultRouting: 'orthogonal' });
+    doc.addChild(DiagramInstance.of({ id: 'a', libraryId: 'a', x: 0, y: 0 }));
+    doc.addChild(DiagramInstance.of({ id: 'b', libraryId: 'b', x: 0, y: 400 }));
+    doc.resolveChildren(
+      new MapResolver(
+        new Map([
+          ['a', Serializer.toJSON(sub('a', 'down'))],
+          ['b', Serializer.toJSON(sub('b', 'up'))]
+        ])
+      )
+    );
+    const engine = new CompositeLayoutEngine();
+    const link = engine.layout(doc).links[0];
+    doc.addLine(CompositeLine.fromLink(link, { name: 'Tie 1' }));
+    const ln = engine.layout(doc).lines[0];
+    // A vertical tie: the parallel name reads bottom→top.
+    expect(ln.nameLabel).toMatchObject({ text: 'Tie 1', rotation: -90 });
+  });
+
+  it('a transformer line at the midpoint pushes its name clear of the glyph', () => {
+    const plain = named().engine.layout(named().doc).lines[0].nameLabel!;
+    const t = named(undefined, 'transformer');
+    const xf = t.engine.layout(t.doc).lines[0].nameLabel!;
+    expect(Math.hypot(xf.x - plain.x, xf.y - plain.y)).toBeGreaterThan(10);
+  });
+
+  it('exports the name as Office-safe rotated text; unnamed output is untouched', () => {
+    const { doc } = named({ along: 'middle', side: 'above', orientation: 'perpendicular' });
+    const svg = new CompositeSvgExporter().export(doc);
+    expect(svg).toContain('>Tie 1</text>');
+    expect(svg).toMatch(/<g transform="rotate\(-?\d/);
+    expect(svg).not.toContain('class=');
+    expect(svg).not.toContain('<style');
+
+    // Clearing the name restores the exact unnamed export.
+    const unnamed = buildSouthComposite();
+    unnamed.resolveChildren(resolver());
+    unnamed.addLine(CompositeLine.fromLink(new CompositeLayoutEngine().layout(unnamed).links.find((l) => l.connectionId === SHARED_LINK_ID)!));
+    const base = new CompositeSvgExporter().export(unnamed);
+    doc.setLineName(SHARED_LINK_ID, undefined, undefined);
+    expect(new CompositeSvgExporter().export(doc).replace(/\d{4}-\d\d-\d\dT[^"<]*/g, '')).toBe(
+      base.replace(/\d{4}-\d\d-\d\dT[^"<]*/g, '')
+    );
   });
 });

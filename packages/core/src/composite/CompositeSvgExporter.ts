@@ -16,7 +16,8 @@ import {
   type ChildLayout,
   type CompositeLineLayout,
   type LineGlyph,
-  type LineLabelLayout
+  type LineLabelLayout,
+  type LineNameLayout
 } from './CompositeLayoutEngine';
 import type { BoxSection } from './sections';
 
@@ -157,6 +158,7 @@ export class CompositeSvgExporter {
 
     // Line labels last, so a label beside a line is never hidden under a box.
     for (const line of layout.lines) if (line.label) this.renderLineLabel(b, line.label, theme);
+    for (const line of layout.lines) if (line.nameLabel) this.renderLineName(b, line.nameLabel, theme);
     for (const h of layout.hangers) {
       if (!h.label) continue;
       b.textElement(
@@ -201,6 +203,30 @@ export class CompositeSvgExporter {
     }
     b.open('g', { transform: `rotate(${rotation} ${x} ${y})` });
     b.textElement('text', attrs, child.name);
+    b.close();
+  }
+
+  /**
+   * A line's own name, rotated about its anchor (always readable, see
+   * `placeLineName`). Office-safe: plain `<text>` in a `rotate` group,
+   * presentation attributes only.
+   */
+  private renderLineName(b: SvgBuilder, name: LineNameLayout, theme: SldTheme): void {
+    const { x, y, textAnchor, rotation, fontSize, text } = name;
+    const attrs = {
+      x,
+      y,
+      'text-anchor': textAnchor,
+      'font-family': this.cfg.fontFamily,
+      'font-size': fontSize,
+      fill: theme.structure.label
+    };
+    if (rotation === 0) {
+      b.textElement('text', attrs, text);
+      return;
+    }
+    b.open('g', { transform: `rotate(${rotation} ${x} ${y})` });
+    b.textElement('text', attrs, text);
     b.close();
   }
 

@@ -52,3 +52,59 @@ export function arcMidpoint(points: Point[]): { at: Point; angleDeg: number } | 
   const b = points[points.length - 1];
   return { at: b, angleDeg: segmentAngleDeg(a, b) };
 }
+
+/**
+ * Point at fraction `t` (0–1, clamped) of the polyline's arc length, plus the
+ * unit direction `(dx, dy)` of the segment it lies on (zero-length segments are
+ * skipped). `null` for fewer than two points or a zero-length polyline.
+ */
+export function pointAtFraction(points: Point[], t: number): { at: Point; dx: number; dy: number } | null {
+  if (points.length < 2) return null;
+  const segs: { a: Point; b: Point; len: number }[] = [];
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len >= EPS) segs.push({ a, b, len });
+  }
+  if (segs.length === 0) return null;
+  const total = segs.reduce((sum, s) => sum + s.len, 0);
+  let target = Math.max(0, Math.min(1, t)) * total;
+  let seg = segs[segs.length - 1];
+  for (const s of segs) {
+    if (target <= s.len) {
+      seg = s;
+      break;
+    }
+    target -= s.len;
+  }
+  const f = Math.max(0, Math.min(1, target / seg.len));
+  const { a, b, len } = seg;
+  return {
+    at: { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f },
+    dx: (b.x - a.x) / len,
+    dy: (b.y - a.y) / len
+  };
+}
+
+/**
+ * How close to vertical (degrees) a run must be to read bottom→top. Hand-drawn
+ * "vertical" lines are rarely exact; without this band a run leaning 0.1° past
+ * vertical would flip its text to read top→bottom.
+ */
+export const VERTICAL_READING_TOLERANCE = 10;
+
+/**
+ * Normalize a text rotation (degrees, y down) so the text never reads
+ * upside-down: it reads left→right, and a run within
+ * {@link VERTICAL_READING_TOLERANCE} of vertical reads bottom→top. The result
+ * lies in `[-90 - tol, 90 - tol)`.
+ */
+export function readableAngle(deg: number): number {
+  let a = ((((deg + 180) % 360) + 360) % 360) - 180; // → [-180, 180)
+  if (a >= 90 - 1e-9) a -= 180;
+  else if (a < -90 - 1e-9) a += 180;
+  // → [-90, 90); then near-vertical down-ish runs read upward instead.
+  if (a >= 90 - VERTICAL_READING_TOLERANCE - 1e-9) a -= 180;
+  return a;
+}
