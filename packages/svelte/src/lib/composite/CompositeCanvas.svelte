@@ -400,6 +400,52 @@
     />
   {/each}
 
+  <!-- Line labels above the children (as in the export), tinted like their
+       line. Placement is computed by the core layout — rows + backing box. -->
+  {#each layout.lines as ln (ln.line.id)}
+    {#if ln.label}
+      {@const cls = lineColorClass(ln)}
+      <g class="pointer-events-none {cls ?? 'text-primary'}" style={cls ? 'color: hsl(var(--sld-pos))' : ''}>
+        <rect
+          x={ln.label.box.x}
+          y={ln.label.box.y}
+          width={ln.label.box.width}
+          height={ln.label.box.height}
+          rx={2}
+          class="fill-background"
+          fill-opacity={0.9}
+        />
+        {#each ln.label.rows as r}
+          <text
+            x={r.x}
+            y={r.y}
+            text-anchor={ln.label.textAnchor}
+            font-size={ln.label.fontSize}
+            font-weight={700}
+            fill="currentColor">{r.text}</text
+          >
+        {/each}
+      </g>
+    {/if}
+  {/each}
+
+  <!-- Line names above the children (as in the export): always on, always
+       readable — the core layout resolves position, anchor and rotation. -->
+  {#each layout.lines as ln (ln.line.id)}
+    {#if ln.nameLabel}
+      <text
+        x={ln.nameLabel.x}
+        y={ln.nameLabel.y}
+        text-anchor={ln.nameLabel.textAnchor}
+        font-size={ln.nameLabel.fontSize}
+        transform={ln.nameLabel.rotation
+          ? `rotate(${ln.nameLabel.rotation} ${ln.nameLabel.x} ${ln.nameLabel.y})`
+          : undefined}
+        class="sld-line-name pointer-events-none select-none fill-foreground">{ln.nameLabel.text}</text
+      >
+    {/if}
+  {/each}
+
   <!-- Selection (+ rotation) and hover chrome on top: one frame per child, its
        state in `data-state`. Styleable through its classes and CSS variables (see
        SelectionFrame); hide it with `.sld-selection { display: none }`. Keyed by

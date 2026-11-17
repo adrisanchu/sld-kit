@@ -27,6 +27,8 @@
   export let hasSelection: boolean = false;
   /** Whether a *child diagram* (not a line/link) is selected — gates the name button. */
   export let childSelected: boolean = false;
+  /** Whether a line or auto-link is selected — also enables the name button (for the line's name). */
+  export let lineSelected: boolean = false;
   /** Whether the draw-line tool is active (owned by the editor). */
   export let drawActive: boolean = false;
   /** Color mode, owned by the editor. */
@@ -42,12 +44,13 @@
   export let exportLabels: Partial<ExportFlyoutLabels> = {};
 
   $: L = { ...DEFAULT_COMPOSITE_TOOLBAR_LABELS, ...labels };
+  $: nameTitle = lineSelected && !childSelected ? L.editLineName : L.editLabel;
 
   const dispatch = createEventDispatcher<{
     import: void;
     drawline: void;
     delete: void;
-    /** Open the name-placement editor for the selected child. */
+    /** Open the name editor for the selection: the child's name placement, or the line's name. */
     editlabel: void;
     undo: void;
     redo: void;
@@ -215,14 +218,14 @@
 
         <div class={divider} />
 
-        <!-- Diagram name position — enabled only when a child diagram is selected -->
+        <!-- Name editor — a child's name position, or a selected line's name -->
         <button
-          title={L.editLabel}
+          title={nameTitle}
           class="{btnBase} {btnIdle} disabled:opacity-40"
-          disabled={!childSelected}
+          disabled={!childSelected && !lineSelected}
           on:click={() => dispatch('editlabel')}
         >
-          <span class="sr-only">{L.editLabel}</span>
+          <span class="sr-only">{nameTitle}</span>
           <Type class="h-4 w-4" />
         </button>
 

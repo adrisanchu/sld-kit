@@ -620,6 +620,26 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         );
       })}
 
+      {/* Line names above the children (as in the export): always on, always
+          readable — the core layout resolves position, anchor and rotation. */}
+      {layout.lines.map((ln) =>
+        ln.nameLabel ? (
+          <text
+            key={`name:${ln.line.id}`}
+            x={ln.nameLabel.x}
+            y={ln.nameLabel.y}
+            textAnchor={ln.nameLabel.textAnchor}
+            fontSize={ln.nameLabel.fontSize}
+            transform={
+              ln.nameLabel.rotation ? `rotate(${ln.nameLabel.rotation} ${ln.nameLabel.x} ${ln.nameLabel.y})` : undefined
+            }
+            className="sld-line-name pointer-events-none select-none fill-foreground"
+          >
+            {ln.nameLabel.text}
+          </text>
+        ) : null
+      )}
+
       {/* Hanging-tie labels above the children (as in the export). */}
       {layout.hangers.map((h) =>
         h.label ? (
