@@ -15,6 +15,8 @@ import {
   hangerFormat,
   linkNodeDots,
   lineFormat,
+  lineNameLayout,
+  readableLineNameSize,
   rotateSide,
   sectionWorldCorners,
   type CompositeLayout,
@@ -120,6 +122,15 @@ export interface CompositeCanvasProps {
   showConnectionLabels?: boolean;
   /** The always-on child diagram name (issue #17); on by default. */
   showChildNames?: boolean;
+  /**
+   * Opt-in zoom-aware line names: when zoomed out, grow each `CompositeLine.name`
+   * to at least `minPx` on screen (readable from afar) — but never wider than
+   * 90% of its line, so it stays in sync with what it labels; zoomed in it is
+   * its layout size, scaling with the drawing (see core `readableLineNameSize`).
+   * `null` (default) always draws the layout size. Screen only: the export uses
+   * the layout size.
+   */
+  lineNameScreenSize?: { minPx: number } | null;
   /** Fallback text when a child diagram can't be resolved. */
   notFoundLabel?: string;
   /** Rendered last inside the `<svg>` — where the explorer injects flow overlays. */
@@ -202,6 +213,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     showBusBarLabels = true,
     showConnectionLabels = true,
     showChildNames = true,
+    lineNameScreenSize = null,
     notFoundLabel = DEFAULT_CHILD_NOT_FOUND,
     children,
     onChildDown,
@@ -242,6 +254,24 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
   const viewBox = useStore(pz.viewBox);
   const spaceDown = useStore(pz.spaceDown);
   const panning = useStore(pz.panning);
+
+  // ── Zoom-aware line names (opt-in) ────────────────────────────────────────
+  // Screen px per world unit from the live viewBox; the core re-places each name
+  // at the size that keeps it readable without outgrowing its line.
+  const pxPerUnit = (() => {
+    const rect = lineNameScreenSize ? svgRef.current?.getBoundingClientRect() : undefined;
+    return rect && viewBox.w > 0 && viewBox.h > 0 ? Math.min(rect.width / viewBox.w, rect.height / viewBox.h) : 0;
+  })();
+  const minPx = lineNameScreenSize?.minPx;
+  const lineNames = useMemo(
+    () =>
+      layout.lines.map((ln) => {
+        if (!ln.nameLabel || minPx == null || !(pxPerUnit > 0)) return ln.nameLabel;
+        const size = readableLineNameSize(ln.nameLabel, pxPerUnit, minPx);
+        return size === ln.nameLabel.fontSize ? ln.nameLabel : (lineNameLayout(ln, size) ?? ln.nameLabel);
+      }),
+    [layout, pxPerUnit, minPx]
+  );
 
   // ── Hover ─────────────────────────────────────────────────────────────────
   // Children report pointer enter/leave on their hit rects; the canvas masks it
@@ -621,24 +651,24 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
       })}
 
       {/* Line names above the children (as in the export): always on, always
-          readable — the core layout resolves position, anchor and rotation. */}
-      {layout.lines.map((ln) =>
-        ln.nameLabel ? (
+          readable — the core layout resolves position, anchor and rotation
+          (re-placed per zoom when `lineNameScreenSize` is set). */}
+      {layout.lines.map((ln, i) => {
+        const nl = lineNames[i];
+        return nl ? (
           <text
             key={`name:${ln.line.id}`}
-            x={ln.nameLabel.x}
-            y={ln.nameLabel.y}
-            textAnchor={ln.nameLabel.textAnchor}
-            fontSize={ln.nameLabel.fontSize}
-            transform={
-              ln.nameLabel.rotation ? `rotate(${ln.nameLabel.rotation} ${ln.nameLabel.x} ${ln.nameLabel.y})` : undefined
-            }
+            x={nl.x}
+            y={nl.y}
+            textAnchor={nl.textAnchor}
+            fontSize={nl.fontSize}
+            transform={nl.rotation ? `rotate(${nl.rotation} ${nl.x} ${nl.y})` : undefined}
             className="sld-line-name pointer-events-none select-none fill-foreground"
           >
-            {ln.nameLabel.text}
+            {nl.text}
           </text>
-        ) : null
-      )}
+        ) : null;
+      })}
 
       {/* Hanging-tie labels above the children (as in the export). */}
       {layout.hangers.map((h) =>

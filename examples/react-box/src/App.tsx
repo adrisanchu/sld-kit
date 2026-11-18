@@ -128,6 +128,10 @@ const VIEW_STYLE = resolveViewStyle({
 const PLACE_SNAP = 20;
 const snap = (v: number) => Math.round(v / PLACE_SNAP) * PLACE_SNAP;
 
+
+/** Zoomed out, line names grow to at least 11 px on screen — never past 90% of their line. */
+const LINE_NAME_SCREEN_SIZE = { minPx: 11 };
+
 export default function App() {
   const [composite] = useState(buildBoxComposite);
   const [stack] = useState(() => new CommandStack<CompositeDocument>());
@@ -152,7 +156,8 @@ export default function App() {
         new LayoutEngine({ ...SLD_LAYOUT, busBarLabelAnchor: 'center-left' }, { busBarLabel: barBusIdLabel }),
         undefined,
         undefined,
-        { lineLabels: ratingLabels, boxSections: boxSplit }
+        // Line names at 16, the size of the rating labels beside them.
+        { lineLabels: ratingLabels, boxSections: boxSplit, lineNameFontSize: 16 }
       ),
     []
   );
@@ -731,6 +736,7 @@ export default function App() {
             interactive
             boxMode={boxMode}
             boxSubLabel={busLabel}
+            lineNameScreenSize={LINE_NAME_SCREEN_SIZE}
             drawMode={tool === 'draw'}
             orthogonal
             snapTargets={snapTargets}

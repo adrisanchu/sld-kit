@@ -6,6 +6,8 @@
     linkNodeDots,
     connectionPath,
     lineFormat,
+    lineNameLayout,
+    readableLineNameSize,
     sectionWorldCorners,
     type CompositeLayout,
     type ChildLayout,
@@ -109,6 +111,15 @@
    * toggles above; on by default.
    */
   export let showChildNames: boolean = true;
+  /**
+   * Opt-in zoom-aware line names: when zoomed out, grow each `CompositeLine.name`
+   * to at least `minPx` on screen (readable from afar) — but never wider than
+   * 90% of its line, so it stays in sync with what it labels; zoomed in it is
+   * its layout size, scaling with the drawing (see core `readableLineNameSize`).
+   * `null` (default) always draws the layout size. Screen only: the export uses
+   * the layout size.
+   */
+  export let lineNameScreenSize: { minPx: number } | null = null;
   /** Fallback text when a child diagram can't be resolved. */
   export let notFoundLabel: string = DEFAULT_CHILD_NOT_FOUND;
 
@@ -197,6 +208,20 @@
   const viewBox = pz.viewBox;
   const spaceDown = pz.spaceDown;
   const panning = pz.panning;
+
+  // ── Zoom-aware line names (opt-in) ────────────────────────────────────────
+  // Screen px per world unit from the live viewBox; the core re-places each name
+  // at the size that keeps it readable without outgrowing its line.
+  function pxPerUnitOf(vb: { w: number; h: number }, enabled: boolean): number {
+    const rect = enabled ? svgEl?.getBoundingClientRect() : undefined;
+    return rect && vb.w > 0 && vb.h > 0 ? Math.min(rect.width / vb.w, rect.height / vb.h) : 0;
+  }
+  $: pxPerUnit = pxPerUnitOf($viewBox, lineNameScreenSize !== null);
+  $: lineNames = layout.lines.map((ln) => {
+    if (!ln.nameLabel || !lineNameScreenSize || !(pxPerUnit > 0)) return ln.nameLabel;
+    const size = readableLineNameSize(ln.nameLabel, pxPerUnit, lineNameScreenSize.minPx);
+    return size === ln.nameLabel.fontSize ? ln.nameLabel : (lineNameLayout(ln, size) ?? ln.nameLabel);
+  });
 
   // ── Hover ─────────────────────────────────────────────────────────────────
   // Children report pointer enter/leave on their hit rects; the canvas masks it
@@ -430,18 +455,17 @@
   {/each}
 
   <!-- Line names above the children (as in the export): always on, always
-       readable — the core layout resolves position, anchor and rotation. -->
-  {#each layout.lines as ln (ln.line.id)}
-    {#if ln.nameLabel}
+       readable — the core layout resolves position, anchor and rotation
+       (re-placed per zoom when `lineNameScreenSize` is set). -->
+  {#each lineNames as nl, i (layout.lines[i].line.id)}
+    {#if nl}
       <text
-        x={ln.nameLabel.x}
-        y={ln.nameLabel.y}
-        text-anchor={ln.nameLabel.textAnchor}
-        font-size={ln.nameLabel.fontSize}
-        transform={ln.nameLabel.rotation
-          ? `rotate(${ln.nameLabel.rotation} ${ln.nameLabel.x} ${ln.nameLabel.y})`
-          : undefined}
-        class="sld-line-name pointer-events-none select-none fill-foreground">{ln.nameLabel.text}</text
+        x={nl.x}
+        y={nl.y}
+        text-anchor={nl.textAnchor}
+        font-size={nl.fontSize}
+        transform={nl.rotation ? `rotate(${nl.rotation} ${nl.x} ${nl.y})` : undefined}
+        class="sld-line-name pointer-events-none select-none fill-foreground">{nl.text}</text
       >
     {/if}
   {/each}
