@@ -31,6 +31,9 @@ import {
   readableAngle,
   pointAtFraction,
   roomyPointAtFraction,
+  lineNameLayout,
+  screenConstantFontSize,
+  LINE_NAME_FONT_SIZE,
   type LineNamePlacement,
   SetBoxModeCommand,
   SetPortDirectionCommand,
@@ -1735,6 +1738,25 @@ describe('Line names — placement', () => {
     expect(roomyPointAtFraction(jog, 0.5, 1000)!.at).toEqual({ x: 454, y: 8 });
   });
 
+  it('a larger font scales the gap with it', () => {
+    const n = placeLineName(H, 'Tie 1', P('middle', 'above', 'parallel'), 0, 2 * LINE_NAME_FONT_SIZE)!;
+    expect(n.fontSize).toBe(2 * LINE_NAME_FONT_SIZE);
+    expect(n.box.y + n.box.height).toBeCloseTo(-2 * LINE_NAME_OFFSET, 6);
+  });
+
+  it('screenConstantFontSize keeps text within the on-screen range', () => {
+    const range = { minPx: 11, maxPx: 18 };
+    // Zoomed out (0.4 px/unit): 12 units would be 4.8px → held at 11px.
+    expect(screenConstantFontSize(12, 0.4, range) * 0.4).toBeCloseTo(11, 6);
+    // In range: unchanged.
+    expect(screenConstantFontSize(12, 1, range)).toBe(12);
+    // Zoomed in (3 px/unit): 36px → capped at 18px, i.e. smaller in world units.
+    expect(screenConstantFontSize(12, 3, range)).toBe(6);
+    // Unknown scale (SSR): the base size.
+    expect(screenConstantFontSize(12, 0, range)).toBe(12);
+    expect(screenConstantFontSize(12, Number.NaN, range)).toBe(12);
+  });
+
   it('returns null for an empty name or a degenerate line', () => {
     expect(placeLineName(H, '')).toBeNull();
     expect(placeLineName([{ x: 0, y: 0 }], 'T')).toBeNull();
@@ -1801,6 +1823,25 @@ describe('Line names — layout + export', () => {
     const t = named(undefined, 'transformer');
     const xf = t.engine.layout(t.doc).lines[0].nameLabel!;
     expect(Math.hypot(xf.x - plain.x, xf.y - plain.y)).toBeGreaterThan(10);
+  });
+
+  it('lineNameLayout re-places a laid-out name exactly as the layout does', () => {
+    const { doc, engine } = named({ along: 'middle', side: 'below', orientation: 'perpendicular' });
+    const ln = engine.layout(doc).lines[0];
+    expect(lineNameLayout(ln)).toEqual(ln.nameLabel);
+    // At twice the size the gap doubles too: the near edge sits twice as far.
+    const big = lineNameLayout(ln, 2 * LINE_NAME_FONT_SIZE)!;
+    expect(big.fontSize).toBe(2 * LINE_NAME_FONT_SIZE);
+    const unnamed = { ...ln, line: CompositeLine.fromJSON({ ...ln.line.toJSON(), name: undefined }) };
+    expect(lineNameLayout(unnamed)).toBeNull();
+  });
+
+  it('the lineNameFontSize option sizes names on screen and in the export', () => {
+    const { doc } = named();
+    const engine = new CompositeLayoutEngine(undefined, undefined, undefined, { lineNameFontSize: 16 });
+    expect(engine.layout(doc).lines[0].nameLabel!.fontSize).toBe(16);
+    const svg = new CompositeSvgExporter(engine).export(doc);
+    expect(svg).toMatch(/font-size="16"[^>]*>Tie 1</);
   });
 
   it('exports the name as Office-safe rotated text; unnamed output is untouched', () => {

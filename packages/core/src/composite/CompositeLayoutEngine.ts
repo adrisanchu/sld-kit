@@ -490,12 +490,17 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * nearest edge (pass `clearance` to clear a glyph at that point). Text width is
  * estimated (no DOM), so a `parallel` name is centred on its point while the
  * other orientations anchor the edge nearest the line, keeping the gap exact.
+ *
+ * `fontSize` (world units, default {@link LINE_NAME_FONT_SIZE}) scales the name
+ * and its gap together, so a larger name keeps the same proportions — what a
+ * zoom-aware renderer passes (see {@link screenConstantFontSize}).
  */
 export function placeLineName(
   points: Point[],
   text: string,
   placement: LineNamePlacement = DEFAULT_LINE_NAME_PLACEMENT,
-  clearance = 0
+  clearance = 0,
+  fontSize: number = LINE_NAME_FONT_SIZE
 ): LineNameLayout | null {
   if (!text || points.length < 2) return null;
   const first = points[0];
@@ -506,12 +511,12 @@ export function placeLineName(
   const reversed = Math.abs(cdx) > 1e-6 ? cdx < 0 : cdy > 0;
   const reading = reversed ? [...points].reverse() : points;
 
-  const fontSize = LINE_NAME_FONT_SIZE;
   const w = text.length * fontSize * 0.6;
   const h = fontSize;
+  const offset = (LINE_NAME_OFFSET * fontSize) / LINE_NAME_FONT_SIZE;
   // Sit on a segment with room for the name (never on a short orthogonal jog):
   // its full length when it runs along the line, a few gaps' worth otherwise.
-  const need = placement.orientation === 'parallel' ? w + 2 * LINE_NAME_OFFSET : 4 * LINE_NAME_OFFSET;
+  const need = placement.orientation === 'parallel' ? w + 2 * offset : 4 * offset;
   const at = roomyPointAtFraction(reading, LINE_NAME_ALONG_FRACTION[placement.along], need);
   if (!at) return null;
 
@@ -528,7 +533,7 @@ export function placeLineName(
   const adv = { x: Math.cos(r), y: Math.sin(r) }; // text advance
   const up = { x: Math.sin(r), y: -Math.cos(r) }; // baseline → cap
 
-  const gap = LINE_NAME_OFFSET + clearance;
+  const gap = offset + clearance;
   const advN = adv.x * n.x + adv.y * n.y;
   const upN = Math.abs(up.x * n.x + up.y * n.y);
 
@@ -561,6 +566,39 @@ export function placeLineName(
     fontSize,
     box: { x: minX, y: minY, width: Math.max(...xs) - minX, height: Math.max(...ys) - minY }
   };
+}
+
+/**
+ * (Re-)place a laid-out line's name at `fontSize` — exactly what the layout does
+ * (same placement, same transformer-glyph clearance), at another size. Lets a
+ * renderer resize names with the zoom without re-running the whole layout.
+ * `null` when the line has no name.
+ */
+export function lineNameLayout(line: CompositeLineLayout, fontSize: number = LINE_NAME_FONT_SIZE): LineNameLayout | null {
+  const { name, namePlacement } = line.line;
+  if (!name) return null;
+  const placement = namePlacement ?? DEFAULT_LINE_NAME_PLACEMENT;
+  const clearance = line.glyph && placement.along === 'middle' ? LINE_LABEL_GLYPH_CLEARANCE : 0;
+  return placeLineName(line.points, name, placement, clearance, fontSize);
+}
+
+/** On-screen size bounds for zoom-aware text, in CSS pixels. */
+export interface ScreenSizeRange {
+  minPx: number;
+  maxPx: number;
+}
+
+/**
+ * The world-unit font size that keeps text between `minPx` and `maxPx` on
+ * screen: `baseSize` scaled by the zoom (`pxPerUnit`), clamped, converted back
+ * to world units. Zoomed out, the text grows relative to the drawing so it stays
+ * readable from afar; zoomed in, it stops growing and so shrinks relative to the
+ * detail. Falls back to `baseSize` when the scale is unknown (e.g. SSR).
+ */
+export function screenConstantFontSize(baseSize: number, pxPerUnit: number, range: ScreenSizeRange): number {
+  if (!(pxPerUnit > 0) || !Number.isFinite(pxPerUnit)) return baseSize;
+  const px = Math.max(range.minPx, Math.min(range.maxPx, baseSize * pxPerUnit));
+  return px / pxPerUnit;
 }
 
 /**
@@ -674,6 +712,12 @@ export interface CompositeLayoutOptions {
   boxSections?: BoxSectionsResolver;
   /** Corner radius of `curved` lines and links (default {@link CURVE_RADIUS}). */
   cornerRadius?: number;
+  /**
+   * Font size of line names (`CompositeLine.name`), world units (default
+   * {@link LINE_NAME_FONT_SIZE}). The size the export uses; a zoom-aware canvas
+   * starts from it too (see {@link screenConstantFontSize}).
+   */
+  lineNameFontSize?: number;
 }
 
 export class CompositeLayoutEngine {
@@ -682,6 +726,7 @@ export class CompositeLayoutEngine {
   private readonly lineLabels?: LineLabelResolver;
   private readonly boxSections?: BoxSectionsResolver;
   private readonly cornerRadius: number;
+  private readonly lineNameFontSize: number;
   /** Detail-view child layouts with swapped directions, keyed by `(libraryId, dir signature)`. */
   private detailLayoutCache = new Map<string, DiagramLayout>();
 
@@ -697,6 +742,7 @@ export class CompositeLayoutEngine {
     this.lineLabels = options.lineLabels;
     this.boxSections = options.boxSections;
     this.cornerRadius = options.cornerRadius ?? CURVE_RADIUS;
+    this.lineNameFontSize = options.lineNameFontSize ?? LINE_NAME_FONT_SIZE;
   }
 
   layout(doc: CompositeDocument, request: CompositeLayoutRequest = {}): CompositeLayout {
@@ -1110,11 +1156,7 @@ export class CompositeLayoutEngine {
 
   /** Attach the line's own name (if any), clearing the transformer glyph when it sits at the midpoint. */
   private withName(layout: CompositeLineLayout): CompositeLineLayout {
-    const { name, namePlacement } = layout.line;
-    if (!name) return layout;
-    const placement = namePlacement ?? DEFAULT_LINE_NAME_PLACEMENT;
-    const clearance = layout.glyph && placement.along === 'middle' ? LINE_LABEL_GLYPH_CLEARANCE : 0;
-    const nameLabel = placeLineName(layout.points, name, placement, clearance);
+    const nameLabel = lineNameLayout(layout, this.lineNameFontSize);
     if (nameLabel) layout.nameLabel = nameLabel;
     return layout;
   }
