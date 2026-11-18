@@ -199,6 +199,11 @@ export interface CompositeToolbarLabels {
   delete: string;
   /** Opens the selected diagram's name-placement dialog (enabled with a child selected). */
   editLabel: string;
+  /**
+   * Same button with a line or auto-link selected: opens the line's name dialog.
+   * Optional so existing full label maps stay valid (English default).
+   */
+  editLineName?: string;
   undo: string;
   redo: string;
   /** Color-mode toggle (by type ↔ by voltage). */
@@ -220,6 +225,7 @@ export const DEFAULT_COMPOSITE_TOOLBAR_LABELS: Required<CompositeToolbarLabels> 
   drawLine: 'Draw line (double-click to finish)',
   delete: 'Delete selected (Del)',
   editLabel: 'Diagram name position',
+  editLineName: 'Line name',
   undo: 'Undo (Ctrl+Z)',
   redo: 'Redo (Ctrl+Shift+Z)',
   colorMode: 'Color by voltage',

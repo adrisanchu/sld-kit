@@ -2,7 +2,13 @@ import type { Command } from '../commands/Command';
 import type { SldDocument } from '../SldDocument';
 import type { ExternalDirection } from '../types';
 import { CompositeDocument } from './CompositeDocument';
-import { CompositeLine, type CompositeLineJson, type CompositeLineKind, type LineVertexJson } from './CompositeLine';
+import {
+  CompositeLine,
+  type CompositeLineJson,
+  type CompositeLineKind,
+  type LineName,
+  type LineVertexJson
+} from './CompositeLine';
 import { DiagramInstance, type DiagramInstanceJson, type LabelPlacement } from './DiagramInstance';
 import type { LineRouting } from './routing';
 
@@ -192,6 +198,30 @@ export class SetLineDataCommand implements Command<CompositeDocument> {
 
   undo(doc: CompositeDocument): void {
     doc.setLineData(this.id, this.before);
+  }
+}
+
+/**
+ * Rename a line and/or move its name label (slot + orientation) via
+ * before/after snapshots — a discrete edit, undoable like a child's
+ * `SetChildLabelCommand`. An absent `name` clears it. To name an *auto-link*,
+ * materialize it instead: `new AddLineCommand(CompositeLine.fromLink(link, { name }))`.
+ */
+export class SetLineNameCommand implements Command<CompositeDocument> {
+  readonly label = 'Rename line';
+
+  constructor(
+    private id: string,
+    private before: LineName,
+    private after: LineName
+  ) {}
+
+  do(doc: CompositeDocument): void {
+    doc.setLineName(this.id, this.after.name, this.after.placement);
+  }
+
+  undo(doc: CompositeDocument): void {
+    doc.setLineName(this.id, this.before.name, this.before.placement);
   }
 }
 

@@ -121,6 +121,23 @@ CSS variables: `--sld-selection-stroke` (colour, default the `text-primary`
 `bodyRadius`, `cornerRadius` (dots), `cornerArm` (selected brackets),
 `hoverCornerArm`, `rotateHandleOffset`, `rotateHandleRadius`.
 
+### Line names (`CompositeCanvas`)
+
+A named line (`CompositeLine.name`) is drawn by `CompositeCanvas` at the
+placement the core layout resolved, above the children, always on and
+pointer-transparent. See core's
+[Line names](../../docs/composite.md#line-names) for the placement rules.
+
+| Hook                                 | Effect                                                                                                                                                                                        |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sld-line-name`                      | Class on each name `<text>` (default `fill-foreground`), for restyling.                                                                                                                       |
+| `lineNameScreenSize={{ minPx: 11 }}` | Opt-in zoom-aware names: zoomed out, each name grows to at least `minPx` on screen, but never past 90% of its line. Zoomed in, it keeps its layout size. Default `null` (layout size always). |
+
+`CompositeToolbar`'s `lineSelected` prop enables its name button (`editlabel`)
+for a selected line or auto-link too; its tooltip then comes from the optional
+`editLineName` label (default "Line name"). Telling the two cases apart and
+opening the right dialog is the consumer's job.
+
 ### Editor elements (`SldCanvas` → element views)
 
 | Prop / event      | Effect                                                                                    |

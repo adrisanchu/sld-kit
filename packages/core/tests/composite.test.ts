@@ -20,6 +20,25 @@ import {
   AddLineCommand,
   UpdateLineKindCommand,
   SetLineDataCommand,
+  SetLineNameCommand,
+  RemoveLineCommand,
+  DEFAULT_LINE_NAME_PLACEMENT,
+  LINE_NAME_ORIENTATIONS,
+  LINE_NAME_ALONGS,
+  LINE_NAME_SIDES,
+  LINE_NAME_OFFSET,
+  placeLineName,
+  readableAngle,
+  pointAtFraction,
+  roomyPointAtFraction,
+  lineNameLayout,
+  lineNameFitSize,
+  fittedLineNameSize,
+  readableLineNameSize,
+  LINE_NAME_FONT_SIZE,
+  LINE_NAME_MAX_LINE_FRACTION,
+  LINE_NAME_MIN_SCALE,
+  type LineNamePlacement,
   SetBoxModeCommand,
   SetPortDirectionCommand,
   SetAutoFacingCommand,
@@ -1482,5 +1501,415 @@ describe('Auto-facing policy', () => {
     doc.updateMeta({ autoFacing: true });
     expect(CompositeSerializer.toJSON(doc).meta.autoFacing).toBe(true);
     expect(CompositeSerializer.fromJSON(cycle(CompositeSerializer.toJSON(doc))).meta.autoFacing).toBe(true);
+  });
+});
+
+describe('Line names', () => {
+  const PLACEMENT: LineNamePlacement = { along: 'start', side: 'below', orientation: 'perpendicular' };
+
+  function linked() {
+    const doc = buildSouthComposite();
+    doc.resolveChildren(resolver());
+    const engine = new CompositeLayoutEngine();
+    const link = engine.layout(doc).links.find((l) => l.connectionId === SHARED_LINK_ID)!;
+    return { doc, engine, link };
+  }
+
+  it('leaves an unnamed line\'s JSON unchanged (no name fields)', () => {
+    const json = CompositeSerializer.toJSON(buildSouthCompositeWithLine());
+    expect(json.lines[0]).not.toHaveProperty('name');
+    expect(json.lines[0]).not.toHaveProperty('namePlacement');
+  });
+
+  it('roundtrips a name and its placement', () => {
+    const doc = buildSouthCompositeWithLine();
+    const id = doc.allLines()[0].id;
+    doc.setLineName(id, 'L-400 kV West-South 1', PLACEMENT);
+    const json1 = CompositeSerializer.toJSON(doc);
+    expect(json1.lines[0].name).toBe('L-400 kV West-South 1');
+    expect(json1.lines[0].namePlacement).toEqual(PLACEMENT);
+    const back = CompositeSerializer.fromJSON(cycle(json1));
+    expect(back.getLine(id)!.name).toBe('L-400 kV West-South 1');
+    expect(back.getLine(id)!.namePlacement).toEqual(PLACEMENT);
+    expect(CompositeSerializer.toJSON(back)).toEqual(json1);
+  });
+
+  it('normalizes an empty name to unnamed and drops an orphan placement', () => {
+    const line = CompositeLine.fromJSON({
+      id: 'x',
+      vertices: [
+        { kind: 'point', x: 0, y: 0 },
+        { kind: 'point', x: 10, y: 0 }
+      ],
+      name: '',
+      namePlacement: PLACEMENT
+    });
+    expect(line.name).toBeUndefined();
+    const json = line.toJSON();
+    expect(json).not.toHaveProperty('name');
+    expect(json).not.toHaveProperty('namePlacement');
+  });
+
+  it('rejects an invalid name or placement', () => {
+    const json = cycle(CompositeSerializer.toJSON(buildSouthCompositeWithLine()));
+    json.lines[0].namePlacement = { along: 'middle', side: 'left', orientation: 'parallel' };
+    expect(() => CompositeSerializer.fromJSON(json)).toThrow(/invalid name placement/);
+    json.lines[0].namePlacement = undefined;
+    json.lines[0].name = 42;
+    expect(() => CompositeSerializer.fromJSON(json)).toThrow(/invalid name/);
+  });
+
+  it('SetLineNameCommand renames and moves the label, undoably', () => {
+    const doc = buildSouthCompositeWithLine();
+    const id = doc.allLines()[0].id;
+    const stack = new CommandStack<CompositeDocument>();
+    stack.execute(new SetLineNameCommand(id, {}, { name: 'Tie 1', placement: DEFAULT_LINE_NAME_PLACEMENT }), doc);
+    expect(doc.getLine(id)!.name).toBe('Tie 1');
+    stack.execute(
+      new SetLineNameCommand(id, { name: 'Tie 1', placement: DEFAULT_LINE_NAME_PLACEMENT }, { name: 'Tie 1', placement: PLACEMENT }),
+      doc
+    );
+    expect(doc.getLine(id)!.namePlacement).toEqual(PLACEMENT);
+    stack.undo(doc);
+    expect(doc.getLine(id)!.namePlacement).toEqual(DEFAULT_LINE_NAME_PLACEMENT);
+    stack.undo(doc);
+    expect(doc.getLine(id)!.name).toBeUndefined();
+    expect(doc.getLine(id)!.namePlacement).toBeUndefined();
+  });
+
+  it('fromLink materializes an auto-link as a named line with id = connection id', () => {
+    const { doc, engine, link } = linked();
+    const line = CompositeLine.fromLink(link, { name: 'Tie 1' });
+    expect(line.id).toBe(SHARED_LINK_ID);
+    expect(line.name).toBe('Tie 1');
+    expect(line.vertices).toEqual([
+      { kind: 'anchor', instanceId: link.a.instanceId, connectionId: SHARED_LINK_ID },
+      { kind: 'anchor', instanceId: link.b.instanceId, connectionId: SHARED_LINK_ID }
+    ]);
+
+    const stack = new CommandStack<CompositeDocument>();
+    stack.execute(new AddLineCommand(line), doc);
+    const after = engine.layout(doc);
+    // The line replaces the auto-link, drawn on exactly the same chord.
+    expect(after.links.map((l) => l.connectionId)).not.toContain(SHARED_LINK_ID);
+    const drawn = after.lines.find((l) => l.line.id === SHARED_LINK_ID)!;
+    expect(drawn.points).toEqual(link.points);
+
+    // Deleting the named line brings back the unnamed auto-link.
+    stack.execute(new RemoveLineCommand(SHARED_LINK_ID), doc);
+    expect(engine.layout(doc).links.map((l) => l.connectionId)).toContain(SHARED_LINK_ID);
+    stack.undo(doc);
+    expect(doc.getLine(SHARED_LINK_ID)!.name).toBe('Tie 1');
+  });
+});
+
+describe('Line names — placement', () => {
+  const P = (along: LineNamePlacement['along'], side: LineNamePlacement['side'], orientation: LineNamePlacement['orientation']) => ({
+    along,
+    side,
+    orientation
+  });
+  const H = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 }
+  ];
+  const V = [
+    { x: 0, y: 0 },
+    { x: 0, y: 100 }
+  ];
+  const ALL = LINE_NAME_ALONGS.flatMap((a) => LINE_NAME_SIDES.flatMap((s) => LINE_NAME_ORIENTATIONS.map((o) => P(a, s, o))));
+  // Signed side of point p relative to the reading-frame "above" normal at the line point.
+  const reading = (pts: Point[]) => {
+    const [a, b] = [pts[0], pts[pts.length - 1]];
+    return Math.abs(b.x - a.x) > 1e-6 ? (b.x < a.x ? [...pts].reverse() : pts) : b.y > a.y ? [...pts].reverse() : pts;
+  };
+
+  it('readableAngle reads left→right, and bottom→top within 10° of vertical', () => {
+    expect(readableAngle(0)).toBe(0);
+    expect(readableAngle(90)).toBe(-90);
+    expect(readableAngle(-90)).toBe(-90);
+    expect(readableAngle(180)).toBe(0);
+    expect(readableAngle(135)).toBe(-45);
+    expect(readableAngle(-135)).toBe(45);
+    expect(readableAngle(270)).toBe(-90);
+    // A hand-drawn "vertical" leaning just past vertical still reads upward.
+    expect(readableAngle(-90.1)).toBeCloseTo(-90.1, 6);
+    expect(readableAngle(89.9)).toBeCloseTo(-90.1, 6);
+    expect(readableAngle(85)).toBe(-95);
+    expect(readableAngle(75)).toBe(75);
+  });
+
+  it('pointAtFraction walks arc length and skips zero-length segments', () => {
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 100 }
+    ];
+    expect(pointAtFraction(pts, 0.25)).toEqual({ at: { x: 50, y: 0 }, dx: 1, dy: 0 });
+    expect(pointAtFraction(pts, 0.75)).toEqual({ at: { x: 100, y: 50 }, dx: 0, dy: 1 });
+    expect(pointAtFraction([{ x: 1, y: 1 }], 0.5)).toBeNull();
+  });
+
+  it('a horizontal line: parallel name centred above / below, clearing the stroke', () => {
+    const above = placeLineName(H, 'Tie 1', P('middle', 'above', 'parallel'))!;
+    expect(above).toMatchObject({ rotation: 0, textAnchor: 'middle', x: 50 });
+    expect(above.box.y + above.box.height).toBeCloseTo(-LINE_NAME_OFFSET, 6);
+    const below = placeLineName(H, 'Tie 1', P('middle', 'below', 'parallel'))!;
+    expect(below.box.y).toBeCloseTo(LINE_NAME_OFFSET, 6);
+  });
+
+  it('a vertical line reads bottom→top, "above" on its left', () => {
+    const n = placeLineName(V, 'Tie 1', P('middle', 'above', 'parallel'))!;
+    expect(n.rotation).toBe(-90);
+    expect(n.box.x + n.box.width).toBeCloseTo(-LINE_NAME_OFFSET, 6);
+  });
+
+  it('perpendicular grows away from the line on the chosen side', () => {
+    const up = placeLineName(H, 'Tie 1', P('middle', 'above', 'perpendicular'))!;
+    expect(up).toMatchObject({ rotation: -90, textAnchor: 'start' });
+    expect(up.box.y + up.box.height).toBeCloseTo(-LINE_NAME_OFFSET, 6);
+    const down = placeLineName(H, 'Tie 1', P('middle', 'below', 'perpendicular'))!;
+    expect(down).toMatchObject({ rotation: -90, textAnchor: 'end' });
+    expect(down.box.y).toBeCloseTo(LINE_NAME_OFFSET, 6);
+  });
+
+  it('horizontal text beside a vertical line anchors its near edge at the gap', () => {
+    const left = placeLineName(V, 'Tie 1', P('middle', 'above', 'horizontal'))!;
+    expect(left).toMatchObject({ rotation: 0, textAnchor: 'end', x: -LINE_NAME_OFFSET });
+    const right = placeLineName(V, 'Tie 1', P('middle', 'below', 'horizontal'))!;
+    expect(right).toMatchObject({ rotation: 0, textAnchor: 'start', x: LINE_NAME_OFFSET });
+  });
+
+  it('start / end follow reading order, not vertex order', () => {
+    const rev = [...H].reverse();
+    expect(placeLineName(rev, 'T', P('start', 'above', 'parallel'))!.x).toBeCloseTo(20, 6);
+    expect(placeLineName(rev, 'T', P('end', 'above', 'parallel'))!.x).toBeCloseTo(80, 6);
+    expect(placeLineName(V, 'T', P('start', 'above', 'parallel'))!.box.y).toBeGreaterThan(50); // bottom part
+  });
+
+  it('every direction × placement: readable, swap-invariant, on the chosen side', () => {
+    const dirs = [0, 30, 45, 60, 88, 90, 92, 120, 135, 150, 180, 210, 225, 268, 270, 272, 315].map((deg) => {
+      const r = (deg * Math.PI) / 180;
+      return [
+        { x: 10, y: 20 },
+        { x: 10 + 200 * Math.cos(r), y: 20 + 200 * Math.sin(r) }
+      ];
+    });
+    for (const pts of dirs) {
+      for (const pl of ALL) {
+        const a = placeLineName(pts, 'Line 1', pl)!;
+        const b = placeLineName([...pts].reverse(), 'Line 1', pl)!;
+        // Swapping the ends changes nothing.
+        expect(b).toEqual(a);
+        expect(a.rotation).toBeGreaterThanOrEqual(-100);
+        expect(a.rotation).toBeLessThan(80);
+        if (pl.orientation === 'horizontal') expect(a.rotation).toBe(0);
+        // The label's centre sits on the requested side of the line.
+        const [p0, p1] = reading(pts);
+        const len = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+        const d = { x: (p1.x - p0.x) / len, y: (p1.y - p0.y) / len };
+        const rd = readableAngle((Math.atan2(d.y, d.x) * 180) / Math.PI) * (Math.PI / 180);
+        const above = { x: Math.sin(rd), y: -Math.cos(rd) };
+        const c = { x: a.box.x + a.box.width / 2, y: a.box.y + a.box.height / 2 };
+        const signed = (c.x - p0.x) * above.x + (c.y - p0.y) * above.y;
+        if (pl.side === 'above') expect(signed).toBeGreaterThan(0);
+        else expect(signed).toBeLessThan(0);
+      }
+    }
+  });
+
+  it('never sits on a short orthogonal jog: slides to the nearest roomy segment', () => {
+    // A tie with an 8px dog-leg exactly at its midpoint (as the router draws
+    // between two slightly misaligned boxes).
+    const jog = [
+      { x: 0, y: 0 },
+      { x: 300, y: 0 },
+      { x: 300, y: 8 },
+      { x: 608, y: 8 }
+    ];
+    const n = placeLineName(jog, 'L-220 kV Alpha-Bravo', P('middle', 'above', 'parallel'))!;
+    expect(n.rotation).toBe(0);
+    for (const o of LINE_NAME_ORIENTATIONS) {
+      const r = placeLineName(jog, 'L-220 kV Alpha-Bravo', P('middle', 'above', o))!;
+      // Across / horizontal on the horizontal run, never rotated by the jog.
+      expect(o === 'perpendicular' ? r.rotation === -90 : r.rotation === 0).toBe(true);
+    }
+    // The helper itself: target 0.5 lands on the jog, so it clamps onto a long run.
+    const p = roomyPointAtFraction(jog, 0.5, 100)!;
+    expect(p.dy).toBe(0);
+    // Nothing roomy enough → the longest segment's midpoint.
+    expect(roomyPointAtFraction(jog, 0.5, 1000)!.at).toEqual({ x: 454, y: 8 });
+  });
+
+  it('a larger font scales the gap with it', () => {
+    const n = placeLineName(H, 'Tie 1', P('middle', 'above', 'parallel'), 0, 2 * LINE_NAME_FONT_SIZE)!;
+    expect(n.fontSize).toBe(2 * LINE_NAME_FONT_SIZE);
+    expect(n.box.y + n.box.height).toBeCloseTo(-2 * LINE_NAME_OFFSET, 6);
+  });
+
+  it('fits a name within 90% of its longest straight run (bends ignored)', () => {
+    const text = 'L-220 kV Alpha-Bravo'; // 20 chars
+    const width = (size: number) => text.length * size * 0.6;
+    // A 100-long run: the fit size makes the name exactly 90 wide.
+    expect(width(lineNameFitSize(H, text))).toBeCloseTo(LINE_NAME_MAX_LINE_FRACTION * 100, 6);
+    // A bent line measures its longest run only (300), not the total (400).
+    const bent = [
+      { x: 0, y: 0 },
+      { x: 300, y: 0 },
+      { x: 300, y: 100 }
+    ];
+    expect(width(lineNameFitSize(bent, text))).toBeCloseTo(0.9 * 300, 6);
+    expect(lineNameFitSize(H, '')).toBe(0);
+  });
+
+  it('fittedLineNameSize: normal size on a long line, shrunk on a short one, floored at half', () => {
+    const text = 'L-220 kV Alpha-Bravo';
+    const line = (len: number) => [
+      { x: 0, y: 0 },
+      { x: len, y: 0 }
+    ];
+    expect(fittedLineNameSize(line(1000), text, 16)).toBe(16); // plenty of room
+    const fit = lineNameFitSize(line(200), text); // 15: shrinks to fit
+    expect(fittedLineNameSize(line(200), text, 16)).toBeCloseTo(fit, 6);
+    // A very short line: stops at half the normal size and overhangs.
+    expect(fittedLineNameSize(line(20), text, 16)).toBe(16 * LINE_NAME_MIN_SCALE);
+  });
+
+  it('readableLineNameSize grows a name when zoomed out, but never past its line', () => {
+    const long = [
+      { x: 0, y: 0 },
+      { x: 1000, y: 0 }
+    ];
+    const label = placeLineName(long, 'Tie 1', P('middle', 'above', 'parallel'))!; // 12, may grow to fit 900
+    expect(label.maxFontSize).toBeCloseTo(lineNameFitSize(long, 'Tie 1'), 6);
+    // In sync up close: at/above 1 px/unit the layout size wins (no 18px cap).
+    expect(readableLineNameSize(label, 1, 11)).toBe(12);
+    expect(readableLineNameSize(label, 4, 11)).toBe(12);
+    // Zoomed out: grown to 11px on screen…
+    expect(readableLineNameSize(label, 0.5, 11) * 0.5).toBeCloseTo(11, 6);
+    // …until it fills 90% of its line, then it shrinks with the drawing.
+    expect(readableLineNameSize(label, 0.001, 11)).toBeCloseTo(label.maxFontSize, 6);
+    // Unknown scale (SSR): the layout size.
+    expect(readableLineNameSize(label, 0, 11)).toBe(12);
+    expect(readableLineNameSize(label, Number.NaN, 11)).toBe(12);
+  });
+
+  it('a name already overhanging its short line never grows with the zoom', () => {
+    const tiny = [
+      { x: 0, y: 0 },
+      { x: 20, y: 0 }
+    ];
+    const label = placeLineName(tiny, 'L-220 kV Alpha-Bravo', P('middle', 'above', 'parallel'), 0, 6)!;
+    expect(label.maxFontSize).toBe(6);
+    expect(readableLineNameSize(label, 0.01, 11)).toBe(6);
+  });
+
+  it('returns null for an empty name or a degenerate line', () => {
+    expect(placeLineName(H, '')).toBeNull();
+    expect(placeLineName([{ x: 0, y: 0 }], 'T')).toBeNull();
+  });
+});
+
+describe('Line names — layout + export', () => {
+  function named(placement?: LineNamePlacement, kind?: string) {
+    const doc = buildSouthComposite();
+    doc.resolveChildren(resolver());
+    const engine = new CompositeLayoutEngine();
+    const link = engine.layout(doc).links.find((l) => l.connectionId === SHARED_LINK_ID)!;
+    const line = CompositeLine.fromLink(link, { name: 'Tie 1', namePlacement: placement });
+    if (kind) line.kind = kind;
+    doc.addLine(line);
+    return { doc, engine };
+  }
+
+  it('legacy path: a named line carries a nameLabel inside the bounds', () => {
+    const { doc, engine } = named();
+    const layout = engine.layout(doc);
+    const ln = layout.lines.find((l) => l.line.id === SHARED_LINK_ID)!;
+    expect(ln.nameLabel).toMatchObject({ text: 'Tie 1' });
+    const b = ln.nameLabel!.box;
+    expect(b.x).toBeGreaterThanOrEqual(layout.bounds.x);
+    expect(b.y).toBeGreaterThanOrEqual(layout.bounds.y);
+    expect(b.x + b.width).toBeLessThanOrEqual(layout.bounds.x + layout.bounds.width + 1e-9);
+  });
+
+  it('an unnamed line has no nameLabel', () => {
+    const doc = buildSouthCompositeWithLine();
+    doc.resolveChildren(resolver());
+    for (const ln of new CompositeLayoutEngine().layout(doc).lines) expect(ln.nameLabel).toBeUndefined();
+  });
+
+  it('floating path (box view): a named line carries a nameLabel', () => {
+    const sub = (id: string, dir: ExternalDirection) =>
+      buildDocument({
+        meta: { id, name: id.toUpperCase(), substation: id, voltageKv: 220 },
+        busbars: [{ label: 'BB', row: 0 }],
+        bays: [{ col: 0, positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'T', direction: dir, id: 'tie' } }] }]
+      });
+    const doc = new CompositeDocument({ id: 'c', name: 'c', boxMode: true, defaultRouting: 'orthogonal' });
+    doc.addChild(DiagramInstance.of({ id: 'a', libraryId: 'a', x: 0, y: 0 }));
+    doc.addChild(DiagramInstance.of({ id: 'b', libraryId: 'b', x: 0, y: 400 }));
+    doc.resolveChildren(
+      new MapResolver(
+        new Map([
+          ['a', Serializer.toJSON(sub('a', 'down'))],
+          ['b', Serializer.toJSON(sub('b', 'up'))]
+        ])
+      )
+    );
+    const engine = new CompositeLayoutEngine();
+    const link = engine.layout(doc).links[0];
+    doc.addLine(CompositeLine.fromLink(link, { name: 'Tie 1' }));
+    const ln = engine.layout(doc).lines[0];
+    // A vertical tie: the parallel name reads bottom→top.
+    expect(ln.nameLabel).toMatchObject({ text: 'Tie 1', rotation: -90 });
+  });
+
+  it('a transformer line at the midpoint pushes its name clear of the glyph', () => {
+    const plain = named().engine.layout(named().doc).lines[0].nameLabel!;
+    const t = named(undefined, 'transformer');
+    const xf = t.engine.layout(t.doc).lines[0].nameLabel!;
+    expect(Math.hypot(xf.x - plain.x, xf.y - plain.y)).toBeGreaterThan(10);
+  });
+
+  it('lineNameLayout re-places a laid-out name exactly as the layout does', () => {
+    const { doc, engine } = named({ along: 'middle', side: 'below', orientation: 'perpendicular' });
+    const ln = engine.layout(doc).lines[0];
+    expect(lineNameLayout(ln)).toEqual(ln.nameLabel);
+    // At twice the size the gap doubles too: the near edge sits twice as far.
+    const big = lineNameLayout(ln, 2 * LINE_NAME_FONT_SIZE)!;
+    expect(big.fontSize).toBe(2 * LINE_NAME_FONT_SIZE);
+    const unnamed = { ...ln, line: CompositeLine.fromJSON({ ...ln.line.toJSON(), name: undefined }) };
+    expect(lineNameLayout(unnamed)).toBeNull();
+  });
+
+  it('the lineNameFontSize option sizes names on screen and in the export', () => {
+    const { doc } = named();
+    const engine = new CompositeLayoutEngine(undefined, undefined, undefined, { lineNameFontSize: 16 });
+    const nl = engine.layout(doc).lines[0].nameLabel!;
+    expect(nl.fontSize).toBe(16);
+    expect(nl.maxFontSize).toBeGreaterThanOrEqual(16);
+    const svg = new CompositeSvgExporter(engine).export(doc);
+    expect(svg).toMatch(/font-size="16"[^>]*>Tie 1</);
+  });
+
+  it('exports the name as Office-safe rotated text; unnamed output is untouched', () => {
+    const { doc } = named({ along: 'middle', side: 'above', orientation: 'perpendicular' });
+    const svg = new CompositeSvgExporter().export(doc);
+    expect(svg).toContain('>Tie 1</text>');
+    expect(svg).toMatch(/<g transform="rotate\(-?\d/);
+    expect(svg).not.toContain('class=');
+    expect(svg).not.toContain('<style');
+
+    // Clearing the name restores the exact unnamed export.
+    const unnamed = buildSouthComposite();
+    unnamed.resolveChildren(resolver());
+    unnamed.addLine(CompositeLine.fromLink(new CompositeLayoutEngine().layout(unnamed).links.find((l) => l.connectionId === SHARED_LINK_ID)!));
+    const base = new CompositeSvgExporter().export(unnamed);
+    doc.setLineName(SHARED_LINK_ID, undefined, undefined);
+    expect(new CompositeSvgExporter().export(doc).replace(/\d{4}-\d\d-\d\dT[^"<]*/g, '')).toBe(
+      base.replace(/\d{4}-\d\d-\d\dT[^"<]*/g, '')
+    );
   });
 });

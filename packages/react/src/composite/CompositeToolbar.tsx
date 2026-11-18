@@ -25,6 +25,8 @@ export interface CompositeToolbarProps {
   hasSelection?: boolean;
   /** Whether a *child diagram* (not a line/link) is selected — gates the name button. */
   childSelected?: boolean;
+  /** Whether a line or auto-link is selected — also enables the name button (for the line's name). */
+  lineSelected?: boolean;
   /** Whether the draw-line tool is active (owned by the editor). */
   drawActive?: boolean;
   colorMode?: ColorMode;
@@ -37,7 +39,7 @@ export interface CompositeToolbarProps {
   onImport?: () => void;
   onDrawLine?: () => void;
   onDelete?: () => void;
-  /** Open the name-placement editor for the selected child. */
+  /** Open the name editor for the selection: the child's name placement, or the line's name. */
   onEditLabel?: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
@@ -74,6 +76,7 @@ export function CompositeToolbar({
   canRedo = false,
   hasSelection = false,
   childSelected = false,
+  lineSelected = false,
   drawActive = false,
   colorMode = 'by-type',
   labelMode = 'all',
@@ -96,6 +99,7 @@ export function CompositeToolbar({
   useSldAnimations();
   const L = useMemo(() => ({ ...DEFAULT_COMPOSITE_TOOLBAR_LABELS, ...labels }), [labels]);
   const canEdit = userRole !== 'viewer';
+  const nameTitle = lineSelected && !childSelected ? L.editLineName : L.editLabel;
   const [showExport, setShowExport] = useState(false);
 
   const latest = useRef({ onUndo, onRedo });
@@ -233,12 +237,12 @@ export function CompositeToolbar({
 
             <button
               type="button"
-              title={L.editLabel}
+              title={nameTitle}
               className={`${btnBase} ${btnIdle} disabled:opacity-40`}
-              disabled={!childSelected}
+              disabled={!childSelected && !lineSelected}
               onClick={() => onEditLabel?.()}
             >
-              <span className="sr-only">{L.editLabel}</span>
+              <span className="sr-only">{nameTitle}</span>
               <Type className="h-4 w-4" />
             </button>
 

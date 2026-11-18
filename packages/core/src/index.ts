@@ -113,6 +113,16 @@ export {
 export {
   CompositeLine,
   DEFAULT_LINE_KIND,
+  DEFAULT_LINE_NAME_PLACEMENT,
+  LINE_NAME_ORIENTATIONS,
+  LINE_NAME_ALONGS,
+  LINE_NAME_SIDES,
+  type LineNameOrientation,
+  type LineNameAlong,
+  type LineNameSide,
+  type LineNamePlacement,
+  type LineName,
+  type LinkEnds,
   type CompositeLineKind,
   type CompositeLineJson,
   type LineVertexJson
@@ -129,7 +139,15 @@ export { chordFrame, type ChordFrame, type RelCoord } from './composite/lineFram
 export { Port, SIDE_VECTORS, sideAxis, sideFromAngle, rotateSide, facingSide, type BoxSide } from './composite/ports';
 export { OrthogonalRouter, type OrthogonalRouterOptions } from './composite/OrthogonalRouter';
 export { PortResolver, feederKey, type PortResolverOptions } from './composite/PortResolver';
-export { segmentAngleDeg, simplify, arcMidpoint } from './composite/polyline';
+export {
+  segmentAngleDeg,
+  simplify,
+  arcMidpoint,
+  pointAtFraction,
+  roomyPointAtFraction,
+  readableAngle,
+  VERTICAL_READING_TOLERANCE
+} from './composite/polyline';
 export {
   STUB_LENGTH,
   ALIGN_TOLERANCE,
@@ -140,6 +158,11 @@ export {
   BOX_SIZE,
   LINE_LABEL_FONT_SIZE,
   LINE_LABEL_LINE_HEIGHT,
+  LINE_NAME_FONT_SIZE,
+  LINE_NAME_OFFSET,
+  LINE_NAME_ALONG_FRACTION,
+  LINE_NAME_MAX_LINE_FRACTION,
+  LINE_NAME_MIN_SCALE,
   DEMAND_LEAD_LENGTH,
   HANGING_ASSETS,
   CABLE_DASH_ARRAY,
@@ -172,6 +195,12 @@ export {
   type LineLabelLayout,
   type LineLabelResolver,
   placeLineLabel,
+  placeLineName,
+  lineNameLayout,
+  lineNameFitSize,
+  fittedLineNameSize,
+  readableLineNameSize,
+  type LineNameLayout,
   type LineGlyph,
   type ExternalConnectionTip,
   type CompositeLayout
@@ -203,6 +232,7 @@ export {
   UpdateLineCommand,
   UpdateLineKindCommand,
   SetLineDataCommand,
+  SetLineNameCommand,
   SetBoxModeCommand,
   SetPortDirectionCommand,
   ChildDocumentCommand,

@@ -1,7 +1,16 @@
 import { SldParseError } from '../serialization/Serializer';
 import type { ExternalDirection } from '../types';
 import { CompositeDocument, type CompositeMeta } from './CompositeDocument';
-import { CompositeLine, DEFAULT_LINE_KIND, type CompositeLineJson, type LineVertexJson } from './CompositeLine';
+import {
+  CompositeLine,
+  DEFAULT_LINE_KIND,
+  LINE_NAME_ALONGS,
+  LINE_NAME_ORIENTATIONS,
+  LINE_NAME_SIDES,
+  type CompositeLineJson,
+  type LineNamePlacement,
+  type LineVertexJson
+} from './CompositeLine';
 import {
   DiagramInstance,
   LABEL_ANCHORS,
@@ -15,7 +24,8 @@ import {
 // `meta.autoFacing` — both optional with defaults (missing `portDirections` →
 // none, missing `autoFacing` → strict), so no version bump or structural
 // migration is required. v1 documents load transparently (missing `kind` →
-// `line`, missing `boxMode` → detailed).
+// `line`, missing `boxMode` → detailed). Line `name`/`namePlacement` are
+// optional too (missing → unnamed / default placement).
 export const COMPOSITE_SCHEMA_VERSION = 2;
 
 /** The four valid feeder exit directions, for pin validation. */
@@ -277,6 +287,12 @@ function parseLines(input: unknown, fail: Fail): CompositeLineJson[] {
     if (raw.routing !== undefined && (typeof raw.routing !== 'string' || !raw.routing)) {
       lineFail(`Line ${id}: invalid routing`);
     }
+    if (raw.name !== undefined && typeof raw.name !== 'string') {
+      lineFail(`Line ${id}: invalid name`);
+    }
+    if (raw.namePlacement !== undefined && !isLineNamePlacement(raw.namePlacement)) {
+      lineFail(`Line ${id}: invalid name placement`);
+    }
     if (!Array.isArray(raw.vertices) || raw.vertices.length < 2) {
       lineFail(`Line ${id}: needs at least two vertices`);
       continue;
@@ -311,10 +327,22 @@ function parseLines(input: unknown, fail: Fail): CompositeLineJson[] {
       ...(raw.routing !== undefined ? { routing: raw.routing as string } : {}),
       vertices,
       // Opaque, consumer-owned: passed through untouched, never validated.
-      ...(raw.data !== undefined ? { data: raw.data } : {})
+      ...(raw.data !== undefined ? { data: raw.data } : {}),
+      ...(raw.name ? { name: raw.name as string } : {}),
+      ...(raw.name && raw.namePlacement ? { namePlacement: { ...(raw.namePlacement as LineNamePlacement) } } : {})
     });
   }
   return lines;
+}
+
+function isLineNamePlacement(v: unknown): v is LineNamePlacement {
+  if (!v || typeof v !== 'object') return false;
+  const p = v as Record<string, unknown>;
+  return (
+    (LINE_NAME_ALONGS as readonly unknown[]).includes(p.along) &&
+    (LINE_NAME_SIDES as readonly unknown[]).includes(p.side) &&
+    (LINE_NAME_ORIENTATIONS as readonly unknown[]).includes(p.orientation)
+  );
 }
 
 function isFinite(v: unknown): v is number {

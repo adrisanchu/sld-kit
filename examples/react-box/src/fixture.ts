@@ -244,15 +244,26 @@ export function buildBoxComposite(): CompositeDocument {
     autoFacing: true
   });
 
+  const BELOW = { along: 'middle', side: 'below', orientation: 'parallel' } as const;
+
   // Instance id === library id here (each bus placed once), so anchors read clearly.
   for (const s of SUBS) composite.addChild(DiagramInstance.of({ id: s.id, libraryId: s.id, x: s.x, y: s.y }));
 
   // Overhead lines (solid), a transformer (circles) and a cable (dashed).
   // Stable ids so the rating readings can address each line.
   // Each line carries its rating reading (if any) in `data`, set at construction.
-  const addLine = (id: string, vertices: LineVertexJson[], kind: CompositeLineKind) =>
-    composite.addLine(new CompositeLine(id, vertices, kind, undefined, ratingData(id)));
-  addLine('l-alpha-bravo', [anchor('lib-alpha', 'alpha-bravo'), anchor('lib-bravo', 'bravo-alpha')], 'line');
+  // A line may also carry its own name, drawn by the core layout (here below the
+  // horizontal tie, clear of its rating rows above it).
+  const addLine = (id: string, vertices: LineVertexJson[], kind: CompositeLineKind, name?: string) =>
+    composite.addLine(
+      new CompositeLine(id, vertices, kind, undefined, ratingData(id), name, name ? BELOW : undefined)
+    );
+  addLine(
+    'l-alpha-bravo',
+    [anchor('lib-alpha', 'alpha-bravo'), anchor('lib-bravo', 'bravo-alpha')],
+    'line',
+    'L-220 kV Alpha-Bravo'
+  );
   addLine('l-alpha-charlie', [anchor('lib-alpha', 'alpha-charlie'), anchor('lib-charlie', 'charlie-alpha')], 'transformer');
   addLine('l-charlie-delta', [anchor('lib-charlie', 'charlie-delta'), anchor('lib-delta', 'delta-charlie')], 'line');
   addLine('l-delta-echo', [anchor('lib-delta', 'delta-echo'), anchor('lib-echo', 'echo-delta')], 'cable');

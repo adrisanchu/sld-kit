@@ -46,6 +46,50 @@ export type CompositeLineKind = 'line' | 'cable' | 'transformer' | 'transformer3
 
 export const DEFAULT_LINE_KIND: CompositeLineKind = 'line';
 
+/**
+ * How a line's name reads relative to the line it labels:
+ *  - `parallel` — along the segment it sits on, a small gap off the stroke;
+ *  - `perpendicular` — across the segment, growing away from the line;
+ *  - `horizontal` — never rotated, placed beside the line.
+ * Rotated text is always flipped to read left→right (bottom→top when vertical).
+ */
+export type LineNameOrientation = 'parallel' | 'perpendicular' | 'horizontal';
+/** Where along the line its name sits, in reading order (left→right, bottom→top). */
+export type LineNameAlong = 'start' | 'middle' | 'end';
+/** Which side of the line its name sits on, relative to the reading direction. */
+export type LineNameSide = 'above' | 'below';
+
+export const LINE_NAME_ORIENTATIONS: readonly LineNameOrientation[] = ['parallel', 'perpendicular', 'horizontal'];
+export const LINE_NAME_ALONGS: readonly LineNameAlong[] = ['start', 'middle', 'end'];
+export const LINE_NAME_SIDES: readonly LineNameSide[] = ['above', 'below'];
+
+/**
+ * Slot + orientation of a line's name label — the line analogue of a child's
+ * `LabelPlacement`. Measured in the line's *reading* frame, never in vertex
+ * order, so swapping the two diagrams it joins keeps the label where it was
+ * visually and still readable.
+ */
+export interface LineNamePlacement {
+  along: LineNameAlong;
+  side: LineNameSide;
+  orientation: LineNameOrientation;
+}
+
+export const DEFAULT_LINE_NAME_PLACEMENT: LineNamePlacement = { along: 'middle', side: 'above', orientation: 'parallel' };
+
+/** A line's name plus its placement, as one unit (see `SetLineNameCommand`). Absent `name` = unnamed. */
+export interface LineName {
+  name?: string;
+  placement?: LineNamePlacement;
+}
+
+/** The ends of an auto-link {@link CompositeLine.fromLink} materializes (structurally a `CompositeLink`). */
+export interface LinkEnds {
+  connectionId: string;
+  a: { instanceId: string };
+  b: { instanceId: string };
+}
+
 export interface CompositeLineJson {
   /** Line id — unique within the composite (namespaced separately from children). */
   id: string;
@@ -65,6 +109,13 @@ export interface CompositeLineJson {
    * resolver to show numeric labels.
    */
   data?: unknown;
+  /**
+   * The line's own name (e.g. `L-400 kV West-South 1`), drawn along the line by
+   * the layout. Absent → no name label. Never empty.
+   */
+  name?: string;
+  /** Where the name sits; absent → {@link DEFAULT_LINE_NAME_PLACEMENT}. Ignored without `name`. */
+  namePlacement?: LineNamePlacement;
 }
 
 /**
@@ -85,8 +136,38 @@ export class CompositeLine {
     /** Drawing style; `undefined` inherits the composite's `defaultRouting`. */
     public routing?: LineRouting,
     /** Opaque consumer metadata — roundtripped, never read (see {@link CompositeLineJson.data}). */
-    public data?: unknown
-  ) {}
+    public data?: unknown,
+    /** The line's own name; `undefined` (or empty) = unnamed (see {@link CompositeLineJson.name}). */
+    public name?: string,
+    /** Name placement; `undefined` = {@link DEFAULT_LINE_NAME_PLACEMENT}. */
+    public namePlacement?: LineNamePlacement
+  ) {
+    if (!this.name) this.name = undefined;
+  }
+
+  /**
+   * Materialize an auto-link as a manual line: a straight line anchored at both
+   * children's shared feeder, which suppresses (and visually replaces) the
+   * auto-link. Its id defaults to the shared connection id — the line's own
+   * identity — so naming an auto-link gives it a stable, meaningful id.
+   */
+  static fromLink(
+    link: LinkEnds,
+    opts: { id?: string; name?: string; namePlacement?: LineNamePlacement } = {}
+  ): CompositeLine {
+    return new CompositeLine(
+      opts.id ?? link.connectionId,
+      [
+        { kind: 'anchor', instanceId: link.a.instanceId, connectionId: link.connectionId },
+        { kind: 'anchor', instanceId: link.b.instanceId, connectionId: link.connectionId }
+      ],
+      DEFAULT_LINE_KIND,
+      undefined,
+      undefined,
+      opts.name,
+      opts.namePlacement ? { ...opts.namePlacement } : undefined
+    );
+  }
 
   /** Connection ids this line claims via anchor vertices (drives auto-link suppression). */
   anchoredConnectionIds(): Set<string> {
@@ -107,11 +188,21 @@ export class CompositeLine {
             ? { kind: 'rel', t: round2(v.t), ox: round2(v.ox), oy: round2(v.oy) }
             : { kind: 'anchor', instanceId: v.instanceId, connectionId: v.connectionId }
       ),
-      ...(this.data !== undefined ? { data: cloneData(this.data) } : {})
+      ...(this.data !== undefined ? { data: cloneData(this.data) } : {}),
+      ...(this.name ? { name: this.name } : {}),
+      ...(this.name && this.namePlacement ? { namePlacement: { ...this.namePlacement } } : {})
     };
   }
 
   static fromJSON(json: CompositeLineJson): CompositeLine {
-    return new CompositeLine(json.id ?? newId(), json.vertices, json.kind ?? DEFAULT_LINE_KIND, json.routing, cloneData(json.data));
+    return new CompositeLine(
+      json.id ?? newId(),
+      json.vertices,
+      json.kind ?? DEFAULT_LINE_KIND,
+      json.routing,
+      cloneData(json.data),
+      json.name,
+      json.namePlacement ? { ...json.namePlacement } : undefined
+    );
   }
 }

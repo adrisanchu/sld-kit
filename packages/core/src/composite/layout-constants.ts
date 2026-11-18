@@ -84,3 +84,22 @@ export const LINE_LABEL_GLYPH_CLEARANCE = 14;
 
 /** Padding of the label's backing box around its text. */
 export const LINE_LABEL_PAD = 3;
+
+/** A line's own name (`CompositeLine.name`): font size, world units — a peer of the feeder labels. */
+export const LINE_NAME_FONT_SIZE = 12;
+
+/** Gap between a line's stroke and the nearest edge of its name. */
+export const LINE_NAME_OFFSET = 6;
+
+/** Where `start` / `middle` / `end` sit along a line, as a fraction of its arc length in reading order. */
+export const LINE_NAME_ALONG_FRACTION = { start: 0.2, middle: 0.5, end: 0.8 } as const;
+
+/** A line name is never wider than this share of its longest straight run (bends ignored). */
+export const LINE_NAME_MAX_LINE_FRACTION = 0.9;
+
+/**
+ * Floor of the fit-to-line shrink, as a share of the normal size: below it a
+ * name on a very short line stops shrinking and overhangs its line instead of
+ * becoming unreadable.
+ */
+export const LINE_NAME_MIN_SCALE = 0.5;

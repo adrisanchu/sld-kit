@@ -126,25 +126,27 @@ inherit it.
 Try it: [live demo](https://adrisanchu.github.io/sld-kit/box/) (React, from
 [`examples/react-box`](../examples/react-box)).
 
-| Capability                                                         | Where                                                                                                 | Svelte 4 | React |
-| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | :------: | :---: |
-| `boxMode` / `boxSubLabel`                                          | `CompositeCanvas`, `ChildDiagramView`, `CompositeExplorer`                                            |    ⬜    |  ✅   |
-| Line kinds + glyphs                                                | `CompositeCanvas` (core `CompositeLine.kind` + layout)                                                |    ⬜    |  ✅   |
-| Hanging ties (`layout.hangers` + `hangerFormat`)                   | `CompositeCanvas` (core derives them from each child's feeders)                                       |    ⬜    |  ✅   |
-| `orthogonal` draw + `orthogonalizePolyline`                        | `CompositeCanvas` + `routing`                                                                         |    ⬜    |  ✅   |
-| Floating-connector router (`layout.snapTips`)                      | core `CompositeLayoutEngine`; `snapTargets` prop                                                      |    ⬜    |  ✅   |
-| Obstacle-avoiding router (lines detour around boxes)               | core `OrthogonalRouter` (no adapter surface)                                                          |    ✅    |  ✅   |
-| `curved` routing (rounded bends, `cornerRadius`)                   | `CompositeCanvas` lines + links via `connectionPath` / `linkNodeDots`                                 |    ✅    |  ✅   |
-| Port-direction override (`onPortDirection`)                        | `CompositeCanvas` feeder handle → `SetPortDirectionCommand`                                           |    ⬜    |  ✅   |
-| Auto-facing policy (`meta.autoFacing`)                             | core-derived; `SetAutoFacingCommand` (no adapter surface)                                             |    ⬜    |  ✅   |
-| Uniform box size (`boxSize`, default `BOX_SIZE`)                   | core `CompositeLayoutEngine` option (no adapter surface)                                              |    ⬜    |  ✅   |
-| Line labels (`CompositeLine.data` + `lineLabels`)                  | core layout places `ln.label`; `CompositeCanvas` draws it                                             |    ⬜    |  ✅   |
-| Section boxes (`boxSections` → `child.boxes`/`ties`)               | core layout; `ChildDiagramView` box branch, `boxSubLabel(child, section)`                             |    ⬜    |  ✅   |
-| Expand in place (`layout(doc, { expanded })`) + box ↔ detail morph | `ChildDiagramView` (`animateMorph`), `CompositeCanvas` (expanded drawn last, re-routed lines fade in) |    ⬜    |  ✅   |
-| Open-bay default look (`Position.state` → `resolveFormat`)         | `PositionView`                                                                                        |    ✅    |  ✅   |
-| Open-bay connections grey + dashed (`switchOpenConnectionFormat`)  | `ConnectionView` (`doc` prop), `CompositeCanvas` via `linkFormat`/`lineFormat`                        |    ✅    |  ✅   |
-| Section hover frames (core `sectionWorldCorners`)                  | `ChildDiagramView` per-section hit rects; `CompositeCanvas` frames the hovered section (#69)          |    ⬜    |  ✅   |
-| `ElementFormat.stroke` (line colour)                               | `ConnectionView`, `CompositeCanvas` links + lines                                                     |    ✅    |  ✅   |
+| Capability                                                         | Where                                                                                                                                           | Svelte 4 | React |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | :------: | :---: |
+| `boxMode` / `boxSubLabel`                                          | `CompositeCanvas`, `ChildDiagramView`, `CompositeExplorer`                                                                                      |    ⬜    |  ✅   |
+| Line kinds + glyphs                                                | `CompositeCanvas` (core `CompositeLine.kind` + layout)                                                                                          |    ⬜    |  ✅   |
+| Hanging ties (`layout.hangers` + `hangerFormat`)                   | `CompositeCanvas` (core derives them from each child's feeders)                                                                                 |    ⬜    |  ✅   |
+| `orthogonal` draw + `orthogonalizePolyline`                        | `CompositeCanvas` + `routing`                                                                                                                   |    ⬜    |  ✅   |
+| Floating-connector router (`layout.snapTips`)                      | core `CompositeLayoutEngine`; `snapTargets` prop                                                                                                |    ⬜    |  ✅   |
+| Obstacle-avoiding router (lines detour around boxes)               | core `OrthogonalRouter` (no adapter surface)                                                                                                    |    ✅    |  ✅   |
+| `curved` routing (rounded bends, `cornerRadius`)                   | `CompositeCanvas` lines + links via `connectionPath` / `linkNodeDots`                                                                           |    ✅    |  ✅   |
+| Port-direction override (`onPortDirection`)                        | `CompositeCanvas` feeder handle → `SetPortDirectionCommand`                                                                                     |    ⬜    |  ✅   |
+| Auto-facing policy (`meta.autoFacing`)                             | core-derived; `SetAutoFacingCommand` (no adapter surface)                                                                                       |    ⬜    |  ✅   |
+| Uniform box size (`boxSize`, default `BOX_SIZE`)                   | core `CompositeLayoutEngine` option (no adapter surface)                                                                                        |    ⬜    |  ✅   |
+| Line labels (`CompositeLine.data` + `lineLabels`)                  | core layout places `ln.label`; `CompositeCanvas` draws it                                                                                       |    ✅    |  ✅   |
+| Line names (`CompositeLine.name` + `namePlacement`)                | core layout places `ln.nameLabel` (always on, always readable); `CompositeCanvas` draws it (`sld-line-name`); `CompositeToolbar` `lineSelected` |    ✅    |  ✅   |
+| Zoom-aware line names (`lineNameScreenSize`)                       | `CompositeCanvas` re-places names per zoom via core `readableLineNameSize` (≥ `minPx` zoomed out, ≤ 90% of the line)                            |    ✅    |  ✅   |
+| Section boxes (`boxSections` → `child.boxes`/`ties`)               | core layout; `ChildDiagramView` box branch, `boxSubLabel(child, section)`                                                                       |    ⬜    |  ✅   |
+| Expand in place (`layout(doc, { expanded })`) + box ↔ detail morph | `ChildDiagramView` (`animateMorph`), `CompositeCanvas` (expanded drawn last, re-routed lines fade in)                                           |    ⬜    |  ✅   |
+| Open-bay default look (`Position.state` → `resolveFormat`)         | `PositionView`                                                                                                                                  |    ✅    |  ✅   |
+| Open-bay connections grey + dashed (`switchOpenConnectionFormat`)  | `ConnectionView` (`doc` prop), `CompositeCanvas` via `linkFormat`/`lineFormat`                                                                  |    ✅    |  ✅   |
+| Section hover frames (core `sectionWorldCorners`)                  | `ChildDiagramView` per-section hit rects; `CompositeCanvas` frames the hovered section (#69)                                                    |    ⬜    |  ✅   |
+| `ElementFormat.stroke` (line colour)                               | `ConnectionView`, `CompositeCanvas` links + lines                                                                                               |    ✅    |  ✅   |
 
 ### Flow overlays (generic, domain-agnostic)
 

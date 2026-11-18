@@ -7,7 +7,8 @@
  * bus-section topology (imported as TypeScript — Node ≥ 22.18 strips types):
  * the fixture's double bus starts with its coupler open, so the box view draws
  * two section boxes joined by a muted tie; closing the coupler merges them into
- * one box labelled with both bus ids. Run with: node ssr-smoke.mjs
+ * one box labelled with both bus ids. A named line (`CompositeLine.name`) draws
+ * its always-on name on screen and in the export. Run with: node ssr-smoke.mjs
  */
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -104,6 +105,23 @@ const svg = new CompositeSvgExporter(engine).export(composite, {
   boxFill: () => '#dcfce7',
   boxSubLabel: (child) => String(child.instance.resolved?.meta.data?.busId ?? '')
 });
+
+// Line names: an auto-link materialized as a named line (id = the shared feeder
+// id), its vertical name reading bottom→top both on screen and in the export.
+const namedDoc = new CompositeDocument({ id: 'nm', name: 'nm', boxMode: true, defaultRouting: 'orthogonal' });
+namedDoc.addChild(DiagramInstance.of({ id: 'a', libraryId: 'a', x: 0, y: 0 }));
+namedDoc.addChild(DiagramInstance.of({ id: 'c', libraryId: 'c', x: 0, y: 700 }));
+namedDoc.addLine(
+  new CompositeLine('t-ac', [{ kind: 'anchor', instanceId: 'a', connectionId: 'a-c' }, { kind: 'anchor', instanceId: 'c', connectionId: 'c-a' }], 'line', undefined, undefined, 'TR Alpha-Gamma', {
+    along: 'middle',
+    side: 'above',
+    orientation: 'parallel'
+  })
+);
+namedDoc.resolveChildren(resolver);
+const namedLayout = new CompositeLayoutEngine().layout(namedDoc);
+const namedHtml = renderToStaticMarkup(h(CompositeCanvas, { layout: namedLayout, boxMode: true }));
+const namedSvg = new CompositeSvgExporter().export(namedDoc, { boxMode: true });
 
 // Auto-facing: with the policy on, a feeder derives its exit side from live box
 // positions, so moving a peer across a box flips which edge the tie leaves from.
@@ -218,6 +236,9 @@ const checks = [
   ['draws stacked line labels', html.includes('>1500/1200<') && html.includes('>1100/1300<')],
   ['formats a winter/summer-only capacity as one row', formatCapacity([150, undefined, 100, undefined]).join('|') === '150/100'],
   ['exports stacked line labels', svg.includes('>1500/1200<') && svg.includes('>1100/1300<')],
+  ['draws a named line\'s name, readable bottom→top', namedHtml.includes('class="sld-line-name') && namedHtml.includes('>TR Alpha-Gamma<') && namedLayout.lines[0].nameLabel?.rotation === -90],
+  ['exports the line name as office-safe rotated text', namedSvg.includes('>TR Alpha-Gamma</text>') && /rotate\(-90 /.test(namedSvg) && !namedSvg.includes('class=')],
+  ['an unnamed line draws no name', !html.includes('sld-line-name')],
   [
     'open coupler: two sections, feeders on their own bar',
     openSections.length === 2 && sectionFeeders(openSections) === 'charlie-alpha | charlie-delta,charlie-dem'

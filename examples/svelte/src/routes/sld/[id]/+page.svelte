@@ -9,7 +9,7 @@
   import LoaderCircle from 'lucide-svelte/icons/loader-circle';
   import SldEditor from '$lib/components/sld/SldEditor.svelte';
   import CompositeEditor from '$lib/components/sld/composite/CompositeEditor.svelte';
-  import { CompositeSerializer, type SldDocument, type CompositeDocument } from '@sld-kit/core';
+  import { CompositeSerializer, Serializer, type SldDocument, type CompositeDocument } from '@sld-kit/core';
   import { buildDemoById, SLD_DEMOS, SLD_COMPOSITE_DEMOS } from '$lib/sld/demoFixture';
   import { sldLibrary } from '$lib/stores/sldLibrary';
 
@@ -33,25 +33,7 @@
 
   onMount(() => {
     // Seed a demo on demand (deep-link / refresh) if it is missing.
-    if (!sldLibrary.exists(id)) {
-      const composite = SLD_COMPOSITE_DEMOS.find((d) => d.id === id);
-      if (composite) {
-        // A composite references its child diagrams by id; seed those too (as
-        // the library index does) so resolveChildren finds them and the
-        // inter-diagram links render. Without this, deep-linking straight to a
-        // composite leaves the children unresolved (placeholders, no links).
-        SLD_DEMOS.forEach((d) => {
-          if (!sldLibrary.exists(d.id)) {
-            const child = buildDemoById(d.id);
-            if (child) sldLibrary.saveDoc(child);
-          }
-        });
-        sldLibrary.saveComposite(CompositeSerializer.toJSON(composite.build()));
-      } else {
-        const demo = buildDemoById(id);
-        if (demo) sldLibrary.saveDoc(demo);
-      }
-    }
+    if (!sldLibrary.exists(id)) seedDemo(id);
 
     if (sldLibrary.kindOf(id) === 'composite') {
       const json = sldLibrary.loadCompositeJson(id);
@@ -64,14 +46,20 @@
         createdAt = loaded.meta.createdAt;
         updatedAt = loaded.meta.updatedAt;
         unsubDoc = loaded.subscribe(scheduleSave);
-      } catch {
-        return notFound();
+      } catch (err) {
+        return loadFailed(err);
       }
       return;
     }
 
-    const loaded = sldLibrary.load(id);
-    if (!loaded) return notFound();
+    const json = sldLibrary.loadJson(id);
+    if (!json) return notFound();
+    let loaded: SldDocument;
+    try {
+      loaded = Serializer.fromJSON(json);
+    } catch (err) {
+      return loadFailed(err);
+    }
     doc = loaded;
     name = doc.meta.name;
     substation = doc.meta.substation ?? '';
@@ -85,6 +73,58 @@
 
   function notFound() {
     toast.error('Diagram not found');
+    goto(`${base}/sld`);
+  }
+
+  const isDemo = (demoId: string) => SLD_DEMOS.some((d) => d.id === demoId) || SLD_COMPOSITE_DEMOS.some((d) => d.id === demoId);
+
+  /**
+   * (Re)write a demo from its seed. A composite references its child diagrams
+   * by id; seed any missing ones too (as the library index does) so
+   * resolveChildren finds them and the inter-diagram links render. Without this,
+   * deep-linking straight to a composite leaves the children unresolved.
+   */
+  function seedDemo(demoId: string) {
+    const composite = SLD_COMPOSITE_DEMOS.find((d) => d.id === demoId);
+    if (composite) {
+      SLD_DEMOS.forEach((d) => {
+        if (!sldLibrary.exists(d.id)) {
+          const child = buildDemoById(d.id);
+          if (child) sldLibrary.saveDoc(child);
+        }
+      });
+      sldLibrary.saveComposite(CompositeSerializer.toJSON(composite.build()));
+    } else {
+      const demo = buildDemoById(demoId);
+      if (demo) sldLibrary.saveDoc(demo);
+    }
+  }
+
+  /**
+   * The stored document exists but can't be parsed (e.g. saved by an older,
+   * incompatible schema): say why instead of a bare "not found". A seeded demo
+   * can be rebuilt from its seed — on explicit request only, since that
+   * replaces the stored copy.
+   */
+  function loadFailed(err: unknown) {
+    console.error(`[sld] could not open "${id}":`, err);
+    const message = err instanceof Error ? err.message : String(err);
+    const rebuildable = isDemo(id);
+    toast.error(`Could not open “${name || id}”`, {
+      description: rebuildable ? `${message}. Rebuilding replaces the stored copy with the current demo.` : message,
+      duration: rebuildable ? 20000 : undefined,
+      ...(rebuildable
+        ? {
+            action: {
+              label: 'Rebuild demo',
+              onClick: () => {
+                seedDemo(id);
+                goto(`${base}/sld/${id}`);
+              }
+            }
+          }
+        : {})
+    });
     goto(`${base}/sld`);
   }
 
