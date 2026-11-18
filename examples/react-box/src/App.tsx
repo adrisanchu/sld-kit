@@ -23,6 +23,8 @@ import {
   SetBoxModeCommand,
   SetDefaultRoutingCommand,
   SetLineDataCommand,
+  SetLineNameCommand,
+  DEFAULT_LINE_NAME_PLACEMENT,
   SetPortDirectionCommand,
   UpdateLineKindCommand,
   TransformChildCommand,
@@ -34,6 +36,7 @@ import {
   type SldElement,
   type SldDocument,
   type CompositeLineKind,
+  type LineName,
   type CompositeLineLayout,
   type ExternalDirection,
   type Point
@@ -439,14 +442,20 @@ export default function App() {
   const editedLine = selectedLineId ? composite.getLine(selectedLineId) : undefined;
   const editedLineLayout = editedLine ? layout.lines.find((l) => l.line.id === editedLine.id) : undefined;
 
-  /** Kind + ratings of the selected line as ONE undoable step (no-op when unchanged). */
-  const applyLineEdit = (kind: CompositeLineKind, data: LineRatingData | undefined) => {
+  /** Kind + ratings + name of the selected line as ONE undoable step (no-op when unchanged). */
+  const applyLineEdit = (kind: CompositeLineKind, data: LineRatingData | undefined, name: LineName) => {
     const line = selectedLineId ? composite.getLine(selectedLineId) : undefined;
     if (!line) return;
     const steps: Command<CompositeDocument>[] = [];
     if (kind !== line.kind) steps.push(new UpdateLineKindCommand(line.id, line.kind, kind));
     if (JSON.stringify(data) !== JSON.stringify(line.data))
       steps.push(new SetLineDataCommand(line.id, line.data, data));
+    // Compare against the effective placement, so an untouched default isn't an edit.
+    const before: LineName = { name: line.name, placement: line.namePlacement };
+    const effective = line.name
+      ? { name: line.name, placement: line.namePlacement ?? DEFAULT_LINE_NAME_PLACEMENT }
+      : {};
+    if (JSON.stringify(name) !== JSON.stringify(effective)) steps.push(new SetLineNameCommand(line.id, before, name));
     if (steps.length) run(new BatchCommand('Edit line', steps));
     setLineEditAt(null);
   };

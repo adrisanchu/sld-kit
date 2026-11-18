@@ -10,6 +10,8 @@
     RemoveChildCommand,
     TransformChildCommand,
     SetChildLabelCommand,
+    SetLineNameCommand,
+    DEFAULT_LINE_NAME_PLACEMENT,
     AddLineCommand,
     RemoveLineCommand,
     UpdateLineCommand,
@@ -25,6 +27,7 @@
     type ChordFrame,
     type CompositeLineLayout,
     type LineVertexJson,
+    type LineNamePlacement,
     type LabelAnchor
   } from '@sld-kit/core';
   import { sldLibrary } from '$lib/stores/sldLibrary';
@@ -32,6 +35,7 @@
   import { AssetLegend, CompositeCanvas, CompositeToolbar, createDocStore, downloadText, slugify } from '@sld-kit/svelte';
   import ImportDiagramDialog from './ImportDiagramDialog.svelte';
   import DiagramLabelDialog from './DiagramLabelDialog.svelte';
+  import LineNameDialog from './LineNameDialog.svelte';
   import {
     POSITION_TYPE_TOKENS,
     SLD_COMPOSITE_TOOLBAR_LABELS,
@@ -156,6 +160,56 @@
         { anchor: e.detail.anchor, direction: e.detail.direction }
       )
     );
+  }
+
+  // ── Line name ───────────────────────────────────────────────────────────────
+  // The same toolbar button names a selected line. A selected auto-link has no
+  // stored entity yet, so naming it *materializes* it: a straight manual line
+  // anchored at both shared feeders, id = the shared connection id (one undo
+  // step). Until a name is typed, a link's placement edits stay a local draft.
+  let lineDialogOpen = false;
+  let linkDraftPlacement: LineNamePlacement | undefined;
+
+  $: nameLine = selectedLineId ? ($docStore.getLine(selectedLineId) ?? null) : null;
+  $: if (!selectedLinkId) linkDraftPlacement = undefined;
+  $: if (!selectedLineId && !selectedLinkId) lineDialogOpen = false;
+
+  function openNameEditor() {
+    if (selectedId) labelDialogOpen = true;
+    else if (selectedLineId || selectedLinkId) lineDialogOpen = true;
+  }
+
+  function applyLineName(e: CustomEvent<{ name: string; placement: LineNamePlacement }>) {
+    if (!canEdit) return;
+    const { name, placement } = e.detail;
+    if (selectedLineId) {
+      const line = doc.getLine(selectedLineId);
+      if (!line) return;
+      run(
+        new SetLineNameCommand(
+          line.id,
+          { name: line.name, placement: line.namePlacement },
+          { name: name || undefined, placement }
+        )
+      );
+      return;
+    }
+    if (!selectedLinkId) return;
+    if (!name) {
+      linkDraftPlacement = placement;
+      return;
+    }
+    const link = layout.links.find((l) => l.connectionId === selectedLinkId);
+    if (!link) return;
+    const line = CompositeLine.fromLink(link, {
+      // The shared id is the line's identity — unless a line already took it.
+      id: doc.getLine(link.connectionId) ? newId() : link.connectionId,
+      name,
+      namePlacement: placement
+    });
+    run(new AddLineCommand(line));
+    selectedLinkId = null;
+    selectedLineId = line.id;
   }
 
   // ── Drag-move ──────────────────────────────────────────────────────────────
@@ -628,12 +682,20 @@
   {#if canEdit && selectedLinkId}
     <!-- Contextual action: turn the selected auto-link into an editable manual line. -->
     <div class="absolute left-1/2 top-6 z-10 -translate-x-1/2">
-      <button
-        class="rounded-full border border-border bg-background/90 px-4 py-1.5 text-sm font-medium shadow-lg backdrop-blur-sm hover:bg-accent"
-        on:click={convertSelectedLink}
-      >
-        Draw this link manually
-      </button>
+      <div class="flex gap-2">
+        <button
+          class="rounded-full border border-border bg-background/90 px-4 py-1.5 text-sm font-medium shadow-lg backdrop-blur-sm hover:bg-accent"
+          on:click={() => (lineDialogOpen = true)}
+        >
+          Name this line
+        </button>
+        <button
+          class="rounded-full border border-border bg-background/90 px-4 py-1.5 text-sm font-medium shadow-lg backdrop-blur-sm hover:bg-accent"
+          on:click={convertSelectedLink}
+        >
+          Draw this link manually
+        </button>
+      </div>
     </div>
   {/if}
 
@@ -658,6 +720,7 @@
     {canRedo}
     {hasSelection}
     childSelected={selectedId !== null}
+    lineSelected={selectedLineId !== null || selectedLinkId !== null}
     {drawActive}
     colorMode={$sldEditorSettings.colorMode}
     labelMode={$sldEditorSettings.labelMode}
@@ -667,7 +730,7 @@
     on:import={() => (importOpen = true)}
     on:drawline={toggleDraw}
     on:delete={deleteSelection}
-    on:editlabel={() => (labelDialogOpen = true)}
+    on:editlabel={openNameEditor}
     on:undo={() => stack.undo(doc)}
     on:redo={() => stack.redo(doc)}
     on:fit={() => canvas?.zoomToFit()}
@@ -688,5 +751,15 @@
     anchor={labelChild.labelAnchor}
     direction={labelChild.labelDirection}
     on:change={applyLabelPlacement}
+  />
+{/if}
+
+{#if nameLine || selectedLinkId}
+  <LineNameDialog
+    bind:open={lineDialogOpen}
+    lineId={nameLine?.id ?? selectedLinkId ?? ''}
+    name={nameLine?.name ?? ''}
+    placement={nameLine?.namePlacement ?? linkDraftPlacement ?? DEFAULT_LINE_NAME_PLACEMENT}
+    on:change={applyLineName}
   />
 {/if}
