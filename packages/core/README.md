@@ -490,6 +490,56 @@ passed as the engine's third constructor argument (`minJog`: jogs shorter than t
 are straightened when possible; `0` keeps them). `SetDefaultRoutingCommand`
 changes the default routing undoably.
 
+### Line names
+
+A line can carry its own name (e.g. `L-400 kV West-South 1`), distinct from the
+far-end feeder labels each child draws. The layout places it in
+`line.nameLabel` (text, anchor, rotation, size), and the canvas and exporter
+draw that same placement.
+
+```ts
+import { CompositeLine, AddLineCommand, SetLineNameCommand, CompositeLayoutEngine } from '@sld-kit/core';
+
+// Name an auto-link: materialize it as a straight line whose id is the shared
+// connection id (one undo step; it replaces the auto-link exactly).
+const link = layout.links.find((l) => l.connectionId === 'south-west-1')!;
+stack.execute(
+  new AddLineCommand(
+    CompositeLine.fromLink(link, {
+      name: 'L-400 kV West-South 1',
+      namePlacement: { along: 'middle', side: 'above', orientation: 'parallel' }
+    })
+  ),
+  composite
+);
+
+// Rename / move the name of an existing line, undoably.
+stack.execute(new SetLineNameCommand('south-west-1', before, { name: 'L-400 kV West-South 1' }), composite);
+
+// Normal size, matched to the labels around the lines (default 12).
+const engine = new CompositeLayoutEngine(undefined, undefined, undefined, { lineNameFontSize: 16 });
+```
+
+- **Placement:** `along` is `start` / `middle` / `end`, `side` is `above` /
+  `below`, and `orientation` is `parallel` / `perpendicular` / `horizontal`.
+  `start` and `above` are measured in the line's **reading direction** (left to
+  right, bottom to top when vertical), not in vertex order, so swapping the two
+  diagrams keeps the name in place.
+- **Always readable:** rotated names are flipped to read left to right. Runs
+  within 10° of vertical read bottom to top. A name never sits on a short jog of
+  an orthogonal route, and at `middle` it keeps clear of a transformer glyph.
+- **Sized to its line:** a name is never wider than 90% of the line's longest
+  straight run (bends ignored). On a very short line it stops shrinking at half
+  its normal size and overhangs the line.
+- **Zoom-aware (adapters, opt-in):** `nameLabel.maxFontSize` is how far a canvas
+  may grow the name when zoomed out (`readableLineNameSize`, re-placed with
+  `lineNameLayout`). The export always uses the layout size.
+- Names don't avoid each other or the `lineLabels` rows, and they are always
+  on. The name is Office-safe in the export (plain `<text>`), and unnamed
+  composites export byte-for-byte as before.
+
+See [`docs/composite.md`](../../docs/composite.md#line-names) for the full rules.
+
 ### Asset counts (`tallyComposite`)
 
 `tallyComposite(composite, { category })` counts the positions of every
@@ -595,8 +645,10 @@ the metadata helper `getElementData`, the asset counters `tallyPositions` /
 `tallyComposite`,
 and the composite classes (`CompositeDocument`,
 `DiagramInstance`, `CompositeLayoutEngine`, `CompositeSerializer`,
-`CompositeSvgExporter`, `Transform2D`, `MapResolver`, and the box-view section
-helpers `layoutSectionBoxes` / `sectionWorldCorners`).
+`CompositeSvgExporter`, `Transform2D`, `MapResolver`, the box-view section
+helpers `layoutSectionBoxes` / `sectionWorldCorners`, and the line-name helpers
+`placeLineName` / `lineNameLayout` / `fittedLineNameSize` /
+`readableLineNameSize`).
 
 See [`docs/architecture.md`](../../docs/architecture.md) for the design.
 
