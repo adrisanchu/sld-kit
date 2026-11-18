@@ -36,6 +36,8 @@ import {
   LINE_LABEL_PAD,
   LINE_NAME_ALONG_FRACTION,
   LINE_NAME_FONT_SIZE,
+  LINE_NAME_MAX_LINE_FRACTION,
+  LINE_NAME_MIN_SCALE,
   LINE_NAME_OFFSET,
   TRANSFORMER_SYMBOL,
   TRANSFORMER3W_SYMBOL
@@ -466,11 +468,45 @@ export interface LineNameLayout {
   rotation: number;
   textAnchor: 'start' | 'middle' | 'end';
   fontSize: number;
+  /**
+   * The largest size this name may take on its line — where its estimated width
+   * reaches {@link LINE_NAME_MAX_LINE_FRACTION} of the line's longest straight
+   * run (never below `fontSize`). A zoom-aware renderer grows the name up to it
+   * and no further (see {@link readableLineNameSize}).
+   */
+  maxFontSize: number;
   /** World AABB of the (estimated) rotated text — for bounds/fit, not hit-testing. */
   box: Rect;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Estimated advance of one character, in ems (no DOM to measure in; errs wide). */
+const NAME_CHAR_WIDTH = 0.6;
+
+/**
+ * The font size at which `text` is {@link LINE_NAME_MAX_LINE_FRACTION} (or
+ * `fraction`) of the polyline's longest straight run — bends are ignored, so a
+ * name always fits on one run. `0` for an empty name or a degenerate line.
+ */
+export function lineNameFitSize(points: Point[], text: string, fraction: number = LINE_NAME_MAX_LINE_FRACTION): number {
+  if (!text) return 0;
+  let longest = 0;
+  for (let i = 1; i < points.length; i++) {
+    longest = Math.max(longest, Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
+  }
+  return (fraction * longest) / (text.length * NAME_CHAR_WIDTH);
+}
+
+/**
+ * A line name's layout size: `baseSize`, shrunk so the name never exceeds
+ * {@link LINE_NAME_MAX_LINE_FRACTION} of its line's longest straight run, but
+ * never below `baseSize × LINE_NAME_MIN_SCALE` — on a very short line the name
+ * overhangs rather than becoming unreadable.
+ */
+export function fittedLineNameSize(points: Point[], text: string, baseSize: number = LINE_NAME_FONT_SIZE): number {
+  return Math.max(Math.min(baseSize, lineNameFitSize(points, text)), baseSize * LINE_NAME_MIN_SCALE);
+}
 
 /**
  * Place a line's name. Everything is measured in the line's **reading frame** —
@@ -493,7 +529,8 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  *
  * `fontSize` (world units, default {@link LINE_NAME_FONT_SIZE}) scales the name
  * and its gap together, so a larger name keeps the same proportions — what a
- * zoom-aware renderer passes (see {@link screenConstantFontSize}).
+ * zoom-aware renderer passes (see {@link readableLineNameSize}). It is used as
+ * given; the layout picks it with {@link fittedLineNameSize}.
  */
 export function placeLineName(
   points: Point[],
@@ -511,7 +548,7 @@ export function placeLineName(
   const reversed = Math.abs(cdx) > 1e-6 ? cdx < 0 : cdy > 0;
   const reading = reversed ? [...points].reverse() : points;
 
-  const w = text.length * fontSize * 0.6;
+  const w = text.length * fontSize * NAME_CHAR_WIDTH;
   const h = fontSize;
   const offset = (LINE_NAME_OFFSET * fontSize) / LINE_NAME_FONT_SIZE;
   // Sit on a segment with room for the name (never on a short orthogonal jog):
@@ -564,6 +601,7 @@ export function placeLineName(
     rotation: round2(rotation) || 0,
     textAnchor,
     fontSize,
+    maxFontSize: Math.max(fontSize, lineNameFitSize(points, text)),
     box: { x: minX, y: minY, width: Math.max(...xs) - minX, height: Math.max(...ys) - minY }
   };
 }
@@ -572,33 +610,27 @@ export function placeLineName(
  * (Re-)place a laid-out line's name at `fontSize` — exactly what the layout does
  * (same placement, same transformer-glyph clearance), at another size. Lets a
  * renderer resize names with the zoom without re-running the whole layout.
- * `null` when the line has no name.
+ * Without `fontSize`, the layout size: {@link fittedLineNameSize} of the default
+ * {@link LINE_NAME_FONT_SIZE}. `null` when the line has no name.
  */
-export function lineNameLayout(line: CompositeLineLayout, fontSize: number = LINE_NAME_FONT_SIZE): LineNameLayout | null {
+export function lineNameLayout(line: CompositeLineLayout, fontSize?: number): LineNameLayout | null {
   const { name, namePlacement } = line.line;
   if (!name) return null;
   const placement = namePlacement ?? DEFAULT_LINE_NAME_PLACEMENT;
   const clearance = line.glyph && placement.along === 'middle' ? LINE_LABEL_GLYPH_CLEARANCE : 0;
-  return placeLineName(line.points, name, placement, clearance, fontSize);
-}
-
-/** On-screen size bounds for zoom-aware text, in CSS pixels. */
-export interface ScreenSizeRange {
-  minPx: number;
-  maxPx: number;
+  return placeLineName(line.points, name, placement, clearance, fontSize ?? fittedLineNameSize(line.points, name));
 }
 
 /**
- * The world-unit font size that keeps text between `minPx` and `maxPx` on
- * screen: `baseSize` scaled by the zoom (`pxPerUnit`), clamped, converted back
- * to world units. Zoomed out, the text grows relative to the drawing so it stays
- * readable from afar; zoomed in, it stops growing and so shrinks relative to the
- * detail. Falls back to `baseSize` when the scale is unknown (e.g. SSR).
+ * The world size a zoom-aware renderer draws a placed name at: grown so it is at
+ * least `minPx` on screen (readable from afar), but never past its line's
+ * `maxFontSize` (never wider than {@link LINE_NAME_MAX_LINE_FRACTION} of its
+ * line), and never below its layout size (in sync with the drawing up close).
+ * Falls back to the layout size when the scale is unknown (e.g. SSR).
  */
-export function screenConstantFontSize(baseSize: number, pxPerUnit: number, range: ScreenSizeRange): number {
-  if (!(pxPerUnit > 0) || !Number.isFinite(pxPerUnit)) return baseSize;
-  const px = Math.max(range.minPx, Math.min(range.maxPx, baseSize * pxPerUnit));
-  return px / pxPerUnit;
+export function readableLineNameSize(label: LineNameLayout, pxPerUnit: number, minPx: number): number {
+  if (!(pxPerUnit > 0) || !Number.isFinite(pxPerUnit)) return label.fontSize;
+  return Math.min(label.maxFontSize, Math.max(label.fontSize, minPx / pxPerUnit));
 }
 
 /**
@@ -713,9 +745,11 @@ export interface CompositeLayoutOptions {
   /** Corner radius of `curved` lines and links (default {@link CURVE_RADIUS}). */
   cornerRadius?: number;
   /**
-   * Font size of line names (`CompositeLine.name`), world units (default
-   * {@link LINE_NAME_FONT_SIZE}). The size the export uses; a zoom-aware canvas
-   * starts from it too (see {@link screenConstantFontSize}).
+   * Normal font size of line names (`CompositeLine.name`), world units (default
+   * {@link LINE_NAME_FONT_SIZE}) — match it to the labels around the lines. A
+   * name shrinks below it only to stay within its line (see
+   * {@link fittedLineNameSize}); the export uses the result, and a zoom-aware
+   * canvas starts from it (see {@link readableLineNameSize}).
    */
   lineNameFontSize?: number;
 }
@@ -1156,7 +1190,9 @@ export class CompositeLayoutEngine {
 
   /** Attach the line's own name (if any), clearing the transformer glyph when it sits at the midpoint. */
   private withName(layout: CompositeLineLayout): CompositeLineLayout {
-    const nameLabel = lineNameLayout(layout, this.lineNameFontSize);
+    const name = layout.line.name;
+    if (!name) return layout;
+    const nameLabel = lineNameLayout(layout, fittedLineNameSize(layout.points, name, this.lineNameFontSize));
     if (nameLabel) layout.nameLabel = nameLabel;
     return layout;
   }

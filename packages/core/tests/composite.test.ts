@@ -32,8 +32,12 @@ import {
   pointAtFraction,
   roomyPointAtFraction,
   lineNameLayout,
-  screenConstantFontSize,
+  lineNameFitSize,
+  fittedLineNameSize,
+  readableLineNameSize,
   LINE_NAME_FONT_SIZE,
+  LINE_NAME_MAX_LINE_FRACTION,
+  LINE_NAME_MIN_SCALE,
   type LineNamePlacement,
   SetBoxModeCommand,
   SetPortDirectionCommand,
@@ -1744,17 +1748,61 @@ describe('Line names — placement', () => {
     expect(n.box.y + n.box.height).toBeCloseTo(-2 * LINE_NAME_OFFSET, 6);
   });
 
-  it('screenConstantFontSize keeps text within the on-screen range', () => {
-    const range = { minPx: 11, maxPx: 18 };
-    // Zoomed out (0.4 px/unit): 12 units would be 4.8px → held at 11px.
-    expect(screenConstantFontSize(12, 0.4, range) * 0.4).toBeCloseTo(11, 6);
-    // In range: unchanged.
-    expect(screenConstantFontSize(12, 1, range)).toBe(12);
-    // Zoomed in (3 px/unit): 36px → capped at 18px, i.e. smaller in world units.
-    expect(screenConstantFontSize(12, 3, range)).toBe(6);
-    // Unknown scale (SSR): the base size.
-    expect(screenConstantFontSize(12, 0, range)).toBe(12);
-    expect(screenConstantFontSize(12, Number.NaN, range)).toBe(12);
+  it('fits a name within 90% of its longest straight run (bends ignored)', () => {
+    const text = 'L-220 kV Alpha-Bravo'; // 20 chars
+    const width = (size: number) => text.length * size * 0.6;
+    // A 100-long run: the fit size makes the name exactly 90 wide.
+    expect(width(lineNameFitSize(H, text))).toBeCloseTo(LINE_NAME_MAX_LINE_FRACTION * 100, 6);
+    // A bent line measures its longest run only (300), not the total (400).
+    const bent = [
+      { x: 0, y: 0 },
+      { x: 300, y: 0 },
+      { x: 300, y: 100 }
+    ];
+    expect(width(lineNameFitSize(bent, text))).toBeCloseTo(0.9 * 300, 6);
+    expect(lineNameFitSize(H, '')).toBe(0);
+  });
+
+  it('fittedLineNameSize: normal size on a long line, shrunk on a short one, floored at half', () => {
+    const text = 'L-220 kV Alpha-Bravo';
+    const line = (len: number) => [
+      { x: 0, y: 0 },
+      { x: len, y: 0 }
+    ];
+    expect(fittedLineNameSize(line(1000), text, 16)).toBe(16); // plenty of room
+    const fit = lineNameFitSize(line(200), text); // 15: shrinks to fit
+    expect(fittedLineNameSize(line(200), text, 16)).toBeCloseTo(fit, 6);
+    // A very short line: stops at half the normal size and overhangs.
+    expect(fittedLineNameSize(line(20), text, 16)).toBe(16 * LINE_NAME_MIN_SCALE);
+  });
+
+  it('readableLineNameSize grows a name when zoomed out, but never past its line', () => {
+    const long = [
+      { x: 0, y: 0 },
+      { x: 1000, y: 0 }
+    ];
+    const label = placeLineName(long, 'Tie 1', P('middle', 'above', 'parallel'))!; // 12, may grow to fit 900
+    expect(label.maxFontSize).toBeCloseTo(lineNameFitSize(long, 'Tie 1'), 6);
+    // In sync up close: at/above 1 px/unit the layout size wins (no 18px cap).
+    expect(readableLineNameSize(label, 1, 11)).toBe(12);
+    expect(readableLineNameSize(label, 4, 11)).toBe(12);
+    // Zoomed out: grown to 11px on screen…
+    expect(readableLineNameSize(label, 0.5, 11) * 0.5).toBeCloseTo(11, 6);
+    // …until it fills 90% of its line, then it shrinks with the drawing.
+    expect(readableLineNameSize(label, 0.001, 11)).toBeCloseTo(label.maxFontSize, 6);
+    // Unknown scale (SSR): the layout size.
+    expect(readableLineNameSize(label, 0, 11)).toBe(12);
+    expect(readableLineNameSize(label, Number.NaN, 11)).toBe(12);
+  });
+
+  it('a name already overhanging its short line never grows with the zoom', () => {
+    const tiny = [
+      { x: 0, y: 0 },
+      { x: 20, y: 0 }
+    ];
+    const label = placeLineName(tiny, 'L-220 kV Alpha-Bravo', P('middle', 'above', 'parallel'), 0, 6)!;
+    expect(label.maxFontSize).toBe(6);
+    expect(readableLineNameSize(label, 0.01, 11)).toBe(6);
   });
 
   it('returns null for an empty name or a degenerate line', () => {
@@ -1839,7 +1887,9 @@ describe('Line names — layout + export', () => {
   it('the lineNameFontSize option sizes names on screen and in the export', () => {
     const { doc } = named();
     const engine = new CompositeLayoutEngine(undefined, undefined, undefined, { lineNameFontSize: 16 });
-    expect(engine.layout(doc).lines[0].nameLabel!.fontSize).toBe(16);
+    const nl = engine.layout(doc).lines[0].nameLabel!;
+    expect(nl.fontSize).toBe(16);
+    expect(nl.maxFontSize).toBeGreaterThanOrEqual(16);
     const svg = new CompositeSvgExporter(engine).export(doc);
     expect(svg).toMatch(/font-size="16"[^>]*>Tie 1</);
   });
