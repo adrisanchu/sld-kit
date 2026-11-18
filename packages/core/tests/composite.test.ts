@@ -30,6 +30,7 @@ import {
   placeLineName,
   readableAngle,
   pointAtFraction,
+  roomyPointAtFraction,
   type LineNamePlacement,
   SetBoxModeCommand,
   SetPortDirectionCommand,
@@ -1709,6 +1710,29 @@ describe('Line names — placement', () => {
         else expect(signed).toBeLessThan(0);
       }
     }
+  });
+
+  it('never sits on a short orthogonal jog: slides to the nearest roomy segment', () => {
+    // A tie with an 8px dog-leg exactly at its midpoint (as the router draws
+    // between two slightly misaligned boxes).
+    const jog = [
+      { x: 0, y: 0 },
+      { x: 300, y: 0 },
+      { x: 300, y: 8 },
+      { x: 608, y: 8 }
+    ];
+    const n = placeLineName(jog, 'L-220 kV Alpha-Bravo', P('middle', 'above', 'parallel'))!;
+    expect(n.rotation).toBe(0);
+    for (const o of LINE_NAME_ORIENTATIONS) {
+      const r = placeLineName(jog, 'L-220 kV Alpha-Bravo', P('middle', 'above', o))!;
+      // Across / horizontal on the horizontal run, never rotated by the jog.
+      expect(o === 'perpendicular' ? r.rotation === -90 : r.rotation === 0).toBe(true);
+    }
+    // The helper itself: target 0.5 lands on the jog, so it clamps onto a long run.
+    const p = roomyPointAtFraction(jog, 0.5, 100)!;
+    expect(p.dy).toBe(0);
+    // Nothing roomy enough → the longest segment's midpoint.
+    expect(roomyPointAtFraction(jog, 0.5, 1000)!.at).toEqual({ x: 454, y: 8 });
   });
 
   it('returns null for an empty name or a degenerate line', () => {

@@ -88,6 +88,56 @@ export function pointAtFraction(points: Point[], t: number): { at: Point; dx: nu
 }
 
 /**
+ * Like {@link pointAtFraction}, but the point lands on a segment at least `need`
+ * long, with `need / 2` of room on both sides — so a label never sits on a short
+ * jog of an orthogonal route. Picks the roomy segment nearest the target arc
+ * position (clamping into it); with none roomy enough, the longest segment's
+ * midpoint. `null` for a degenerate polyline.
+ */
+export function roomyPointAtFraction(
+  points: Point[],
+  t: number,
+  need: number
+): { at: Point; dx: number; dy: number } | null {
+  const segs: { a: Point; b: Point; s0: number; len: number }[] = [];
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len >= EPS) segs.push({ a, b, s0: total, len });
+    total += len;
+  }
+  if (segs.length === 0) return null;
+  const target = Math.max(0, Math.min(1, t)) * total;
+  const roomy = segs.filter((s) => s.len >= need);
+  const pool = roomy.length ? roomy : [segs.reduce((m, s) => (s.len > m.len ? s : m))];
+
+  let best = pool[0];
+  let bestPos = 0;
+  let bestDist = Infinity;
+  for (const s of pool) {
+    // Where on this segment the label's centre may sit (its midpoint if it can't fit).
+    const lo = s.len >= need ? s.s0 + need / 2 : s.s0 + s.len / 2;
+    const hi = s.len >= need ? s.s0 + s.len - need / 2 : lo;
+    const pos = Math.max(lo, Math.min(hi, target));
+    const dist = Math.abs(pos - target);
+    if (dist < bestDist - EPS) {
+      best = s;
+      bestPos = pos;
+      bestDist = dist;
+    }
+  }
+  const f = (bestPos - best.s0) / best.len;
+  const { a, b, len } = best;
+  return {
+    at: { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f },
+    dx: (b.x - a.x) / len,
+    dy: (b.y - a.y) / len
+  };
+}
+
+/**
  * How close to vertical (degrees) a run must be to read bottom→top. Hand-drawn
  * "vertical" lines are rarely exact; without this band a run leaning 0.1° past
  * vertical would flip its text to read top→bottom.

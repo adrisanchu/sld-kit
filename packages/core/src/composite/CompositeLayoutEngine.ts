@@ -40,7 +40,7 @@ import {
   TRANSFORMER_SYMBOL,
   TRANSFORMER3W_SYMBOL
 } from './layout-constants';
-import { arcMidpoint, pointAtFraction, readableAngle, segmentAngleDeg, simplify } from './polyline';
+import { arcMidpoint, readableAngle, roomyPointAtFraction, segmentAngleDeg, simplify } from './polyline';
 import { resolveFormat, type ElementFormat, type ElementFormatResolver, type FormatContext } from '../theme';
 import { feederBoxCenter, layoutSectionBoxes, type BoxSectionsResolver, type SectionBox, type SectionTie } from './sections';
 
@@ -478,7 +478,9 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * vertex order — so swapping the two diagrams a line joins re-derives the same
  * visual spot and keeps the text readable:
  *
- *  - `along` picks the point at 20% / 50% / 80% of the arc length in reading order;
+ *  - `along` picks the point at 20% / 50% / 80% of the arc length in reading order,
+ *    slid onto the nearest segment long enough to hold the name (so it never sits
+ *    on a short jog of an orthogonal route);
  *  - `side` picks the normal pointing *above* the text read along the local
  *    segment (up on a horizontal run, left on a vertical one) or its opposite;
  *  - `orientation` rotates the text along the segment (`parallel`), across it
@@ -503,7 +505,14 @@ export function placeLineName(
   // Reading order: left→right; a vertical chord reads bottom→top.
   const reversed = Math.abs(cdx) > 1e-6 ? cdx < 0 : cdy > 0;
   const reading = reversed ? [...points].reverse() : points;
-  const at = pointAtFraction(reading, LINE_NAME_ALONG_FRACTION[placement.along]);
+
+  const fontSize = LINE_NAME_FONT_SIZE;
+  const w = text.length * fontSize * 0.6;
+  const h = fontSize;
+  // Sit on a segment with room for the name (never on a short orthogonal jog):
+  // its full length when it runs along the line, a few gaps' worth otherwise.
+  const need = placement.orientation === 'parallel' ? w + 2 * LINE_NAME_OFFSET : 4 * LINE_NAME_OFFSET;
+  const at = roomyPointAtFraction(reading, LINE_NAME_ALONG_FRACTION[placement.along], need);
   if (!at) return null;
 
   const toRad = Math.PI / 180;
@@ -519,9 +528,6 @@ export function placeLineName(
   const adv = { x: Math.cos(r), y: Math.sin(r) }; // text advance
   const up = { x: Math.sin(r), y: -Math.cos(r) }; // baseline → cap
 
-  const fontSize = LINE_NAME_FONT_SIZE;
-  const w = text.length * fontSize * 0.6;
-  const h = fontSize;
   const gap = LINE_NAME_OFFSET + clearance;
   const advN = adv.x * n.x + adv.y * n.y;
   const upN = Math.abs(up.x * n.x + up.y * n.y);

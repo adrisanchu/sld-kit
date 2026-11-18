@@ -144,6 +144,7 @@ export {
   simplify,
   arcMidpoint,
   pointAtFraction,
+  roomyPointAtFraction,
   readableAngle,
   VERTICAL_READING_TOLERANCE
 } from './composite/polyline';
