@@ -32,7 +32,8 @@ export const DEFAULT_POSITION_TYPES = [
   'storage',
   'demand',
   'reactor',
-  'machine'
+  'machine',
+  'coupler'
 ] as const;
 
 /**

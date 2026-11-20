@@ -65,8 +65,10 @@ describe('tallyPositions', () => {
   });
 
   it('orders default types canonically, custom types after in first-seen order', () => {
-    const t = tallyPositions([docWith([{ type: 'zeta' }, { type: 'renewable' }, { type: 'alpha' }, { type: 'line' }])]);
-    expect(t.types).toEqual(['line', 'renewable', 'zeta', 'alpha']);
+    const t = tallyPositions([
+      docWith([{ type: 'zeta' }, { type: 'coupler' }, { type: 'renewable' }, { type: 'alpha' }, { type: 'line' }])
+    ]);
+    expect(t.types).toEqual(['line', 'renewable', 'coupler', 'zeta', 'alpha']);
   });
 
   it('is safe for keys that shadow Object.prototype', () => {

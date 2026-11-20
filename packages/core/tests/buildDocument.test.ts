@@ -193,7 +193,7 @@ describe('buildDocument — explicit ids and data', () => {
       ],
       bays: [
         { col: 0, positions: [{ id: 'p-up', type: 'line', row: 0, data: { tag: 'up' }, feeder: { asset: 'line', label: 'UP' } }] },
-        { col: 1, positions: [{ id: 'cpl', type: 'central', row: 2 }] },
+        { col: 1, positions: [{ id: 'cpl', type: 'coupler', row: 2 }] },
         { col: 2, positions: [{ id: 'p-dn', type: 'line', row: 4, feeder: { asset: 'line', label: 'DN' } }] }
       ]
     });

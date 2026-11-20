@@ -1000,7 +1000,7 @@ describe('Box view — section boxes (boxSections)', () => {
       ],
       bays: [
         { col: 0, positions: [{ id: 'p-w', type: 'line', row: 0, feeder: { asset: 'line', label: 'W', direction: 'up', id: 'm-w' } }] },
-        { col: 1, positions: [{ id: 'cpl', type: 'central', row: 2 }] },
+        { col: 1, positions: [{ id: 'cpl', type: 'coupler', row: 2 }] },
         { col: 2, positions: [{ id: 'p-e', type: 'line', row: 4, feeder: { asset: 'line', label: 'E', direction: 'down', id: 'm-e' } }] }
       ]
     });

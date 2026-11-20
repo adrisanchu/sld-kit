@@ -345,16 +345,19 @@ it's absent, the bay is closed. Switching state is part of the electrical model
 ## Open position types
 
 The defaults (`DEFAULT_POSITION_TYPES`) — `line`, `transformer`, `central`,
-`renewable`, `reserve`, `storage`, `demand`, `reactor`, `machine` — are
-suggestions, not a closed set. `PositionType` accepts **any string**, so you
-can model domain-specific bays:
+`renewable`, `reserve`, `storage`, `demand`, `reactor`, `machine`, `coupler` —
+are suggestions, not a closed set. `central` is the middle breaker of a
+breaker-and-a-half diameter; `coupler` is a bus coupler (the bay tying the bars
+of a double bus). Neither carries an external, so neither auto-spawns a feeder
+arrow. `PositionType` accepts **any string**, so you can model domain-specific
+bays:
 
 ```ts
-new Position('p', 'coupling-1', 'coupling', 1, 0);
+new Position('p', 'bypass-1', 'bypass', 1, 0);
 ```
 
 An unknown type renders with the theme's `fallbackPositionType` palette and
-auto-names from the type string (`coupling` → `coupling-1`). Supply your own
+auto-names from the type string (`bypass` → `bypass-1`). Supply your own
 theme entries and naming prefixes to style and name them exactly.
 
 ## Metadata: the opaque `data` channel

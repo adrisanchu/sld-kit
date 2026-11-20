@@ -21,7 +21,8 @@ export interface PositionOptions {
 /**
  * A position (posición): a typed, colored box occupying one slot of the
  * matrix. Its type describes its function (line bay, transformer bay,
- * central, renewables, reserve) and drives its color.
+ * central — the middle breaker of a breaker-and-a-half diameter —, renewables,
+ * reserve, bus coupler, …) and drives its color.
  *
  * `subElements` is the future home of breakers/disconnectors/CTs rendered
  * on the position's stems — persisted since schema v1, empty in v0.

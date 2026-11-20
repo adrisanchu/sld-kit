@@ -99,7 +99,7 @@ function buildSub(sub: Sub): SldDocument {
       ...top.map((f, i) => bay(f, i, 0)),
       // The coupler starts OPEN: the bars run split, so CHARLIE shows as two boxes
       // (39770 tied to ALPHA, 39771 to DELTA + the demand) joined by a muted tie.
-      { col: top.length, positions: [{ id: COUPLER_ID, type: 'central', label: 'BC', row: 2, state: 'open' }] },
+      { col: top.length, positions: [{ id: COUPLER_ID, type: 'coupler', label: 'BC', row: 2, state: 'open' }] },
       ...bottom.map((f, i) => bay(f, top.length + 1 + i, 4))
     ]
   });

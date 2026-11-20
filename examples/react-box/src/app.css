@@ -122,6 +122,7 @@
   --sld-pos-reserve: hsl(215 20% 65%);
   --sld-pos-storage: hsl(173 80% 40%);
   --sld-pos-demand: hsl(0 84% 60%);
+  --sld-pos-coupler: hsl(25 5% 45%);
 }
 
 .dark {
@@ -132,6 +133,7 @@
   --sld-pos-reserve: hsl(215 16% 57%);
   --sld-pos-storage: hsl(173 66% 55%);
   --sld-pos-demand: hsl(0 90% 68%);
+  --sld-pos-coupler: hsl(24 6% 64%);
 }
 
 .sld-pos-line {
@@ -154,6 +156,9 @@
 }
 .sld-pos-demand {
   --sld-pos: var(--sld-pos-demand);
+}
+.sld-pos-coupler {
+  --sld-pos: var(--sld-pos-coupler);
 }
 
 /*

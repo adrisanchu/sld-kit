@@ -94,7 +94,7 @@ function externalDirectionFor(doc: SldDocument, position: Position): ExternalDir
  * The external connection an "external" position type (`line`, `transformer`,
  * `renewable`, `storage`, `demand`, `reactor`, `machine`) auto-creates on insertion — an arrow toward
  * the nearest bar, auto-named. `tap` and `side` are left undefined (derived by
- * the layout). Returns null for `central`/`reserve`, which carry no external.
+ * the layout). Returns null for `central`/`reserve`/`coupler`, which carry no external.
  */
 export function planPositionExternal(doc: SldDocument, position: Position): { from: Endpoint; to: Endpoint } | null {
   if (!EXTERNAL_TYPES.includes(position.type)) return null;
