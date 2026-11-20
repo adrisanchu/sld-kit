@@ -92,6 +92,12 @@ pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
   - **Editing** an existing box reuses the dialog; Save is one composite step —
     a `SnapshotCommand` on the child plus the removal of lines on deleted
     feeders (the footer warns first).
+  - **Double-click an element** in the substation editor (Select tool) to open
+    `ElementEditDialog`: a bay's id, name and type; a bar's id, name and bus id;
+    a feeder's asset, direction, connection point and lane. Edits are undoable
+    steps (`UpdateElementCommand`, then `RenameElementCommand` for a new id), and
+    an edit that would leave the document invalid is refused in the dialog. A
+    feeder that lines attach to keeps its identifier: it is the box's terminal.
   - **Line popover** (`LinePopover`) edits kind (`UpdateLineKindCommand`) and
     ratings in `data` (`SetLineDataCommand`) as one step; labels re-place
     through the same `ratingLabels` resolver.

@@ -11,6 +11,7 @@ import {
   Grid,
   LayoutEngine,
   Position,
+  RenameElementCommand,
   SLD_LAYOUT,
   Serializer,
   SldDocument,
@@ -23,6 +24,7 @@ import {
   type Command,
   type CompositeDocument,
   type ElementGeometry,
+  type ElementJson,
   type ExternalAssetKind,
   type Point,
   type PositionType
@@ -47,6 +49,7 @@ import {
 import { X } from 'lucide-react';
 import { voltageClass } from '../fixture';
 import { barBusIdLabel } from '../topology';
+import { ElementEditDialog } from './ElementEditDialog';
 import { terminalsOf } from './terminals';
 
 /** Halos pushed out to clear the bay, with lock-on brackets (styled in `app.css`, `.sld-halo`). */
@@ -132,6 +135,8 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
   const [cursor, setCursor] = useState<Point | null>(null);
   const [external, setExternal] = useState<{ x: number; y: number; point: Point } | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
+  // The element whose properties dialog is open (double-click, Select tool).
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     const d = dialogRef.current;
@@ -302,6 +307,53 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
     if (JSON.stringify(after) !== JSON.stringify(before)) run(new UpdateElementCommand(before, after));
   };
 
+  // ── Properties dialog ──────────────────────────────────────────────────────
+  const editing = editingId ? doc.getElement(editingId) : undefined;
+
+  /**
+   * A feeder's id is the box's terminal: composite lines anchor to it by
+   * (instance, connection id). Renaming one that lines attach to would drop
+   * them on save, so its Identifier is read-only. Free feeders stay renamable
+   * (sharing an id is how two diagrams auto-link).
+   */
+  const idLockedReason = (() => {
+    if (!(editing instanceof Connection) || target.mode !== 'edit') return undefined;
+    const isFeeder = editing.from.kind === 'external' || editing.to.kind === 'external';
+    const lines = isFeeder ? composite.linesAt(target.instanceId, editing.id).length : 0;
+    return lines > 0
+      ? `Box terminal: ${lines} line${lines === 1 ? '' : 's'} attach${lines === 1 ? 'es' : ''} to it, so it keeps its identifier.`
+      : undefined;
+  })();
+
+  /** Apply the dialog's edit as undoable steps; return why it can't apply (empty = applied). */
+  const applyEdit = (after: ElementJson): string[] => {
+    if (!editing) return [];
+    const before = editing.toJSON();
+    const newId = after.id.trim();
+    if (newId !== before.id && doc.getElement(newId)) return [`Identifier "${newId}" is already used in this diagram.`];
+    // Field edits apply under the current id (UpdateElementCommand is keyed by
+    // id); a new id then goes through RenameElementCommand, which repoints
+    // every connection referencing the element.
+    after.id = before.id;
+    // Refuse an edit that would make the document invalid; only problems the
+    // edit introduces count, so an already-broken document stays editable.
+    const current = Serializer.toJSON(doc);
+    const known = new Set(Serializer.check(current).errors.map((e) => e.message));
+    const next = { ...current, elements: current.elements.map((el) => (el.id === before.id ? after : el)) };
+    const introduced = Serializer.check(next).errors.filter((e) => !known.has(e.message));
+    if (introduced.length > 0) return introduced.map((e) => e.message);
+
+    if (JSON.stringify(after) !== JSON.stringify(before)) run(new UpdateElementCommand(before, after));
+    if (newId && newId !== before.id) {
+      run(new RenameElementCommand(before.id, newId));
+      setSelectedIds((prev) =>
+        prev.has(before.id) ? new Set([...prev].map((x) => (x === before.id ? newId : x))) : prev
+      );
+    }
+    setEditingId(null);
+    return [];
+  };
+
   // ── Save ───────────────────────────────────────────────────────────────────
   const original = target.mode === 'edit' ? target.doc : null;
   const dropped = useMemo(() => {
@@ -342,6 +394,8 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
       // Esc closes the dialog natively; route it through Cancel instead.
       onCancel={(e) => {
         e.preventDefault();
+        // Esc inside the properties dialog closes only that one.
+        if (editing) return;
         if (external) return setExternal(null);
         if (pendingFrom) return chooseTool('connection');
         onCancel();
@@ -415,6 +469,9 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
             }}
             onCanvasDown={handleCanvasDown}
             onCanvasMove={handleCanvasMove}
+            onEditLabel={({ id }) => {
+              if (editMode && tool === 'select' && doc.getElement(id)) setEditingId(id);
+            }}
             // What a click would hit (Select / Connection tools): bays lock on,
             // bars glow — styled on the adapter's `.sld-halo` in `app.css`.
             hoverHalo={editMode && (tool === 'select' || tool === 'connection')}
@@ -501,7 +558,8 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
 
         <footer className="flex flex-wrap items-center gap-3 border-t border-border px-4 py-2 text-xs">
           <p className="text-muted-foreground">
-            Feeders (bay → margin, with the connection tool) are this box's terminals: lines attach to them.
+            Double-click an element to edit its properties. Feeders (bay → margin, with the connection tool) are this
+            box's terminals: lines attach to them.
           </p>
           {droppedLines > 0 && (
             <p className="rounded bg-amber-500/15 px-2 py-1 text-amber-700 dark:text-amber-300">
@@ -533,6 +591,16 @@ export function SubstationDialog({ target, composite, onSave, onCancel }: Substa
           </div>
         </footer>
       </div>
+
+      {editing && (
+        <ElementEditDialog
+          key={editing.id}
+          element={editing}
+          idLockedReason={idLockedReason}
+          onSave={applyEdit}
+          onCancel={() => setEditingId(null)}
+        />
+      )}
     </dialog>
   );
 }
