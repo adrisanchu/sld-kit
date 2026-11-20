@@ -161,7 +161,8 @@ of `vertices`, each either a free `point` (fixed in composite coordinates) or an
   rows, anchor and backing box). They sit right of a vertical run, centred above
   a horizontal one, and clear of a transformer glyph. The canvas and the
   exporter draw the same placement, so labels follow dragged boxes and both
-  views. `SetLineDataCommand` keeps `data` edits undoable.
+  views. `SetLineDataCommand` keeps `data` edits undoable. For the line's own
+  name, see [Line names](#line-names).
 - Unresolvable anchors (missing child/connection) are dropped; a line left with
   fewer than two points is simply not drawn (the model still keeps it), mirroring
   how dangling `libraryId`s render as placeholders.
@@ -172,6 +173,89 @@ turn an existing auto-link into a line. Each tip sits exactly where a line
 anchored to that feeder attaches: in box mode a perimeter point on the feeder's
 effective side (`pin ?? auto-facing ?? authored`), in detail mode the SLD arrow
 tip, so snap rings never drift from the lines they create.
+
+## Line names
+
+A tie-line is an entity in its own right: the connection id two children share
+is the line's identity, and each child only labels *its* end with the far
+substation ("WEST 1", "SOUTH 1"). To show the line's own name (e.g.
+`L-400 kV West-South 1`), set **`CompositeLine.name`**. The core layout places
+it (`CompositeLineLayout.nameLabel`: text, anchor point, `textAnchor`,
+rotation, size), and both adapters and the exporter draw that same placement.
+Names are always on: they ignore the labels-visibility toggle, like the diagram
+name label.
+
+### Placement
+
+`CompositeLine.namePlacement` (default `middle` · `above` · `parallel`) is the
+line analogue of a child's label slot:
+
+- **`along`**: `start` | `middle` | `end`, at 20% / 50% / 80% of the line's arc
+  length.
+- **`side`**: `above` | `below` the line.
+- **`orientation`**: `parallel` (along the segment, a small gap off the stroke),
+  `perpendicular` (across it, growing away from the line) or `horizontal`
+  (never rotated, beside the line).
+
+The rules that keep a name readable:
+
+- **Reading frame, not vertex order.** `start` and `above` are measured with
+  the line walked left to right (bottom to top when vertical), whatever order
+  its vertices were drawn in. "Above" means the side above the text as it
+  reads along the local segment: up on a horizontal run, left on a vertical
+  one. So swapping the two diagrams a line joins re-derives the same visual
+  spot, and the text still reads correctly.
+- **Never upside-down.** Rotated text is normalized to read left to right
+  (`readableAngle`). A run within `VERTICAL_READING_TOLERANCE` (10°) of
+  vertical reads bottom to top, so a hand-drawn "vertical" leaning a fraction
+  of a degree past vertical doesn't flip its text. Beyond that band the
+  rotation follows the segment, so a perpendicular name on a slightly tilted
+  run may read top to bottom.
+- **Never on a short jog.** If the target point lands on a segment too short
+  for the name (a small dog-leg of an orthogonal route), the name moves to the
+  nearest segment long enough to hold it (`roomyPointAtFraction`), or onto the
+  longest segment when none fits.
+- **Clear of glyphs.** At `middle`, a transformer line's name keeps clear of
+  its two-circle glyph.
+- **No collision avoidance.** Names don't avoid each other or the numeric
+  `lineLabels` rows. The stored placement always wins, so on a box-view line
+  with ratings, put the name on the other side (or at `start` / `end`).
+
+### Size
+
+- **Normal size:** the engine option `lineNameFontSize` (world units, default
+  `LINE_NAME_FONT_SIZE` = 12). Match it to the labels around the lines, e.g. 16
+  in box view to match the rating rows. The gap from the line scales with it.
+- **Fit to the line:** a name is never wider than `LINE_NAME_MAX_LINE_FRACTION`
+  (90%) of its line's longest straight run, bends ignored (`lineNameFitSize`),
+  so it shrinks on short lines. It stops shrinking at
+  `LINE_NAME_MIN_SCALE` (half the normal size) and overhangs a very short line
+  rather than becoming unreadable (`fittedLineNameSize`). Text has no DOM to
+  measure in core, so widths are estimated (0.6 em per character, erring wide);
+  in practice a name at the limit fills about three quarters of its line.
+- **Zoom-aware names (canvas, opt-in):** pass `lineNameScreenSize={{ minPx }}`
+  to `CompositeCanvas`. When zoomed out, each name grows to at least `minPx` on
+  screen, so it stays readable from afar, but never past its line's limit
+  (`nameLabel.maxFontSize`). Zoomed in, it keeps its layout size and scales
+  with the drawing, in sync with the labels around it. The canvas re-places
+  names per zoom through `readableLineNameSize` + `lineNameLayout`, without
+  re-running the layout. The export has no zoom, so it always uses the layout
+  size.
+
+### Editing
+
+- **`SetLineNameCommand(id, before, after)`** renames a line and/or moves its
+  name (`{ name?, placement? }` snapshots; an absent name clears it), undoable
+  like `SetChildLabelCommand`.
+- **Naming an auto-link** materializes it: `CompositeLine.fromLink(link, { name,
+  namePlacement })` builds a straight line anchored at both shared feeders, with
+  id = the shared connection id. Adding it with `AddLineCommand` is one undo
+  step. It suppresses and visually replaces the auto-link (the same chord), and
+  deleting it brings the unnamed auto-link back. An editor falls back to a fresh
+  id if a line already took the connection id.
+- **Export.** `CompositeSvgExporter` writes each name as a plain `<text>`,
+  wrapped in a `rotate` group only when rotated, with presentation attributes
+  only (Office-safe). Composites without names export byte-for-byte as before.
 
 ## `Transform2D`
 
@@ -233,9 +317,15 @@ and in the Office-safe export (plain `<text>`, presentation attributes only).
 ## Serialization
 
 `CompositeSerializer` is a sibling of `Serializer` with its own version
-(currently **2**) and `kind: 'composite'`, reusing `SldParseError`. Older
-documents upgrade transparently: v1 → v2 (before manual lines) adds an empty
-line list; v2 → v3 adds per-child name-label placement, defaulting each child to
-`labelAnchor: 'top-left'` / `labelDirection: 0`. Dangling `libraryId`s (and
-dangling line anchors) are legal — they render as placeholders / are dropped
-rather than failing the parse.
+(currently **2**) and `kind: 'composite'`, reusing `SldParseError`. The
+composite schema is early-stage and **current-only**: its version was reset
+(older shapes are rebuilt, not migrated), and later additions — line `kind`,
+`meta.boxMode`, `portDirections`, `meta.autoFacing`, line `data`, `name` and
+`namePlacement` — are all optional fields under v2, so v1 documents load
+unchanged. A version **newer** than the current one is rejected with
+`Unsupported composite version N (maximum: 2)`, including documents saved
+under the old, pre-reset numbering (e.g. `version: 3`), which the library
+can't interpret. An app should surface that message rather than a generic
+"not found"; the Svelte example offers to rebuild a seeded demo.
+Dangling `libraryId`s (and dangling line anchors) are legal — they render as
+placeholders / are dropped rather than failing the parse.
