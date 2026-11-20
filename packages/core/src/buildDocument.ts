@@ -17,10 +17,10 @@ export interface FeederSpecBase {
   direction?: ExternalDirection;
   /**
    * Which row gap of the position the feeder taps (the virtual junction node),
-   * as on an element endpoint. Omit to let the layout derive it (toward
-   * mid-bay). Set `'above'` / `'below'` to leave from the box's own edge when
-   * nothing sits on that side, or to pin a breaker-and-a-half tap between two
-   * positions of the same column.
+   * as on an element endpoint. Omit to let the layout derive it: away from the
+   * bars for a bay outside the bar block (bar → position → tie), toward mid-bay
+   * for one between bars. Set `'above'` / `'below'` to override, e.g. to pin a
+   * breaker-and-a-half tap between two positions of the same column.
    */
   tap?: 'above' | 'below';
   /** Side of the column the feeder's vertical lane runs on (default `'right'`). Ignored for left/right exits. */

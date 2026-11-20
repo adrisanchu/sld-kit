@@ -182,8 +182,12 @@ Two finer controls cover layouts drawn the utility way:
 - **`feeder.tap` / `feeder.side`** pin where a feeder leaves. `tap: 'below'`
   taps the row gap under its position (e.g. between the top and central breaker
   of a breaker-and-a-half diameter), and `side: 'left'` runs its lane on the
-  left of the column. `tap: 'above'` on a top-row bay leaves straight from the
-  box edge. Omitted, the layout derives both.
+  left of the column. Omitted, the layout derives both: a bay outside the bar
+  block taps on the side away from the bars, so it sits between bar and feeder
+  (bar → position → tie, and opening the bay cuts the tie); a bay between bars
+  taps toward mid-bay. A left/right feeder off an outer bay leaves its far edge,
+  then turns; several in the same outer gap stack outward in lanes (shortest run
+  innermost, hopping over crossing stems), and the canvas grows to fit.
 - **`position.bars`** lists extra bus bars (by `id` or `label`) a position also
   wires to. Series wiring only reaches the nearest element on each side, so a
   bay drawn on one side of a double busbar (both bars below it) lists both:

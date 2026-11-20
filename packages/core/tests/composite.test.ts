@@ -1386,17 +1386,16 @@ describe('Auto-facing policy', () => {
     return doc;
   };
 
-  // ALPHA's resolved exit side, read from its line attach point (kept exactly by
-  // the router) relative to ALPHA's box centre — robust even when a straight run
-  // simplifies the stub away.
+  // ALPHA's resolved exit side: the heading of the line's first segment, which
+  // leaves the attach point (kept exactly by the router) along the port's side.
+  // Robust even when a straight run simplifies the stub away, and independent of
+  // where the tip sits inside the child frame (a detail-view tip can sit near a
+  // frame corner).
   const alphaSide = (doc: CompositeDocument): ExternalDirection => {
     const layout = new CompositeLayoutEngine().layout(doc);
-    const al = layout.children.find((c) => c.instance.id === 'al')!;
-    const cx = al.worldBounds.x + al.worldBounds.width / 2;
-    const cy = al.worldBounds.y + al.worldBounds.height / 2;
-    const at = layout.lines[0].points[0];
-    const dx = at.x - cx;
-    const dy = at.y - cy;
+    const [at, next] = layout.lines[0].points;
+    const dx = next.x - at.x;
+    const dy = next.y - at.y;
     return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'down' : 'up';
   };
 
