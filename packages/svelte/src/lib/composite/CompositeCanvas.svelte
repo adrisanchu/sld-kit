@@ -324,6 +324,9 @@
 
   onMount(() => {
     pz.zoomToFit();
+    // Keep the viewBox aspect in step with the element, so clicks map exactly
+    // after a resize (see `syncAspect`).
+    return pz.observeResize();
   });
 </script>
 

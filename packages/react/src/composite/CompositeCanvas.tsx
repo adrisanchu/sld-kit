@@ -329,6 +329,10 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     pz.zoomToFit();
   }, [pz]);
 
+  // Keep the viewBox aspect in step with the element, so clicks map exactly
+  // after a resize (see `syncAspect`).
+  useEffect(() => pz.observeResize(), [pz]);
+
   // Non-passive wheel: React's synthetic onWheel can't reliably preventDefault.
   useEffect(() => {
     const el = svgRef.current;

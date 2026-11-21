@@ -270,6 +270,10 @@ export const SldCanvas = forwardRef<SldCanvasHandle, SldCanvasProps>(function Sl
     pz.zoomToFit();
   }, [pz]);
 
+  // Keep the viewBox aspect in step with the element, so clicks map exactly
+  // after a resize (see `syncAspect`).
+  useEffect(() => pz.observeResize(), [pz]);
+
   // Wheel must be non-passive: React's synthetic onWheel cannot reliably
   // preventDefault, so Ctrl/Cmd+wheel would zoom the whole page instead.
   useEffect(() => {
