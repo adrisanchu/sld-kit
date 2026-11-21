@@ -14,7 +14,15 @@ export interface OrthogonalRouterOptions {
   minJog?: number;
 }
 
+/** Per-route options for {@link OrthogonalRouter.route}. */
+export interface RouteOptions {
+  /** Shift of a Z's mid-line jog off the midpoint, in world px (default 0). */
+  laneOffset?: number;
+}
+
 const SIDE_HEADING: Record<BoxSide, Heading> = { right: 0, down: 1, left: 2, up: 3 };
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /**
  * Orthogonal connector router for floating connectors. Each end leaves its port perpendicular to its edge by a
@@ -39,16 +47,32 @@ export class OrthogonalRouter {
   /**
    * Route between two floating ports, entering/leaving along each port's side.
    * `obstacles` (world rects, un-inflated) are routed around when in the way.
+   * `laneOffset` shifts a Z's mid-line jog off the midpoint (world px, along the
+   * jog's axis), so parallel routes between the same box sides don't share it.
    */
-  route(a: Port, b: Port, obstacles: Rect[] = []): Point[] {
+  route(a: Port, b: Port, obstacles: Rect[] = [], opts: RouteOptions = {}): Point[] {
+    const { bAligned, a1, b1, mid } = this.plan(a, b, obstacles, opts.laneOffset ?? 0);
+    const ends = [a1, b1];
+    const avoided = this.avoid(mid, SIDE_HEADING[a.side], b1, oppositeHeading(SIDE_HEADING[bAligned.side]), obstacles, ends);
+    return this.straighten(simplify([a.point, ...(avoided ?? mid), bAligned.point]), obstacles, ends);
+  }
+
+  /**
+   * The L/Z {@link route} starts from, before any obstacle detour: what a bundle
+   * of parallel routes compares when choosing which one takes which lane.
+   */
+  preview(a: Port, b: Port, obstacles: Rect[] = [], laneOffset = 0): Point[] {
+    const { bAligned, mid } = this.plan(a, b, obstacles, laneOffset);
+    return simplify([a.point, ...mid, bAligned.point]);
+  }
+
+  private plan(a: Port, b: Port, obstacles: Rect[], laneOffset: number) {
     const bAligned = this.snapAligned(a, b);
     const [la, lb] = this.capFacing(a, bAligned, this.stubFor(a, obstacles), this.stubFor(bAligned, obstacles));
     const a1 = a.stub(la);
     const b1 = bAligned.stub(lb);
-    const mid = [a1, ...this.join(a1, a.axis, b1, bAligned.axis), b1];
-    const ends = [a1, b1];
-    const avoided = this.avoid(mid, SIDE_HEADING[a.side], b1, oppositeHeading(SIDE_HEADING[bAligned.side]), obstacles, ends);
-    return this.straighten(simplify([a.point, ...(avoided ?? mid), bAligned.point]), obstacles, ends);
+    const mid = [a1, ...this.join(a1, a.axis, b1, bAligned.axis, laneOffset), b1];
+    return { bAligned, a1, b1, mid };
   }
 
   /**
@@ -169,14 +193,18 @@ export class OrthogonalRouter {
     return this.straighten(simplify([port.point, ...(avoided ?? mid)]), obstacles, ends);
   }
 
-  /** Join two stub ends with a Manhattan path honouring each exit axis. */
-  private join(a1: Point, aAxis: 'h' | 'v', b1: Point, bAxis: 'h' | 'v'): Point[] {
+  /**
+   * Join two stub ends with a Manhattan path honouring each exit axis. A Z's
+   * jog sits at the midpoint shifted by `laneOffset`, kept between the stub ends.
+   */
+  private join(a1: Point, aAxis: 'h' | 'v', b1: Point, bAxis: 'h' | 'v', laneOffset = 0): Point[] {
+    const lane = (p: number, q: number) => clamp((p + q) / 2 + laneOffset, Math.min(p, q), Math.max(p, q));
     if (aAxis === 'h' && bAxis === 'h') {
-      const midX = (a1.x + b1.x) / 2;
+      const midX = lane(a1.x, b1.x);
       return [{ x: midX, y: a1.y }, { x: midX, y: b1.y }];
     }
     if (aAxis === 'v' && bAxis === 'v') {
-      const midY = (a1.y + b1.y) / 2;
+      const midY = lane(a1.y, b1.y);
       return [{ x: a1.x, y: midY }, { x: b1.x, y: midY }];
     }
     // Perpendicular exits meet at the corner that leaves `a` on its axis.

@@ -42,6 +42,13 @@ export const CURVE_RADIUS = 12;
 export const MIN_JOG = 2 * CURVE_RADIUS;
 
 /**
+ * Spacing between the mid-line jogs of parallel orthogonal routes that join the
+ * same two box sides (a bundle): each takes its own lane, centred on the
+ * midpoint, instead of all bending on one shared line.
+ */
+export const PARALLEL_LANE_SPACING = 16;
+
+/**
  * Uniform box-view frame. Every box in box mode gets this size regardless of how
  * many feeders its child has, so grid-aligned boxes produce exactly straight
  * ties (matching the reference drawings). Pass `boxSize: null` to the

@@ -484,7 +484,9 @@ line and auto-link) is one of:
 - `orthogonal`: the floating-connector router lays out axis-aligned runs with
   sharp 90° bends. When a route would cut through another child, it detours
   around every child box with as few bends as possible. Output is deterministic,
-  and a route with nothing in its way is left unchanged.
+  and a route with nothing in its way is left unchanged. Parallel routes between
+  the same two box sides bend on separate lanes (`PARALLEL_LANE_SPACING` apart),
+  nested so they don't cross.
 - `curved`: the same route as `orthogonal`, but each bend is drawn as a circular
   arc. The layout sets `cornerRadius` on that line or link (the engine option
   `cornerRadius`, default `CURVE_RADIUS`); `points` stay the sharp polyline.

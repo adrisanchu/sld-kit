@@ -19,6 +19,7 @@ import { isOrthogonalRouting, routePolyline, type LineRouting } from './routing'
 import { chordFrame } from './lineFrame';
 import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
 import { OrthogonalRouter } from './OrthogonalRouter';
+import { laneOffsets, sideKey, type BundleMember } from './bundles';
 import { PortResolver, feederKey } from './PortResolver';
 import { facingSide, rotateSide, type BoxSide, type Port } from './ports';
 import {
@@ -719,6 +720,15 @@ export interface CompositeLayout {
 /** A resolved floating-line endpoint: a floating port (anchored) or a free point. */
 type BoxEnd = { port: Port; point?: undefined } | { port?: undefined; point: Point } | null;
 
+/** An auto-link to draw: a shared external id with its two floating ports. */
+interface FloatingLinkPair {
+  connectionId: string;
+  firstId: string;
+  secondId: string;
+  pa: Port;
+  pb: Port;
+}
+
 /** The world point a resolved floating endpoint attaches at (port attach point or free point). */
 const floatingEndPoint = (e: NonNullable<BoxEnd>): Point => (e.port ? e.port.point : e.point);
 
@@ -961,17 +971,23 @@ export class CompositeLayoutEngine {
     // Every child box is an obstacle the auto router keeps its lines out of.
     const obstacles = this.obstacles(children);
 
+    // A manual line for a shared id takes precedence: suppress its auto-link.
+    const claimed = new Set<string>();
+    for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
+    const linkPairs = this.floatingLinkPairs(children, resolver, claimed);
+
+    // Parallel routes joining the same two box sides each get their own lane
+    // for the mid-line jog, so they don't overlap (lines and auto-links alike).
+    const offsets = this.bundleOffsets(doc, resolver, linkPairs, routingDefault, obstacles);
+
     const lines: CompositeLineLayout[] = [];
     for (const line of doc.allLines()) {
-      const routed = this.routeFloatingLine(line, resolver, line.routing ?? routingDefault, obstacles);
+      const routed = this.routeFloatingLine(line, resolver, line.routing ?? routingDefault, obstacles, offsets.get(`line:${line.id}`) ?? 0);
       if (routed) lines.push(routed);
     }
 
-    // A manual line for a shared id takes precedence: suppress its auto-link,
-    // then route the remaining auto-links through the same floating router.
-    const claimed = new Set<string>();
-    for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
-    const links = this.detectFloatingLinks(children, resolver, claimed, routingDefault, obstacles);
+    // The remaining auto-links go through the same floating router.
+    const links = this.routeFloatingLinks(linkPairs, routingDefault, obstacles, offsets);
     const hangers = boxMode ? this.hangingTies(children, resolver, claimed, links) : [];
 
     // Snap targets come from the same resolver that attached the lines, so a
@@ -1106,7 +1122,8 @@ export class CompositeLayoutEngine {
     line: CompositeLine,
     resolver: PortResolver,
     routing: LineRouting,
-    obstacles: Rect[]
+    obstacles: Rect[],
+    laneOffset = 0
   ): CompositeLineLayout | null {
     const ends = line.vertices.map((v) => this.resolveFloatingEnd(v, resolver));
     const first = ends[0];
@@ -1133,7 +1150,7 @@ export class CompositeLayoutEngine {
 
     let points: Point[] | null = null;
     if (first?.port && last?.port) {
-      points = this.router.route(first.port, last.port, obstacles);
+      points = this.router.route(first.port, last.port, obstacles, { laneOffset });
     } else if (first?.port && last?.point) {
       points = this.router.toPoint(first.port, last.point, obstacles);
     } else if (first?.point && last?.port) {
@@ -1203,13 +1220,11 @@ export class CompositeLayoutEngine {
    * orthogonal router (matching the floating lines) when the default routing is
    * `orthogonal`, instead of a straight tip chord.
    */
-  private detectFloatingLinks(
-    children: ChildLayout[],
-    resolver: PortResolver,
-    suppressed: Set<string>,
-    routingDefault: LineRouting,
-    obstacles: Rect[]
-  ): CompositeLink[] {
+  /**
+   * The auto-links to draw: each shared external id found on two children
+   * (claimed ids excepted), with both floating ports resolved.
+   */
+  private floatingLinkPairs(children: ChildLayout[], resolver: PortResolver, suppressed: Set<string>): FloatingLinkPair[] {
     const index = new Map<string, string[]>();
     for (const child of children) {
       const { layout, instance } = child;
@@ -1227,25 +1242,73 @@ export class CompositeLayoutEngine {
       }
     }
 
-    const orthogonal = isOrthogonalRouting(routingDefault);
-    const links: CompositeLink[] = [];
+    const pairs: FloatingLinkPair[] = [];
     for (const [connectionId, ends] of index) {
       if (ends.length < 2) continue;
       const [firstId, secondId] = ends;
       const pa = resolver.resolve(firstId, connectionId);
       const pb = resolver.resolve(secondId, connectionId);
-      if (!pa || !pb) continue;
-      const points = orthogonal ? this.router.route(pa, pb, obstacles) : simplify([pa.point, pb.point]);
-      links.push({
-        connectionId,
-        a: { instanceId: firstId, point: pa.point },
-        b: { instanceId: secondId, point: pb.point },
-        points,
-        ...this.corner(routingDefault)
-      });
+      if (pa && pb) pairs.push({ connectionId, firstId, secondId, pa, pb });
     }
-    return links;
+    return pairs;
   }
+
+  /** Route the auto-links, each in its bundle lane (see {@link bundleOffsets}). */
+  private routeFloatingLinks(
+    pairs: FloatingLinkPair[],
+    routingDefault: LineRouting,
+    obstacles: Rect[],
+    offsets: Map<string, number>
+  ): CompositeLink[] {
+    const orthogonal = isOrthogonalRouting(routingDefault);
+    return pairs.map(({ connectionId, firstId, secondId, pa, pb }) => ({
+      connectionId,
+      a: { instanceId: firstId, point: pa.point },
+      b: { instanceId: secondId, point: pb.point },
+      points: orthogonal
+        ? this.router.route(pa, pb, obstacles, { laneOffset: offsets.get(`link:${connectionId}`) ?? 0 })
+        : simplify([pa.point, pb.point]),
+      ...this.corner(routingDefault)
+    }));
+  }
+
+  /**
+   * Lane offsets for every orthogonally routed line and auto-link with a
+   * floating port at both ends, keyed `line:<id>` / `link:<connectionId>`.
+   * Routes alone on their pair of box sides get none (they route as before).
+   */
+  private bundleOffsets(
+    doc: CompositeDocument,
+    resolver: PortResolver,
+    linkPairs: FloatingLinkPair[],
+    routingDefault: LineRouting,
+    obstacles: Rect[]
+  ): Map<string, number> {
+    const members: BundleMember[] = [];
+    for (const line of doc.allLines()) {
+      if (line.kind === 'demand' || !isOrthogonalRouting(line.routing ?? routingDefault)) continue;
+      const first = line.vertices[0];
+      const last = line.vertices[line.vertices.length - 1];
+      if (first?.kind !== 'anchor' || last?.kind !== 'anchor') continue;
+      const a = resolver.resolve(first.instanceId, first.connectionId);
+      const b = resolver.resolve(last.instanceId, last.connectionId);
+      if (!a || !b) continue;
+      members.push({ key: `line:${line.id}`, a, b, aEnd: sideKey(first.instanceId, a), bEnd: sideKey(last.instanceId, b) });
+    }
+    if (isOrthogonalRouting(routingDefault)) {
+      for (const p of linkPairs) {
+        members.push({
+          key: `link:${p.connectionId}`,
+          a: p.pa,
+          b: p.pb,
+          aEnd: sideKey(p.firstId, p.pa),
+          bEnd: sideKey(p.secondId, p.pb)
+        });
+      }
+    }
+    return laneOffsets(members, (m, off) => this.router.preview(m.a, m.b, obstacles, off));
+  }
+
 
   /**
    * World position of a child's external connection tip (the arrowhead `at`),

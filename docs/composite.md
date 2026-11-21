@@ -84,6 +84,15 @@ The router also avoids small jogs:
   entering a box. That trades a little clearance for a straight line. Pass
   `{ minJog: 0 }` to keep every jog.
 
+Parallel routes don't share a bend. Lines and auto-links that join the same two
+box sides with a Z form a **bundle**: each one's mid-line jog gets its own lane,
+`PARALLEL_LANE_SPACING` apart and centred on the midpoint, instead of all bending on
+one shared line. Lanes are assigned so the routes nest without crossing (the order
+with the fewest crossings wins; ties resolve the same way every layout). A route
+alone on its pair of sides keeps its midpoint jog, so single lines don't move. The
+offset only shapes the L/Z the router starts from: a detour around a box still wins.
+Both views bundle: detail-view tips group by their own drawing.
+
 `curved` routing takes exactly the `orthogonal` route and draws each bend as a
 circular arc of `cornerRadius` (engine option, default `CURVE_RADIUS`), clamped to
 half of each adjacent segment. A jog that remains and is shorter than two radii

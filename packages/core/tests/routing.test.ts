@@ -366,3 +366,152 @@ describe('connectionPath — rounded corners', () => {
     expect(d).not.toContain('82 0'); // the hop at x=88 would overlap the corner arc
   });
 });
+
+describe('Parallel routes — staggered lanes', () => {
+  /**
+   * A one-bar substation with one bay + feeder per entry, all leaving on
+   * `direction`. Left/right feeders come from bays stacked in one column (so
+   * their ports order top to bottom like the list); up/down ones from bays side
+   * by side (left to right).
+   */
+  const multi = (id: string, feeders: string[], direction: 'left' | 'right' | 'up' | 'down') => {
+    const stacked = direction === 'left' || direction === 'right';
+    return buildDocument({
+      meta: { id, name: id.toUpperCase(), substation: id.toUpperCase(), voltageKv: 220 },
+      busbars: [{ label: 'BB', row: 0 }],
+      bays: stacked
+        ? [
+            {
+              col: 0,
+              positions: feeders.map((f, i) => ({
+                type: 'line' as const,
+                row: i + 1,
+                feeder: { asset: 'line' as const, label: f, direction, id: f }
+              }))
+            }
+          ]
+        : feeders.map((f, col) => ({
+            col,
+            positions: [{ type: 'line' as const, row: 1, feeder: { asset: 'line' as const, label: f, direction, id: f } }]
+          }))
+    });
+  };
+
+  /**
+   * Box A and box B with `n` lines between them (a-i ↔ b-i). Horizontal: A's
+   * feeders leave right, B's left, B sits to the right and `dy` lower (a Z).
+   * Vertical: A's leave down, B's up, B sits below and `dx` across.
+   */
+  const bundle = (
+    n: number,
+    opts: { axis?: 'h' | 'v'; dx?: number; dy?: number; link?: boolean; routing?: LineRouting } = {}
+  ) => {
+    const axis = opts.axis ?? 'h';
+    const ids = Array.from({ length: n }, (_, i) => i);
+    const aFeeders = ids.map((i) => `a-${i}`);
+    const bFeeders = ids.map((i) => `b-${i}`);
+    if (opts.link) {
+      aFeeders.push('shared');
+      bFeeders.push('shared');
+    }
+    const res = new MapResolver(
+      new Map([
+        ['a', Serializer.toJSON(multi('a', aFeeders, axis === 'h' ? 'right' : 'down'))],
+        ['b', Serializer.toJSON(multi('b', bFeeders, axis === 'h' ? 'left' : 'up'))]
+      ])
+    );
+    const doc = new CompositeDocument({ id: 'p', name: 'p', boxMode: true, defaultRouting: opts.routing ?? 'orthogonal' });
+    doc.addChild(DiagramInstance.of({ id: 'a', libraryId: 'a', x: 0, y: 0 }));
+    doc.addChild(
+      DiagramInstance.of(
+        axis === 'h' ? { id: 'b', libraryId: 'b', x: 600, y: opts.dy ?? 200 } : { id: 'b', libraryId: 'b', x: opts.dx ?? 400, y: 500 }
+      )
+    );
+    for (const i of ids) {
+      doc.addLine(
+        new CompositeLine(`ln-${i}`, [
+          { kind: 'anchor', instanceId: 'a', connectionId: `a-${i}` },
+          { kind: 'anchor', instanceId: 'b', connectionId: `b-${i}` }
+        ])
+      );
+    }
+    doc.resolveChildren(res);
+    return new CompositeLayoutEngine().layout(doc);
+  };
+
+  type Seg = [Point, Point];
+  const segs = (pts: Point[]): Seg[] => pts.slice(1).map((p, i) => [pts[i], p]);
+  const isVertical = ([p, q]: Seg) => p.x === q.x && p.y !== q.y;
+  const isHorizontal = ([p, q]: Seg) => p.y === q.y && p.x !== q.x;
+  /** Proper crossing of a horizontal and a vertical segment (shared endpoints don't count). */
+  const cross = (s: Seg, t: Seg) => {
+    const [h, v] = isHorizontal(s) && isVertical(t) ? [s, t] : isHorizontal(t) && isVertical(s) ? [t, s] : [null, null];
+    if (!h || !v) return false;
+    const [x0, x1] = [Math.min(h[0].x, h[1].x), Math.max(h[0].x, h[1].x)];
+    const [y0, y1] = [Math.min(v[0].y, v[1].y), Math.max(v[0].y, v[1].y)];
+    return v[0].x > x0 && v[0].x < x1 && h[0].y > y0 && h[0].y < y1;
+  };
+  const crossings = (routes: Point[][]) => {
+    let n = 0;
+    for (let i = 0; i < routes.length; i++)
+      for (let j = i + 1; j < routes.length; j++)
+        for (const s of segs(routes[i])) for (const t of segs(routes[j])) if (cross(s, t)) n++;
+    return n;
+  };
+  /** The coordinate of each route's mid-line jog (its segment across the exit axis). */
+  const jogs = (routes: Point[][], axis: 'h' | 'v') =>
+    routes.map((pts) => {
+      const jog = segs(pts).find(axis === 'h' ? isVertical : isHorizontal)!;
+      return axis === 'h' ? jog[0].x : jog[0].y;
+    });
+
+  for (const [axis, offset] of [
+    ['h', 200],
+    ['h', -200],
+    ['v', 300],
+    ['v', -300]
+  ] as const) {
+    for (const n of [2, 3]) {
+      it(`${n} ${axis === 'h' ? 'side-by-side' : 'stacked'} routes (${offset > 0 ? '+' : '−'}) bend on distinct lanes without crossing`, () => {
+        const layout = bundle(n, axis === 'h' ? { axis, dy: offset } : { axis, dx: offset });
+        const routes = layout.lines.map((l) => l.points);
+        expect(routes).toHaveLength(n);
+        for (const r of routes) expect(axisAligned(r)).toBe(true);
+        const at = jogs(routes, axis);
+        expect(new Set(at).size).toBe(n);
+        // Lanes PARALLEL_LANE_SPACING apart, centred on the shared midpoint.
+        const sorted = [...at].sort((p, q) => p - q);
+        for (let i = 1; i < n; i++) expect(sorted[i] - sorted[i - 1]).toBeCloseTo(16);
+        expect(crossings(routes)).toBe(0);
+      });
+    }
+  }
+
+  it('a route alone on its pair of box sides keeps its midpoint jog', () => {
+    const layout = bundle(1);
+    const [route] = layout.lines.map((l) => l.points);
+    const [jog] = jogs([route], 'h');
+    expect(jog).toBeCloseTo((route[0].x + route[route.length - 1].x) / 2);
+  });
+
+  it('an auto-link joins the bundle of the lines beside it', () => {
+    const layout = bundle(2, { link: true });
+    const routes = [...layout.lines.map((l) => l.points), ...layout.links.map((l) => l.points)];
+    expect(routes).toHaveLength(3);
+    expect(new Set(jogs(routes, 'h')).size).toBe(3);
+    expect(crossings(routes)).toBe(0);
+  });
+
+  it('curved routes take the same lanes and keep their rounded corners', () => {
+    const square = bundle(3).lines.map((l) => l.points);
+    const curved = bundle(3, { routing: 'curved' }).lines;
+    expect(curved.map((l) => l.points)).toEqual(square);
+    for (const l of curved) expect(l.cornerRadius).toBe(CURVE_RADIUS);
+  });
+
+  it('is deterministic', () => {
+    const a = bundle(3).lines.map((l) => l.points);
+    const b = bundle(3).lines.map((l) => l.points);
+    expect(b).toEqual(a);
+  });
+});

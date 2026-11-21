@@ -137,7 +137,7 @@ export {
 export { chordFrame, type ChordFrame, type RelCoord } from './composite/lineFrame';
 // Floating-connector box router (promoted from the react-box example).
 export { Port, SIDE_VECTORS, sideAxis, sideFromAngle, rotateSide, facingSide, type BoxSide } from './composite/ports';
-export { OrthogonalRouter, type OrthogonalRouterOptions } from './composite/OrthogonalRouter';
+export { OrthogonalRouter, type OrthogonalRouterOptions, type RouteOptions } from './composite/OrthogonalRouter';
 export { PortResolver, feederKey, type PortResolverOptions } from './composite/PortResolver';
 export {
   segmentAngleDeg,
@@ -168,7 +168,8 @@ export {
   CABLE_DASH_ARRAY,
   TRANSFORMER_SYMBOL,
   TRANSFORMER3W_SYMBOL,
-  DEMAND_SYMBOL
+  DEMAND_SYMBOL,
+  PARALLEL_LANE_SPACING
 } from './composite/layout-constants';
 export { CompositeDocument, type CompositeMeta, type CompositeChange } from './composite/CompositeDocument';
 export {
