@@ -235,7 +235,8 @@ The rules that keep a name readable:
 **Hanging-tie labels go first** (box view). The ties leaving one box edge are
 arranged together, sorted along it, and the first clear arrangement wins (else
 the cheapest): every lead at its default length; alternate leads lengthened one
-row (`HANGING_STAGGER_STEP`, a zig-zag); or, on a vertical edge, a staircase
+row (`HANGING_STAGGER_STEP`, room for a label grown to the zoom-aware ceiling,
+see below; a zig-zag); or, on a vertical edge, a staircase
 where each label leans away from the longer leads beside it (`textAnchor`
 `start` or `end`), which fits however close the ties sit. The lead is the
 label's leader, so a staggered tie draws nothing extra; its glyph moves out
@@ -274,9 +275,9 @@ fraction, side and, for a callout, `offset`). A callout carries
 `LEADER_STROKE_WIDTH` stroke at `LEADER_OPACITY` with a `LEADER_DOT_RADIUS` dot,
 in the line's colour on the canvases. `lineNameLayout` honours `nameSlot`, so a
 zoom-aware canvas resizing a name keeps it (and its leader) in its slot. The
-pass runs at the layout size, so a name grown on screen (`lineNameScreenSize`)
-can still touch its neighbours when zoomed far out. Text widths are estimated
-(0.6 em per character, erring wide), so the checks are conservative.
+pass runs at the layout size; texts grown on screen stay apart through their
+growth caps (see the zoom-aware texts below). Text widths are estimated (0.6 em
+per character, erring wide), so the checks are conservative.
 
 ### Size
 
@@ -298,6 +299,23 @@ can still touch its neighbours when zoomed far out. Text widths are estimated
   names per zoom through `readableLineNameSize` + `lineNameLayout`, without
   re-running the layout. The export has no zoom, so it always uses the layout
   size.
+- **Zoom-aware texts (canvas, opt-in):** `textScreenSize={{ minPx, maxSize }}`
+  does the same for every line text: rating rows, line names and hanging-tie
+  labels. Zoomed out, each grows to at least `minPx` on screen, up to one
+  ceiling for every kind, `maxSize` world units (default `TEXT_GROWTH_MAX_SIZE`,
+  20, level with the diagram name label), so grown texts read as one consistent size
+  and keep their proportion to the drawing. Each also stops wherever it would
+  start touching something it was clear of (another text, a line, a leader, a
+  box or a glyph), so the arranged texts never overlap again. Staggered
+  hanging-tie rows are sized for the ceiling (`HANGING_STAGGER_STEP`), so a
+  crowded box edge's labels grow as far as any other. The canvas computes the
+  caps once per layout (`textGrowthCaps`, a largest font size per text, with
+  neighbours checked at the same common size) and re-places the texts per zoom
+  (`readableTexts`, through `lineLabelLayout`, `lineNameLayout` and
+  `hangingLabelLayout`, so moved texts, callouts and staggered ties keep their
+  slots). A name is still held to its line. It supersedes `lineNameScreenSize`
+  when both are set. Computing the caps adds about 2 ms per layout on a
+  60-substation grid, 14 ms when every tie runs in a labelled bundle of three.
 
 ### Editing
 

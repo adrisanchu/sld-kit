@@ -215,6 +215,77 @@ export function resolveLabelGroups(groups: LabelGroup[], obstacles: LabelObstacl
   }
 }
 
+/** A placed text a zoom-aware canvas may grow: its box at a given font size. */
+export interface GrowableText {
+  /** Obstacles tagged with this owner don't count against it (see {@link LabelObstacles}). */
+  owner?: string;
+  /** Its layout size, and the largest size it may ever reach (world units). */
+  base: number;
+  max: number;
+  boxAt: (size: number) => Rect | null;
+}
+
+/** Binary-search steps per text: enough to pin a cap to ~1% of its range. */
+const GROWTH_STEPS = 7;
+
+/**
+ * How large each text may grow (a font size between its `base` and `max`)
+ * before it collides with something it was clear of at its layout size: a
+ * line, leader, box or glyph (which don't grow), or another text. Zoomed out,
+ * a canvas grows every text to the same world size (clamped to each text's own
+ * range), so neighbours are checked at that common size. What a zoom-aware
+ * canvas caps its readable sizes at, so zooming out never makes the arranged
+ * texts overlap again. Deterministic; a text already colliding at its layout
+ * size may still grow as long as it collides with nothing more.
+ */
+export function growthCaps(texts: GrowableText[], obstacles: LabelObstacles): number[] {
+  const index = indexOf(obstacles);
+  const sizeOf = (text: GrowableText, size: number) => Math.min(text.max, Math.max(text.base, size));
+  // Neighbours, indexed at their largest size so any that could reach a text show up.
+  const neighbours = new SpatialIndex();
+  texts.forEach((text, i) => {
+    const big = text.boxAt(text.max);
+    if (big) neighbours.add({ kind: 'text', rect: big, owner: String(i) }, big);
+  });
+
+  const hits = (i: number, size: number): number => {
+    const text = texts[i];
+    const box = text.boxAt(sizeOf(text, size));
+    if (!box) return Infinity;
+    const r = inset(box, 1);
+    const wide = inset(box, -LINE_CLEARANCE);
+    let n = 0;
+    const strokes = new Set<string>();
+    for (const it of index.query(wide)) {
+      if (text.owner !== undefined && it.owner === text.owner) continue;
+      if (it.kind === 'text' || it.kind === 'rect') {
+        if (rectsOverlap(r, it.rect)) n++;
+      } else if (segmentHitsRect(it.a, it.b, wide)) strokes.add(`${it.kind}:${it.id}`);
+    }
+    for (const it of neighbours.query(box)) {
+      if (it.kind !== 'text' || it.owner === String(i)) continue;
+      const other = texts[Number(it.owner)];
+      const otherBox = other.boxAt(sizeOf(other, size));
+      if (otherBox && rectsOverlap(r, otherBox)) n++;
+    }
+    return n + strokes.size;
+  };
+
+  return texts.map((text, i) => {
+    if (text.max <= text.base) return text.base;
+    const atBase = hits(i, text.base);
+    if (hits(i, text.max) <= atBase) return text.max;
+    let lo = text.base;
+    let hi = text.max;
+    for (let step = 0; step < GROWTH_STEPS; step++) {
+      const mid = (lo + hi) / 2;
+      if (hits(i, mid) <= atBase) lo = mid;
+      else hi = mid;
+    }
+    return lo;
+  });
+}
+
 function indexOf(obstacles: LabelObstacles): SpatialIndex {
   const index = new SpatialIndex();
   obstacles.polylines.forEach((line, id) => index.addPolyline('line', id, line, obstacles.polylineOwners?.[id]));

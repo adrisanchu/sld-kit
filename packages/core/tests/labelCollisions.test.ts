@@ -13,6 +13,10 @@ import {
   buildDocument,
   lineNameLayout,
   placeLineLabel,
+  readableTextSize,
+  readableTexts,
+  textGrowthCaps,
+  TEXT_GROWTH_MAX_SIZE,
   type CompositeLayout,
   type CompositeLineLayout,
   type Point,
@@ -325,77 +329,77 @@ describe('candidateSlots', () => {
   });
 });
 
-describe('Hanging-tie labels (box view)', () => {
-  /**
-   * CHARLIE with a tie up to ALPHA plus `n` hanging ties (generator, demand,
-   * storage) on the same top side: the box edge gives each ~50 px, narrower
-   * than their labels.
-   */
-  function crowded(n: number) {
-    const hanging = [
-      { id: 'sol1', label: 'Sol 1 - 600 MW', asset: 'renewable' as const },
-      { id: 'd3', label: 'D3 - 600 MW', asset: 'demand' as const },
-      { id: 'bat', label: 'Battery 2 - 150 MW', asset: 'storage' as const }
-    ].slice(0, n);
-    const charlie = buildDocument({
-      meta: { id: 'charlie', name: 'CHARLIE', substation: 'CHARLIE', voltageKv: 220 },
-      busbars: [{ label: 'BB', row: 1 }],
-      bays: [
-        {
-          col: 0,
-          positions: [{ type: 'line', row: 0, feeder: { asset: 'line', label: 'T1', direction: 'up', id: 't1' } }]
-        },
-        ...hanging.map((f, i) => ({
-          col: i + 1,
-          positions: [
-            { type: f.asset, row: 0, feeder: { asset: f.asset, label: f.label, direction: 'up' as const, id: f.id } }
-          ]
-        }))
-      ]
-    });
-    const alpha = buildDocument({
-      meta: { id: 'alpha', name: 'ALPHA', substation: 'ALPHA', voltageKv: 400 },
-      busbars: [{ label: 'BB', row: 0 }],
-      bays: [
-        {
-          col: 0,
-          positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'T1', direction: 'down', id: 't1' } }]
-        }
-      ]
-    });
-    const doc = new CompositeDocument({ id: 'x', name: 'x', boxMode: true, defaultRouting: 'orthogonal' });
-    doc.addChild(DiagramInstance.of({ id: 'charlie', libraryId: 'charlie', x: 0, y: 300 }));
-    doc.addChild(DiagramInstance.of({ id: 'alpha', libraryId: 'alpha', x: -120, y: 0 }));
-    doc.addLine(
-      new CompositeLine('t', [
-        { kind: 'anchor', instanceId: 'alpha', connectionId: 't1' },
-        { kind: 'anchor', instanceId: 'charlie', connectionId: 't1' }
+/**
+ * CHARLIE with a tie up to ALPHA plus `n` hanging ties (generator, demand,
+ * storage) on the same top side: the box edge gives each ~50 px, narrower
+ * than their labels.
+ */
+function crowded(n: number) {
+  const hanging = [
+    { id: 'sol1', label: 'Sol 1 - 600 MW', asset: 'renewable' as const },
+    { id: 'd3', label: 'D3 - 600 MW', asset: 'demand' as const },
+    { id: 'bat', label: 'Battery 2 - 150 MW', asset: 'storage' as const }
+  ].slice(0, n);
+  const charlie = buildDocument({
+    meta: { id: 'charlie', name: 'CHARLIE', substation: 'CHARLIE', voltageKv: 220 },
+    busbars: [{ label: 'BB', row: 1 }],
+    bays: [
+      {
+        col: 0,
+        positions: [{ type: 'line', row: 0, feeder: { asset: 'line', label: 'T1', direction: 'up', id: 't1' } }]
+      },
+      ...hanging.map((f, i) => ({
+        col: i + 1,
+        positions: [
+          { type: f.asset, row: 0, feeder: { asset: f.asset, label: f.label, direction: 'up' as const, id: f.id } }
+        ]
+      }))
+    ]
+  });
+  const alpha = buildDocument({
+    meta: { id: 'alpha', name: 'ALPHA', substation: 'ALPHA', voltageKv: 400 },
+    busbars: [{ label: 'BB', row: 0 }],
+    bays: [
+      {
+        col: 0,
+        positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'T1', direction: 'down', id: 't1' } }]
+      }
+    ]
+  });
+  const doc = new CompositeDocument({ id: 'x', name: 'x', boxMode: true, defaultRouting: 'orthogonal' });
+  doc.addChild(DiagramInstance.of({ id: 'charlie', libraryId: 'charlie', x: 0, y: 300 }));
+  doc.addChild(DiagramInstance.of({ id: 'alpha', libraryId: 'alpha', x: -120, y: 0 }));
+  doc.addLine(
+    new CompositeLine('t', [
+      { kind: 'anchor', instanceId: 'alpha', connectionId: 't1' },
+      { kind: 'anchor', instanceId: 'charlie', connectionId: 't1' }
+    ])
+  );
+  doc.resolveChildren(
+    new MapResolver(
+      new Map([
+        ['charlie', Serializer.toJSON(charlie)],
+        ['alpha', Serializer.toJSON(alpha)]
       ])
-    );
-    doc.resolveChildren(
-      new MapResolver(
-        new Map([
-          ['charlie', Serializer.toJSON(charlie)],
-          ['alpha', Serializer.toJSON(alpha)]
-        ])
-      )
-    );
-    return doc;
-  }
+    )
+  );
+  return doc;
+}
 
-  /** Estimated label box, as the layout sizes it (0.62 em per character). */
-  const labelBox = (label: { text: string; at: Point; textAnchor: string }): Rect => {
-    const fs = SLD_LAYOUT.labelFontSize;
-    const width = label.text.length * fs * 0.62;
-    const left =
-      label.textAnchor === 'start'
-        ? label.at.x
-        : label.textAnchor === 'end'
-          ? label.at.x - width
-          : label.at.x - width / 2;
-    return { x: left, y: label.at.y - fs, width, height: fs * 1.25 };
-  };
+/** Estimated label box, as the layout sizes it (0.62 em per character). */
+const labelBox = (label: { text: string; at: Point; textAnchor: string; fontSize?: number }): Rect => {
+  const fs = label.fontSize ?? SLD_LAYOUT.labelFontSize;
+  const width = label.text.length * fs * 0.62;
+  const left =
+    label.textAnchor === 'start'
+      ? label.at.x
+      : label.textAnchor === 'end'
+        ? label.at.x - width
+        : label.at.x - width / 2;
+  return { x: left, y: label.at.y - fs, width, height: fs * 1.25 };
+};
 
+describe('Hanging-tie labels (box view)', () => {
   it('a hanging tie with room keeps its default lead', () => {
     const layout = new CompositeLayoutEngine().layout(crowded(1));
     expect(layout.hangers).toHaveLength(1);
@@ -441,6 +445,101 @@ describe('Hanging-tie labels (box view)', () => {
 
   it('is deterministic', () => {
     const run = () => new CompositeLayoutEngine().layout(crowded(3)).hangers.map((h) => [h.points, h.label, h.stagger]);
+    expect(run()).toEqual(run());
+  });
+});
+
+describe('Zoom-aware text growth (textGrowthCaps / readableTexts)', () => {
+  /** Far enough out that every text wants to grow to its cap. */
+  const FAR = 0.05;
+  const MIN_PX = 11;
+
+  it('every kind with room grows to the same ceiling, whatever its layout size', () => {
+    const { doc, engine } = pair([{ rows: ['575/510'], name: 'L-1' }]);
+    const layout = engine.layout(doc);
+    const far = readableTexts(layout, textGrowthCaps(layout), FAR, MIN_PX);
+    // Ratings (layout size 16) and a name (12) both end at the ceiling, no further.
+    expect(far.lineLabels[0]!.fontSize).toBeCloseTo(TEXT_GROWTH_MAX_SIZE);
+    expect(far.lineNames[0]!.fontSize).toBeCloseTo(TEXT_GROWTH_MAX_SIZE);
+  });
+
+  it('a custom ceiling applies to every kind', () => {
+    const { doc, engine } = pair([{ rows: ['575/510'], name: 'L-1' }]);
+    const layout = engine.layout(doc);
+    const far = readableTexts(layout, textGrowthCaps(layout, 14), FAR, MIN_PX);
+    // Below the ratings' own size: they stay put; the name stops at 14.
+    expect(far.lineLabels[0]).toBe(layout.lines[0].label);
+    expect(far.lineNames[0]!.fontSize).toBeCloseTo(14);
+  });
+
+  it('zoomed in, every text keeps its layout size (the layout objects themselves)', () => {
+    const doc = crowded(3);
+    const layout = new CompositeLayoutEngine().layout(doc);
+    const near = readableTexts(layout, textGrowthCaps(layout), 10, MIN_PX);
+    layout.hangers.forEach((h, i) => expect(near.hangerLabels[i]).toBe(h.label));
+  });
+
+  for (const n of [2, 3]) {
+    it(`${n} staggered hanging-tie labels grow when zoomed out, but never into each other`, () => {
+      const layout = new CompositeLayoutEngine().layout(crowded(n));
+      const caps = textGrowthCaps(layout);
+      const far = readableTexts(layout, caps, FAR, MIN_PX);
+      // They grow all the way to the common ceiling (the stagger rows leave room)…
+      for (const l of far.hangerLabels) expect(l!.fontSize).toBeCloseTo(TEXT_GROWTH_MAX_SIZE);
+      // …and stay clear of each other, and of the other ties' leads and glyphs.
+      far.hangerLabels.forEach((a, i) => {
+        const box = shrink(labelBox(a!));
+        layout.hangers.forEach((h, j) => {
+          if (i === j) return;
+          expect(rectsOverlap(box, labelBox(far.hangerLabels[j]!)), `${i} × ${j} label`).toBe(false);
+          expect(polylineHitsRect(h.points, box), `${i} on ${j} lead`).toBe(false);
+          const g = h.terminus.at;
+          expect(rectsOverlap(box, { x: g.x - 11, y: g.y - 11, width: 22, height: 22 }), `${i} × ${j} glyph`).toBe(
+            false
+          );
+        });
+      });
+    });
+  }
+
+  it('ratings in a tight parallel group grow without overlapping each other or a line', () => {
+    const { doc, engine } = pair([{ rows: ['575/510', '370/455'] }, { rows: ['100/100'] }, { rows: ['100/100'] }], {
+      link: true
+    });
+    const layout = engine.layout(doc);
+    // A generous ceiling, so the ratings have room to run into their neighbours.
+    const far = readableTexts(layout, textGrowthCaps(layout, 28), FAR, MIN_PX);
+    const grown: CompositeLayout = {
+      ...layout,
+      lines: layout.lines.map((ln, i) => ({ ...ln, label: far.lineLabels[i] }))
+    };
+    expect(far.lineLabels.some((l, i) => l && l.fontSize > layout.lines[i].label!.fontSize)).toBe(true);
+    expect(overlappingTexts(grown)).toEqual([]);
+    expect(textsOnLines(grown)).toEqual([]);
+  });
+
+  it('a grown callout keeps its leader on its own line', () => {
+    const { doc, engine } = pair([{ rows: ['575/510', '370/455'] }, { rows: ['100/100'] }, { rows: ['100/100'] }], {
+      link: true
+    });
+    const layout = engine.layout(doc);
+    const far = readableTexts(layout, textGrowthCaps(layout, 28), FAR, MIN_PX);
+    expect(far.lineLabels.some((l) => l?.leader)).toBe(true);
+    layout.lines.forEach((ln, i) => {
+      const leader = far.lineLabels[i]?.leader;
+      if (leader) expect(distanceToPolyline(leader.dot, ln.points)).toBeLessThan(0.5);
+    });
+  });
+
+  it('readableTextSize grows to minPx on screen, within [base, max]', () => {
+    expect(readableTextSize(12, 36, 0.5, 11)).toBe(22); // 11 px / 0.5 px-per-unit
+    expect(readableTextSize(12, 18, 0.5, 11)).toBe(18); // capped
+    expect(readableTextSize(12, 36, 2, 11)).toBe(12); // zoomed in: layout size
+    expect(readableTextSize(12, 36, 0, 11)).toBe(12); // unknown scale
+  });
+
+  it('is deterministic', () => {
+    const run = () => textGrowthCaps(new CompositeLayoutEngine().layout(crowded(3)));
     expect(run()).toEqual(run());
   });
 });

@@ -72,12 +72,23 @@ export const HANGING_ASSETS: readonly string[] = ['renewable', 'storage', 'deman
 export const HANGING_LABEL_GAP = 4;
 
 /**
- * Staggered hanging ties: when labels on a crowded box side would collide, the
- * collision pass lengthens leads by this much per row (a label's height plus
- * a little air), up to this many rows, so neighbouring labels sit at different
- * heights.
+ * The largest font size (world units) a zoom-aware canvas grows a line text to
+ * when zoomed out: rating rows, line names and hanging-tie labels alike, so
+ * grown texts read as one consistent size, level with the diagram name label
+ * (`NAME_LABEL_FONT_SIZE`) and below a box's own name. Texts stop sooner where
+ * they'd touch their neighbours (`textGrowthCaps`); a name also stays within
+ * its line.
  */
-export const HANGING_STAGGER_STEP = 18;
+export const TEXT_GROWTH_MAX_SIZE = 20;
+
+/**
+ * Staggered hanging ties: when labels on a crowded box side would collide, the
+ * collision pass lengthens leads by this much per row, up to this many rows, so
+ * neighbouring labels sit at different heights. A row holds a label grown to
+ * {@link TEXT_GROWTH_MAX_SIZE} (its 1.25 em box plus a little air), so zooming
+ * out lets staggered labels grow as large as any other text.
+ */
+export const HANGING_STAGGER_STEP = Math.ceil(TEXT_GROWTH_MAX_SIZE * 1.25) + 2;
 export const HANGING_STAGGER_ROWS = 4;
 
 /** Dashed stroke for `cable` lines — shared by the exporter and both routers. */
