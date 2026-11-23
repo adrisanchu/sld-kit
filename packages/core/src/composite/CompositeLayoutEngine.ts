@@ -13,12 +13,14 @@ import {
   DEFAULT_LINE_NAME_PLACEMENT,
   type CompositeLineKind,
   type LineNamePlacement,
+  type LineNameSide,
   type LineVertexJson
 } from './CompositeLine';
 import { isOrthogonalRouting, routePolyline, type LineRouting } from './routing';
 import { chordFrame } from './lineFrame';
 import { DiagramInstance, normalizeQuarterTurn, type LabelAnchor } from './DiagramInstance';
 import { OrthogonalRouter } from './OrthogonalRouter';
+import { laneOffsets, sideKey, type BundleMember } from './bundles';
 import { PortResolver, feederKey } from './PortResolver';
 import { facingSide, rotateSide, type BoxSide, type Port } from './ports';
 import {
@@ -29,6 +31,9 @@ import {
   DEMAND_SYMBOL,
   HANGING_ASSETS,
   HANGING_LABEL_GAP,
+  HANGING_STAGGER_ROWS,
+  HANGING_STAGGER_STEP,
+  TEXT_GROWTH_MAX_SIZE,
   LINE_LABEL_FONT_SIZE,
   LINE_LABEL_GLYPH_CLEARANCE,
   LINE_LABEL_LINE_HEIGHT,
@@ -42,7 +47,17 @@ import {
   TRANSFORMER_SYMBOL,
   TRANSFORMER3W_SYMBOL
 } from './layout-constants';
-import { arcMidpoint, readableAngle, roomyPointAtFraction, segmentAngleDeg, simplify } from './polyline';
+import { arcMidpoint, pointAtFraction, readableAngle, roomyPointAtFraction, segmentAngleDeg, simplify } from './polyline';
+import {
+  growthCaps,
+  resolveLabelCollisions,
+  resolveLabelGroups,
+  type GrowableText,
+  type LabelCandidate,
+  type LabelGroup,
+  type LabelObstacles,
+  type TextSlot
+} from './labelCollisions';
 import { resolveFormat, type ElementFormat, type ElementFormatResolver, type FormatContext } from '../theme';
 import { feederBoxCenter, layoutSectionBoxes, type BoxSectionsResolver, type SectionBox, type SectionTie } from './sections';
 
@@ -400,6 +415,18 @@ export interface CompositeLineLayout {
   /** The line's own name (`CompositeLine.name`), placed per its `namePlacement` — present only when named. */
   nameLabel?: LineNameLayout;
   /**
+   * Set only when the collision pass moved `label` off its default slot (the
+   * arc midpoint, above / right): where it went instead.
+   */
+  labelSlot?: TextSlot;
+  /**
+   * Set only when the collision pass moved the name off its stored
+   * `namePlacement`: the arc fraction (reading order) and side it went to, and
+   * for a callout its `offset` from the line.
+   * {@link lineNameLayout} honours it, so a zoom-aware re-placement keeps it.
+   */
+  nameSlot?: { fraction: number; side: LineNameSide; offset?: number };
+  /**
    * Set only for `curved` routing: draw each bend as a circular arc of this
    * radius (pass it to `connectionPath`). `points` stay the sharp polyline, so
    * glyphs, labels and handles sit exactly where they do for `orthogonal`.
@@ -419,6 +446,19 @@ export interface LineLabelLayout {
   fontSize: number;
   /** Backing box (world), sized from an estimated text width. */
   box: Rect;
+  /** Present only for a callout (a label set away from its line): the leader back to it. */
+  leader?: TextLeader;
+}
+
+/**
+ * The leader of a callout: a text the collision pass set away from its line
+ * (no clear spot beside it, e.g. a line sandwiched in a tight parallel group).
+ * Renderers draw `points` as a thin, subtle stroke and a small dot at `dot`,
+ * the point on the text's own line it belongs to.
+ */
+export interface TextLeader {
+  points: Point[];
+  dot: Point;
 }
 
 /**
@@ -428,29 +468,64 @@ export interface LineLabelLayout {
  */
 export type LineLabelResolver = (line: CompositeLine) => readonly string[] | null | undefined;
 
-/** Place label rows beside a polyline's arc-length midpoint (see {@link LineLabelLayout}). */
-export function placeLineLabel(points: Point[], rows: readonly string[], clearance = 0): LineLabelLayout | null {
-  const mid = arcMidpoint(points);
-  if (!mid || rows.length === 0) return null;
+/**
+ * Place label rows beside a polyline (see {@link LineLabelLayout}): by default
+ * at its arc-length midpoint, above a horizontal run or right of a vertical one.
+ * `slot` moves it to another `fraction` of the arc length (in point order),
+ * the other side (`side: -1`: below / left) and/or out as a callout (`offset`,
+ * adding a {@link TextLeader}), as the collision pass does.
+ */
+export function placeLineLabel(
+  points: Point[],
+  rows: readonly string[],
+  clearance = 0,
+  slot: TextSlot = DEFAULT_LABEL_SLOT,
+  /** Rows' font size (world units); the row pitch and padding scale with it, the gap to the line doesn't. */
+  fontSize: number = LINE_LABEL_FONT_SIZE
+): LineLabelLayout | null {
+  if (rows.length === 0) return null;
+  const mid = slot.fraction === DEFAULT_LABEL_SLOT.fraction ? arcMidpoint(points) : arcPointAt(points, slot.fraction);
+  if (!mid) return null;
   const rad = (mid.angleDeg * Math.PI) / 180;
   const horizontal = Math.abs(Math.cos(rad)) >= Math.abs(Math.sin(rad));
-  const fontSize = LINE_LABEL_FONT_SIZE;
-  const lh = LINE_LABEL_LINE_HEIGHT;
+  const flipped = slot.side === -1;
+  const k = fontSize / LINE_LABEL_FONT_SIZE;
+  const lh = LINE_LABEL_LINE_HEIGHT * k;
+  const pad = LINE_LABEL_PAD * k;
   const width = Math.max(...rows.map((r) => r.length)) * fontSize * 0.6;
   const height = rows.length * lh;
-  const gap = LINE_LABEL_OFFSET + LINE_LABEL_PAD + clearance;
+  const offset = slot.offset ?? 0;
+  const gap = LINE_LABEL_OFFSET + pad + clearance + offset;
   // Block top-left (text area, before padding).
-  const left = horizontal ? mid.at.x - width / 2 : mid.at.x + gap;
-  const top = horizontal ? mid.at.y - gap - height : mid.at.y - height / 2;
+  const left = horizontal ? mid.at.x - width / 2 : flipped ? mid.at.x - gap - width : mid.at.x + gap;
+  const top = horizontal ? (flipped ? mid.at.y + gap : mid.at.y - gap - height) : mid.at.y - height / 2;
   const x = horizontal ? mid.at.x : left;
   // Baseline of row i: centred in its row pitch (≈0.35em below the row centre).
   const baseline = (i: number) => top + i * lh + lh / 2 + fontSize * 0.35;
-  return {
+  const box = { x: left - pad, y: top - pad, width: width + 2 * pad, height: height + 2 * pad };
+  const label: LineLabelLayout = {
     rows: rows.map((text, i) => ({ text, x, y: baseline(i) })),
     textAnchor: horizontal ? 'middle' : 'start',
     fontSize,
-    box: { x: left - LINE_LABEL_PAD, y: top - LINE_LABEL_PAD, width: width + 2 * LINE_LABEL_PAD, height: height + 2 * LINE_LABEL_PAD }
+    box
   };
+  if (offset > 0) {
+    // A callout: a straight leader from the line to the box's near edge.
+    const end = horizontal
+      ? { x: mid.at.x, y: flipped ? box.y : box.y + box.height }
+      : { x: flipped ? box.x + box.width : box.x, y: mid.at.y };
+    label.leader = { points: [mid.at, end], dot: mid.at };
+  }
+  return label;
+}
+
+/** A label's default slot: the arc-length midpoint, above / right of the line. */
+const DEFAULT_LABEL_SLOT: TextSlot = { fraction: 0.5, side: 1 };
+
+/** Point at `fraction` of the arc length with its segment angle (like `arcMidpoint`). */
+function arcPointAt(points: Point[], fraction: number): { at: Point; angleDeg: number } | null {
+  const p = pointAtFraction(points, fraction);
+  return p ? { at: p.at, angleDeg: (Math.atan2(p.dy, p.dx) * 180) / Math.PI } : null;
 }
 
 /**
@@ -477,6 +552,8 @@ export interface LineNameLayout {
   maxFontSize: number;
   /** World AABB of the (estimated) rotated text — for bounds/fit, not hit-testing. */
   box: Rect;
+  /** Present only for a callout (a name set away from its line): the leader back to it. */
+  leader?: TextLeader;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -537,7 +614,11 @@ export function placeLineName(
   text: string,
   placement: LineNamePlacement = DEFAULT_LINE_NAME_PLACEMENT,
   clearance = 0,
-  fontSize: number = LINE_NAME_FONT_SIZE
+  fontSize: number = LINE_NAME_FONT_SIZE,
+  /** Arc fraction (reading order) overriding `placement.along` — a collision-resolved slot. */
+  fraction?: number,
+  /** Extra distance from the line for a callout; > 0 adds a {@link TextLeader} back to it. */
+  offset = 0
 ): LineNameLayout | null {
   if (!text || points.length < 2) return null;
   const first = points[0];
@@ -550,11 +631,11 @@ export function placeLineName(
 
   const w = text.length * fontSize * NAME_CHAR_WIDTH;
   const h = fontSize;
-  const offset = (LINE_NAME_OFFSET * fontSize) / LINE_NAME_FONT_SIZE;
+  const lineGap = (LINE_NAME_OFFSET * fontSize) / LINE_NAME_FONT_SIZE;
   // Sit on a segment with room for the name (never on a short orthogonal jog):
   // its full length when it runs along the line, a few gaps' worth otherwise.
-  const need = placement.orientation === 'parallel' ? w + 2 * offset : 4 * offset;
-  const at = roomyPointAtFraction(reading, LINE_NAME_ALONG_FRACTION[placement.along], need);
+  const need = placement.orientation === 'parallel' ? w + 2 * lineGap : 4 * lineGap;
+  const at = roomyPointAtFraction(reading, fraction ?? LINE_NAME_ALONG_FRACTION[placement.along], need);
   if (!at) return null;
 
   const toRad = Math.PI / 180;
@@ -570,7 +651,7 @@ export function placeLineName(
   const adv = { x: Math.cos(r), y: Math.sin(r) }; // text advance
   const up = { x: Math.sin(r), y: -Math.cos(r) }; // baseline → cap
 
-  const gap = offset + clearance;
+  const gap = lineGap + clearance + offset;
   const advN = adv.x * n.x + adv.y * n.y;
   const upN = Math.abs(up.x * n.x + up.y * n.y);
 
@@ -594,7 +675,7 @@ export function placeLineName(
   const minX = Math.min(...xs);
   const minY = Math.min(...ys);
 
-  return {
+  const layout: LineNameLayout = {
     text,
     x: round2(x),
     y: round2(y),
@@ -604,6 +685,12 @@ export function placeLineName(
     maxFontSize: Math.max(fontSize, lineNameFitSize(points, text)),
     box: { x: minX, y: minY, width: Math.max(...xs) - minX, height: Math.max(...ys) - minY }
   };
+  if (offset > 0) {
+    // A callout: a straight leader from the line to the text's near edge.
+    const end = { x: at.at.x + n.x * gap, y: at.at.y + n.y * gap };
+    layout.leader = { points: [at.at, end], dot: at.at };
+  }
+  return layout;
 }
 
 /**
@@ -616,9 +703,44 @@ export function placeLineName(
 export function lineNameLayout(line: CompositeLineLayout, fontSize?: number): LineNameLayout | null {
   const { name, namePlacement } = line.line;
   if (!name) return null;
-  const placement = namePlacement ?? DEFAULT_LINE_NAME_PLACEMENT;
-  const clearance = line.glyph && placement.along === 'middle' ? LINE_LABEL_GLYPH_CLEARANCE : 0;
-  return placeLineName(line.points, name, placement, clearance, fontSize ?? fittedLineNameSize(line.points, name));
+  const stored = namePlacement ?? DEFAULT_LINE_NAME_PLACEMENT;
+  // A collision-resolved slot (see `nameSlot`) moves the name off its stored spot.
+  const slot = line.nameSlot;
+  const placement = slot ? { ...stored, side: slot.side } : stored;
+  const atMiddle = slot ? slot.fraction === LINE_NAME_ALONG_FRACTION.middle : placement.along === 'middle';
+  const clearance = line.glyph && atMiddle ? LINE_LABEL_GLYPH_CLEARANCE : 0;
+  const size = fontSize ?? fittedLineNameSize(line.points, name);
+  return placeLineName(line.points, name, placement, clearance, size, slot?.fraction, slot?.offset ?? 0);
+}
+
+/**
+ * (Re-)place a laid-out line's rating rows at `fontSize`, in the slot the layout
+ * chose for them (`labelSlot`, callout and leader included): what a zoom-aware
+ * canvas uses to grow them (see {@link readableTexts}). `null` when the line has
+ * no label.
+ */
+export function lineLabelLayout(line: CompositeLineLayout, fontSize?: number): LineLabelLayout | null {
+  const label = line.label;
+  if (!label) return null;
+  const slot = line.labelSlot ?? DEFAULT_LABEL_SLOT;
+  const clearance = line.glyph && slot.fraction === DEFAULT_LABEL_SLOT.fraction ? LINE_LABEL_GLYPH_CLEARANCE : 0;
+  return placeLineLabel(line.points, label.rows.map((r) => r.text), clearance, slot, fontSize ?? label.fontSize);
+}
+
+/**
+ * (Re-)place a hanging tie's label at `fontSize` beyond its glyph, keeping the
+ * side and alignment the layout chose (staggering included): what a zoom-aware
+ * canvas uses to grow it. `null` when the tie has no label.
+ */
+export function hangingLabelLayout(h: HangingTieLayout, fontSize?: number): HangingTieLabel | null {
+  if (!h.label || h.points.length < 2) return null;
+  const start = h.points[0];
+  const end = h.points[h.points.length - 1];
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const side: BoxSide = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
+  const align = side === 'up' || side === 'down' ? h.label.textAnchor : 'middle';
+  return hangingLabel(h.label.text, end, side, align, fontSize ?? h.label.fontSize ?? SLD_LAYOUT.labelFontSize);
 }
 
 /**
@@ -635,23 +757,233 @@ export function readableLineNameSize(label: LineNameLayout, pxPerUnit: number, m
 
 /**
  * A hanging tie's label, just beyond its glyph along the lead: centred above or
- * below a vertical lead, left- or right-aligned past a horizontal one.
+ * below a vertical lead, left- or right-aligned past a horizontal one. On a
+ * vertical lead, `align` can lean the label to one side instead: `start` runs
+ * it rightward from the glyph's left edge, `end` leftward from its right edge
+ * (what a crowded side's staggered labels use, so each spans only the leads on
+ * one side of its own).
  */
-function hangingLabel(text: string, end: Point, side: BoxSide): NonNullable<HangingTieLayout['label']> {
+function hangingLabel(
+  text: string,
+  end: Point,
+  side: BoxSide,
+  align: 'middle' | 'start' | 'end' = 'middle',
+  fontSize: number = SLD_LAYOUT.labelFontSize
+): HangingTieLabel {
   const reach = SLD_LAYOUT.symbolSize / 2 + HANGING_LABEL_GAP;
-  const fs = SLD_LAYOUT.labelFontSize;
-  if (side === 'up') return { text, at: { x: end.x, y: end.y - reach }, textAnchor: 'middle' };
-  if (side === 'down') return { text, at: { x: end.x, y: end.y + reach + fs * 0.8 }, textAnchor: 'middle' };
-  if (side === 'right') return { text, at: { x: end.x + reach, y: end.y + fs * 0.35 }, textAnchor: 'start' };
-  return { text, at: { x: end.x - reach, y: end.y + fs * 0.35 }, textAnchor: 'end' };
+  const fs = fontSize;
+  const half = SLD_LAYOUT.symbolSize / 2;
+  const x = align === 'start' ? end.x - half : align === 'end' ? end.x + half : end.x;
+  // Only a resized label carries its size; the layout size stays implicit.
+  const size = fs === SLD_LAYOUT.labelFontSize ? {} : { fontSize: fs };
+  if (side === 'up') return { text, at: { x, y: end.y - reach }, textAnchor: align, ...size };
+  if (side === 'down') return { text, at: { x, y: end.y + reach + fs * 0.8 }, textAnchor: align, ...size };
+  if (side === 'right') return { text, at: { x: end.x + reach, y: end.y + fs * 0.35 }, textAnchor: 'start', ...size };
+  return { text, at: { x: end.x - reach, y: end.y + fs * 0.35 }, textAnchor: 'end', ...size };
 }
 
 /** Estimated extent of a hanging tie's label (no DOM to measure in), for bounds. */
-function hangingLabelBox(label: NonNullable<HangingTieLayout['label']>): Rect {
-  const fs = SLD_LAYOUT.labelFontSize;
+function hangingLabelBox(label: HangingTieLabel): Rect {
+  const fs = label.fontSize ?? SLD_LAYOUT.labelFontSize;
   const width = label.text.length * fs * 0.62;
   const left = label.textAnchor === 'start' ? label.at.x : label.textAnchor === 'end' ? label.at.x - width : label.at.x - width / 2;
   return { x: left, y: label.at.y - fs, width, height: fs * 1.25 };
+}
+
+/** The room a line text keeps around a glyph (transformer, demand, a hanging tie's asset). */
+function textGlyphBox(g: LineGlyph): Rect {
+  const r = LINE_LABEL_GLYPH_CLEARANCE;
+  return { x: g.at.x - r, y: g.at.y - r, width: 2 * r, height: 2 * r };
+}
+
+/** The non-text things line texts keep clear of: child boxes, line glyphs and every line / link. */
+function textObstacleParts(lines: CompositeLineLayout[], links: CompositeLink[], children: ChildLayout[]) {
+  const childRects: Rect[] = [];
+  for (const child of children) {
+    if (child.boxes?.length) {
+      for (const box of child.boxes) {
+        const corners = child.transform.applyRect(box.frame);
+        const xs = corners.map((c) => c.x);
+        const ys = corners.map((c) => c.y);
+        childRects.push({ x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) });
+      }
+    } else childRects.push(child.worldBounds);
+  }
+  const lineGlyphs: Rect[] = [];
+  for (const l of lines) for (const g of [l.glyph, l.terminus]) if (g) lineGlyphs.push(textGlyphBox(g));
+  const linePolylines = [...lines.map((l) => l.points), ...links.map((l) => l.points)];
+  return { childRects, lineGlyphs, linePolylines };
+}
+
+/**
+ * Everything but the texts themselves: boxes, glyphs, lines, links and hanging
+ * ties (each tie's lead and glyph tagged with its feeder, so its own label
+ * never collides with them).
+ */
+function staticTextObstacles(
+  lines: CompositeLineLayout[],
+  links: CompositeLink[],
+  hangers: HangingTieLayout[],
+  children: ChildLayout[]
+): LabelObstacles {
+  const { childRects, lineGlyphs, linePolylines } = textObstacleParts(lines, links, children);
+  const owner = (h: HangingTieLayout) => feederKey(h.instanceId, h.connectionId);
+  return {
+    polylines: [...linePolylines, ...hangers.map((h) => h.points)],
+    polylineOwners: [...linePolylines.map(() => undefined), ...hangers.map(owner)],
+    rects: [...childRects, ...lineGlyphs, ...hangers.map((h) => textGlyphBox(h.terminus))],
+    rectOwners: [...childRects.map(() => undefined), ...lineGlyphs.map(() => undefined), ...hangers.map(owner)]
+  };
+}
+
+/** How large a zoom-aware canvas may grow each text of a layout (see {@link textGrowthCaps}). */
+export interface TextGrowthCaps {
+  /** Per `layout.lines[i]`: its rating rows' and name's largest font size (world units). */
+  lineLabels: number[];
+  lineNames: number[];
+  /** Per `layout.hangers[i]`: its label's largest font size (world units). */
+  hangerLabels: number[];
+}
+
+/**
+ * How large each text of a layout (rating rows, line names, hanging-tie
+ * labels) may grow when a zoom-aware canvas enlarges it: up to `maxSize`
+ * (world units, default {@link TEXT_GROWTH_MAX_SIZE}), the same ceiling for
+ * every kind so grown texts read as one consistent size, and only as far as it
+ * can before touching something it was clear of (see `growthCaps`). A text
+ * already at `maxSize` (the rating rows, by default) doesn't grow; a name is
+ * also held to its own line (`maxFontSize`). Compute once per layout; then per
+ * zoom, {@link readableTexts}.
+ */
+export function textGrowthCaps(layout: CompositeLayout, maxSize: number = TEXT_GROWTH_MAX_SIZE): TextGrowthCaps {
+  const obstacles = staticTextObstacles(layout.lines, layout.links, layout.hangers, layout.children);
+  // Callout leaders don't grow: texts keep clear of them too.
+  for (const ln of layout.lines) {
+    for (const leader of [ln.label?.leader, ln.nameLabel?.leader]) {
+      if (leader) {
+        obstacles.polylines.push(leader.points);
+        obstacles.polylineOwners?.push(undefined);
+      }
+    }
+  }
+  const texts: GrowableText[] = [];
+  const slots: { kind: 'label' | 'name' | 'hanger'; at: number }[] = [];
+  const range = (base: number, limit = maxSize) => ({ base, max: Math.max(base, Math.min(maxSize, limit)) });
+  layout.lines.forEach((ln, i) => {
+    const label = ln.label;
+    if (label) {
+      texts.push({ ...range(label.fontSize), boxAt: (size) => lineLabelLayout(ln, size)?.box ?? null });
+      slots.push({ kind: 'label', at: i });
+    }
+    const name = ln.nameLabel;
+    if (name) {
+      texts.push({ ...range(name.fontSize, name.maxFontSize), boxAt: (size) => lineNameLayout(ln, size)?.box ?? null });
+      slots.push({ kind: 'name', at: i });
+    }
+  });
+  layout.hangers.forEach((h, i) => {
+    const label = h.label;
+    if (!label) return;
+    texts.push({
+      ...range(label.fontSize ?? SLD_LAYOUT.labelFontSize),
+      owner: feederKey(h.instanceId, h.connectionId),
+      boxAt: (size) => {
+        const grown = hangingLabelLayout(h, size);
+        return grown ? hangingLabelBox(grown) : null;
+      }
+    });
+    slots.push({ kind: 'hanger', at: i });
+  });
+  const caps = growthCaps(texts, obstacles);
+  const out: TextGrowthCaps = {
+    lineLabels: layout.lines.map((ln) => ln.label?.fontSize ?? 0),
+    lineNames: layout.lines.map((ln) => ln.nameLabel?.fontSize ?? 0),
+    hangerLabels: layout.hangers.map((h) => h.label?.fontSize ?? SLD_LAYOUT.labelFontSize)
+  };
+  slots.forEach((slot, j) => {
+    const list = slot.kind === 'label' ? out.lineLabels : slot.kind === 'name' ? out.lineNames : out.hangerLabels;
+    list[slot.at] = caps[j];
+  });
+  return out;
+}
+
+/**
+ * The world size a zoom-aware canvas draws a text at: grown to at least `minPx`
+ * on screen, never past `maxSize`, never below its layout size `base`. The
+ * layout size when the scale is unknown (e.g. SSR).
+ */
+export function readableTextSize(base: number, maxSize: number, pxPerUnit: number, minPx: number): number {
+  if (!(pxPerUnit > 0) || !Number.isFinite(pxPerUnit)) return base;
+  return Math.max(base, Math.min(maxSize, minPx / pxPerUnit));
+}
+
+/** A layout's texts at the sizes a zoom-aware canvas draws them (see {@link readableTexts}). */
+export interface ReadableTexts {
+  lineLabels: (LineLabelLayout | undefined)[];
+  lineNames: (LineNameLayout | undefined)[];
+  hangerLabels: (HangingTieLabel | undefined)[];
+}
+
+/**
+ * Every text of a layout re-placed for the current zoom: rating rows, line
+ * names and hanging-tie labels, each grown to at least `minPx` on screen but
+ * never past its cap (`caps`, from {@link textGrowthCaps}), so zooming out
+ * keeps them readable without letting them overlap. Unchanged texts are the
+ * layout's own objects. Indexed like `layout.lines` / `layout.hangers`.
+ */
+export function readableTexts(layout: CompositeLayout, caps: TextGrowthCaps, pxPerUnit: number, minPx: number): ReadableTexts {
+  return {
+    lineLabels: layout.lines.map((ln, i) => {
+      const label = ln.label;
+      if (!label) return undefined;
+      const size = readableTextSize(label.fontSize, caps.lineLabels[i] ?? label.fontSize, pxPerUnit, minPx);
+      return size === label.fontSize ? label : (lineLabelLayout(ln, size) ?? label);
+    }),
+    lineNames: layout.lines.map((ln, i) => {
+      const name = ln.nameLabel;
+      if (!name) return undefined;
+      const max = Math.min(name.maxFontSize, caps.lineNames[i] ?? name.fontSize);
+      const size = readableTextSize(name.fontSize, max, pxPerUnit, minPx);
+      return size === name.fontSize ? name : (lineNameLayout(ln, size) ?? name);
+    }),
+    hangerLabels: layout.hangers.map((h, i) => {
+      const label = h.label;
+      if (!label) return undefined;
+      const base = label.fontSize ?? SLD_LAYOUT.labelFontSize;
+      const size = readableTextSize(base, caps.hangerLabels[i] ?? base, pxPerUnit, minPx);
+      return size === base ? label : (hangingLabelLayout(h, size) ?? label);
+    })
+  };
+}
+
+/**
+ * The arrangements tried for `n` hanging-tie labels along one box side (sorted
+ * along it), first clear one wins (see `resolveLabelGroups`):
+ *
+ *  1. every lead at its default length, labels centred;
+ *  2. alternate leads lengthened one row (a zig-zag), both phases;
+ *  3. on a vertical lead, a staircase: labels leaning right with leads
+ *     lengthening leftward, or leaning left with leads lengthening rightward,
+ *     so each label only spans the shorter leads beside it. This always fits,
+ *     however close the ties sit.
+ *
+ * Horizontal leads (labels already beside their glyph) zig-zag by the widest
+ * label instead, so neighbouring labels sit side by side. A lone tie can still
+ * lengthen its lead to dodge a line or a box.
+ */
+function hangerPatterns(n: number, vertical: boolean, widest: number): TextSlot[][] {
+  const at = (fraction: number, row: number): TextSlot =>
+    row ? { fraction, side: 1, offset: row * HANGING_STAGGER_STEP } : { fraction, side: 1 };
+  const all = (f: (i: number) => TextSlot) => Array.from({ length: n }, (_, i) => f(i));
+  const patterns: TextSlot[][] = [all(() => at(0.5, 0))];
+  if (n === 1) {
+    for (let row = 1; row <= HANGING_STAGGER_ROWS; row++) patterns.push([at(0.5, row)]);
+    return patterns;
+  }
+  const zig = vertical ? 1 : Math.ceil((widest + HANGING_LABEL_GAP * 2) / HANGING_STAGGER_STEP);
+  patterns.push(all((i) => at(0.5, i % 2 ? zig : 0)), all((i) => at(0.5, i % 2 ? 0 : zig)));
+  if (vertical) patterns.push(all((i) => at(1, n - 1 - i)), all((i) => at(0, i)));
+  return patterns;
 }
 
 /** Point at the polyline's arc-length midpoint, plus the angle of the segment it lies on. */
@@ -680,6 +1012,15 @@ export interface ExternalConnectionTip {
  * the asset glyph at its free end and the feeder label beyond it. Derived from
  * the child's own feeders every layout; nothing is stored in the composite.
  */
+/** A hanging tie's label: text at its baseline origin. */
+export interface HangingTieLabel {
+  text: string;
+  at: Point;
+  textAnchor: 'start' | 'middle' | 'end';
+  /** World font size; absent = `SLD_LAYOUT.labelFontSize` (the layout size). */
+  fontSize?: number;
+}
+
 export interface HangingTieLayout {
   instanceId: string;
   /** The child's feeder connection id. */
@@ -691,7 +1032,13 @@ export interface HangingTieLayout {
   /** The asset glyph centred on the lead's free end. */
   terminus: LineGlyph;
   /** The feeder label beyond the glyph; absent when the feeder has none. */
-  label?: { text: string; at: Point; textAnchor: 'start' | 'middle' | 'end' };
+  label?: HangingTieLabel;
+  /**
+   * Set only when the collision pass lengthened the lead (world px past
+   * `DEMAND_LEAD_LENGTH`) so its label clears a neighbour's: staggered leads on
+   * a crowded box side. `points`, `terminus` and `label` already include it.
+   */
+  stagger?: number;
 }
 
 export interface CompositeLayout {
@@ -718,6 +1065,15 @@ export interface CompositeLayout {
 
 /** A resolved floating-line endpoint: a floating port (anchored) or a free point. */
 type BoxEnd = { port: Port; point?: undefined } | { port?: undefined; point: Point } | null;
+
+/** An auto-link to draw: a shared external id with its two floating ports. */
+interface FloatingLinkPair {
+  connectionId: string;
+  firstId: string;
+  secondId: string;
+  pa: Port;
+  pb: Port;
+}
 
 /** The world point a resolved floating endpoint attaches at (port attach point or free point). */
 const floatingEndPoint = (e: NonNullable<BoxEnd>): Point => (e.port ? e.port.point : e.point);
@@ -819,6 +1175,7 @@ export class CompositeLayoutEngine {
     const claimed = new Set<string>();
     for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
     const links = this.detectLinks(children, claimed, defaultRouting);
+    this.resolveTextCollisions(lines, links, [], children);
     const bounds = this.unionBounds(children, links, lines, []);
     return { children, links, lines, hangers: [], bounds, snapTips: this.externalConnectionTips(children) };
   }
@@ -961,18 +1318,25 @@ export class CompositeLayoutEngine {
     // Every child box is an obstacle the auto router keeps its lines out of.
     const obstacles = this.obstacles(children);
 
+    // A manual line for a shared id takes precedence: suppress its auto-link.
+    const claimed = new Set<string>();
+    for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
+    const linkPairs = this.floatingLinkPairs(children, resolver, claimed);
+
+    // Parallel routes joining the same two box sides each get their own lane
+    // for the mid-line jog, so they don't overlap (lines and auto-links alike).
+    const offsets = this.bundleOffsets(doc, resolver, linkPairs, routingDefault, obstacles);
+
     const lines: CompositeLineLayout[] = [];
     for (const line of doc.allLines()) {
-      const routed = this.routeFloatingLine(line, resolver, line.routing ?? routingDefault, obstacles);
+      const routed = this.routeFloatingLine(line, resolver, line.routing ?? routingDefault, obstacles, offsets.get(`line:${line.id}`) ?? 0);
       if (routed) lines.push(routed);
     }
 
-    // A manual line for a shared id takes precedence: suppress its auto-link,
-    // then route the remaining auto-links through the same floating router.
-    const claimed = new Set<string>();
-    for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
-    const links = this.detectFloatingLinks(children, resolver, claimed, routingDefault, obstacles);
+    // The remaining auto-links go through the same floating router.
+    const links = this.routeFloatingLinks(linkPairs, routingDefault, obstacles, offsets);
     const hangers = boxMode ? this.hangingTies(children, resolver, claimed, links) : [];
+    this.resolveTextCollisions(lines, links, hangers, children);
 
     // Snap targets come from the same resolver that attached the lines, so a
     // ring always sits on the line end it would create (view + effective side).
@@ -1106,7 +1470,8 @@ export class CompositeLayoutEngine {
     line: CompositeLine,
     resolver: PortResolver,
     routing: LineRouting,
-    obstacles: Rect[]
+    obstacles: Rect[],
+    laneOffset = 0
   ): CompositeLineLayout | null {
     const ends = line.vertices.map((v) => this.resolveFloatingEnd(v, resolver));
     const first = ends[0];
@@ -1133,7 +1498,7 @@ export class CompositeLayoutEngine {
 
     let points: Point[] | null = null;
     if (first?.port && last?.port) {
-      points = this.router.route(first.port, last.port, obstacles);
+      points = this.router.route(first.port, last.port, obstacles, { laneOffset });
     } else if (first?.port && last?.point) {
       points = this.router.toPoint(first.port, last.point, obstacles);
     } else if (first?.point && last?.port) {
@@ -1203,13 +1568,11 @@ export class CompositeLayoutEngine {
    * orthogonal router (matching the floating lines) when the default routing is
    * `orthogonal`, instead of a straight tip chord.
    */
-  private detectFloatingLinks(
-    children: ChildLayout[],
-    resolver: PortResolver,
-    suppressed: Set<string>,
-    routingDefault: LineRouting,
-    obstacles: Rect[]
-  ): CompositeLink[] {
+  /**
+   * The auto-links to draw: each shared external id found on two children
+   * (claimed ids excepted), with both floating ports resolved.
+   */
+  private floatingLinkPairs(children: ChildLayout[], resolver: PortResolver, suppressed: Set<string>): FloatingLinkPair[] {
     const index = new Map<string, string[]>();
     for (const child of children) {
       const { layout, instance } = child;
@@ -1227,25 +1590,73 @@ export class CompositeLayoutEngine {
       }
     }
 
-    const orthogonal = isOrthogonalRouting(routingDefault);
-    const links: CompositeLink[] = [];
+    const pairs: FloatingLinkPair[] = [];
     for (const [connectionId, ends] of index) {
       if (ends.length < 2) continue;
       const [firstId, secondId] = ends;
       const pa = resolver.resolve(firstId, connectionId);
       const pb = resolver.resolve(secondId, connectionId);
-      if (!pa || !pb) continue;
-      const points = orthogonal ? this.router.route(pa, pb, obstacles) : simplify([pa.point, pb.point]);
-      links.push({
-        connectionId,
-        a: { instanceId: firstId, point: pa.point },
-        b: { instanceId: secondId, point: pb.point },
-        points,
-        ...this.corner(routingDefault)
-      });
+      if (pa && pb) pairs.push({ connectionId, firstId, secondId, pa, pb });
     }
-    return links;
+    return pairs;
   }
+
+  /** Route the auto-links, each in its bundle lane (see {@link bundleOffsets}). */
+  private routeFloatingLinks(
+    pairs: FloatingLinkPair[],
+    routingDefault: LineRouting,
+    obstacles: Rect[],
+    offsets: Map<string, number>
+  ): CompositeLink[] {
+    const orthogonal = isOrthogonalRouting(routingDefault);
+    return pairs.map(({ connectionId, firstId, secondId, pa, pb }) => ({
+      connectionId,
+      a: { instanceId: firstId, point: pa.point },
+      b: { instanceId: secondId, point: pb.point },
+      points: orthogonal
+        ? this.router.route(pa, pb, obstacles, { laneOffset: offsets.get(`link:${connectionId}`) ?? 0 })
+        : simplify([pa.point, pb.point]),
+      ...this.corner(routingDefault)
+    }));
+  }
+
+  /**
+   * Lane offsets for every orthogonally routed line and auto-link with a
+   * floating port at both ends, keyed `line:<id>` / `link:<connectionId>`.
+   * Routes alone on their pair of box sides get none (they route as before).
+   */
+  private bundleOffsets(
+    doc: CompositeDocument,
+    resolver: PortResolver,
+    linkPairs: FloatingLinkPair[],
+    routingDefault: LineRouting,
+    obstacles: Rect[]
+  ): Map<string, number> {
+    const members: BundleMember[] = [];
+    for (const line of doc.allLines()) {
+      if (line.kind === 'demand' || !isOrthogonalRouting(line.routing ?? routingDefault)) continue;
+      const first = line.vertices[0];
+      const last = line.vertices[line.vertices.length - 1];
+      if (first?.kind !== 'anchor' || last?.kind !== 'anchor') continue;
+      const a = resolver.resolve(first.instanceId, first.connectionId);
+      const b = resolver.resolve(last.instanceId, last.connectionId);
+      if (!a || !b) continue;
+      members.push({ key: `line:${line.id}`, a, b, aEnd: sideKey(first.instanceId, a), bEnd: sideKey(last.instanceId, b) });
+    }
+    if (isOrthogonalRouting(routingDefault)) {
+      for (const p of linkPairs) {
+        members.push({
+          key: `link:${p.connectionId}`,
+          a: p.pa,
+          b: p.pb,
+          aEnd: sideKey(p.firstId, p.pa),
+          bEnd: sideKey(p.secondId, p.pb)
+        });
+      }
+    }
+    return laneOffsets(members, (m, off) => this.router.preview(m.a, m.b, obstacles, off));
+  }
+
 
   /**
    * World position of a child's external connection tip (the arrowhead `at`),
@@ -1419,6 +1830,134 @@ export class CompositeLayoutEngine {
       });
     }
     return links;
+  }
+
+  /**
+   * Keep line texts readable: move each numeric label and name whose default
+   * slot overlaps another text, a line, a glyph or a child box to the cheapest
+   * clear slot along its line (see `labelCollisions.ts`). Runs after every line
+   * is placed, in document order; a text with a clear default slot is untouched.
+   */
+  private resolveTextCollisions(
+    lines: CompositeLineLayout[],
+    links: CompositeLink[],
+    hangers: HangingTieLayout[],
+    children: ChildLayout[]
+  ): void {
+    // Round 1: hanging-tie labels, arranged per box side. A crowded side makes
+    // room by lengthening leads (staggered heights); each lead is its own
+    // label's leader.
+    const hangerGroups = this.hangerGroups(hangers, textGlyphBox);
+    if (hangerGroups.length) resolveLabelGroups(hangerGroups, staticTextObstacles(lines, links, hangers, children));
+    const { childRects, lineGlyphs, linePolylines } = textObstacleParts(lines, links, children);
+    const glyphBox = textGlyphBox;
+
+    // Round 2: line texts, clear of the final hanging ties and their labels.
+    const rects: Rect[] = [...childRects, ...lineGlyphs];
+    for (const h of hangers) {
+      rects.push(glyphBox(h.terminus));
+      if (h.label) rects.push(hangingLabelBox(h.label));
+    }
+    const polylines = [...linePolylines, ...hangers.map((h) => h.points)];
+
+    const texts: LabelCandidate[] = [];
+    for (const layout of lines) {
+      const label = layout.label;
+      if (label) {
+        const rows = label.rows.map((r) => r.text);
+        const clearance = (slot: TextSlot) => (layout.glyph && slot.fraction === 0.5 ? LINE_LABEL_GLYPH_CLEARANCE : 0);
+        const place = (slot: TextSlot) => placeLineLabel(layout.points, rows, clearance(slot), slot);
+        texts.push({
+          slot: { fraction: 0.5, side: 1 },
+          place: (slot) => place(slot),
+          apply: (slot) => {
+            const moved = place(slot);
+            if (!moved) return;
+            layout.label = moved;
+            layout.labelSlot = slot;
+          }
+        });
+      }
+      const name = layout.nameLabel;
+      if (name) {
+        const stored = layout.line.namePlacement ?? DEFAULT_LINE_NAME_PLACEMENT;
+        const sideOf = (slot: TextSlot): LineNameSide =>
+          slot.side === 1 ? stored.side : stored.side === 'above' ? 'below' : 'above';
+        const place = (slot: TextSlot) => {
+          const glyph = layout.glyph && slot.fraction === LINE_NAME_ALONG_FRACTION.middle ? LINE_LABEL_GLYPH_CLEARANCE : 0;
+          return placeLineName(layout.points, name.text, { ...stored, side: sideOf(slot) }, glyph, name.fontSize, slot.fraction, slot.offset ?? 0);
+        };
+        texts.push({
+          slot: { fraction: LINE_NAME_ALONG_FRACTION[stored.along], side: 1 },
+          place: (slot) => place(slot),
+          apply: (slot) => {
+            layout.nameSlot = { fraction: slot.fraction, side: sideOf(slot), ...(slot.offset ? { offset: slot.offset } : {}) };
+            const moved = lineNameLayout(layout, name.fontSize);
+            if (moved) layout.nameLabel = moved;
+          }
+        });
+      }
+    }
+    resolveLabelCollisions(texts, { polylines, rects });
+  }
+
+  /**
+   * The hanging-tie labels as collision-pass groups, one per box side (ties
+   * leaving the same box edge), sorted along it. A tie makes room by
+   * lengthening its lead `HANGING_STAGGER_STEP` at a time, carrying its glyph
+   * and label outward: a free leader (the lead is drawn anyway), and the moved
+   * glyph must stay clear too. Each group tries whole-side patterns (see
+   * {@link hangerPatterns}).
+   */
+  private hangerGroups(hangers: HangingTieLayout[], glyphBox: (g: LineGlyph) => Rect): LabelGroup[] {
+    const groups = new Map<string, { along: number; width: number; vertical: boolean; text: LabelCandidate }[]>();
+    for (const h of hangers) {
+      const label = h.label;
+      if (!label || h.points.length < 2) continue;
+      const start = h.points[0];
+      const end = h.points[h.points.length - 1];
+      const len = Math.hypot(end.x - start.x, end.y - start.y);
+      if (len === 0) continue;
+      const dir = { x: (end.x - start.x) / len, y: (end.y - start.y) / len };
+      const side: BoxSide = Math.abs(dir.x) > Math.abs(dir.y) ? (dir.x > 0 ? 'right' : 'left') : dir.y > 0 ? 'down' : 'up';
+      const vertical = side === 'up' || side === 'down';
+      const tipAt = (e: number): Point => ({ x: end.x + dir.x * e, y: end.y + dir.y * e });
+      // `fraction` encodes the label's alignment on a vertical lead: centred
+      // (0.5), leaning right (1) or left (0). A horizontal lead keeps its own.
+      const alignOf = (s: TextSlot) => (s.fraction === 1 ? 'start' : s.fraction === 0 ? 'end' : 'middle');
+      const text: LabelCandidate = {
+        slot: { fraction: 0.5, side: 1 },
+        owner: feederKey(h.instanceId, h.connectionId),
+        place: (s) => {
+          const e = s.offset ?? 0;
+          const tip = tipAt(e);
+          const box = hangingLabelBox(hangingLabel(label.text, tip, side, alignOf(s)));
+          if (!e) return { box };
+          return { box, leader: { points: [end, tip], free: true }, extra: [glyphBox({ ...h.terminus, at: tip })] };
+        },
+        apply: (s) => {
+          const e = s.offset ?? 0;
+          const tip = tipAt(e);
+          h.points = [start, tip];
+          h.terminus = { ...h.terminus, at: tip };
+          h.label = hangingLabel(label.text, tip, side, alignOf(s));
+          if (e) h.stagger = e;
+        }
+      };
+      // One box edge: same child, same side, same edge coordinate (section boxes differ).
+      const key = `${h.instanceId}:${side}:${Math.round(vertical ? start.y : start.x)}`;
+      const entry = { along: vertical ? start.x : start.y, width: hangingLabelBox(label).width, vertical, text };
+      const group = groups.get(key);
+      if (group) group.push(entry);
+      else groups.set(key, [entry]);
+    }
+    return [...groups.values()].map((entries) => {
+      entries.sort((a, b) => a.along - b.along);
+      return {
+        texts: entries.map((e) => e.text),
+        patterns: hangerPatterns(entries.length, entries[0].vertical, Math.max(...entries.map((e) => e.width)))
+      };
+    });
   }
 
   private unionBounds(

@@ -144,7 +144,7 @@ export function buildSouth220(): SldDocument {
   doc.addElement(Connection.of({ id: 'cn-b1-ext', from: el('pos-b1', 'above'), to: ext('line', 'FEEDER F', 'up') }));
 
   // Coupling bay: wired to both bars, no outgoing line.
-  doc.addElement(Position.of({ id: 'pos-b2', label: 'C1', type: 'central', row: 0, col: 2 }));
+  doc.addElement(Position.of({ id: 'pos-b2', label: 'C1', type: 'coupler', row: 0, col: 2 }));
   doc.addElement(Connection.of({ id: 'cn-b2-b1', from: el('pos-b2'), to: el('bb-1') }));
   doc.addElement(Connection.of({ id: 'cn-b2-b2', from: el('pos-b2'), to: el('bb-2') }));
 

@@ -103,6 +103,36 @@ export function createPanZoom(getSvgEl: () => SVGSVGElement | undefined, getCont
     flyRaf = requestAnimationFrame(step);
   }
 
+  /**
+   * Keep the viewBox's aspect ratio equal to the element's. The SVG letterboxes
+   * a mismatched viewBox (default `xMidYMid meet`), while `clientToSvg`, pan and
+   * zoom map the element rect straight onto the viewBox, so after the element
+   * resizes (window, devtools, a side panel) every click would land off by up to
+   * the letterbox margin. Keeps the centre and the on-screen scale, so the
+   * drawing doesn't jump. The canvases run it on every resize (`observeResize`).
+   */
+  function syncAspect() {
+    const svgEl = getSvgEl();
+    if (!svgEl) return;
+    const rect = svgEl.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const v = vb;
+    if (Math.abs(rect.width / rect.height - v.w / v.h) < 1e-6) return;
+    const scale = Math.min(rect.width / v.w, rect.height / v.h);
+    const w = rect.width / scale;
+    const h = rect.height / scale;
+    set({ x: v.x + (v.w - w) / 2, y: v.y + (v.h - h) / 2, w, h });
+  }
+
+  /** Watch the bound `<svg>` and {@link syncAspect} whenever it resizes; returns the cleanup. */
+  function observeResize(): () => void {
+    const svgEl = getSvgEl();
+    if (!svgEl || typeof ResizeObserver === 'undefined') return () => {};
+    const ro = new ResizeObserver(() => syncAspect());
+    ro.observe(svgEl);
+    return () => ro.disconnect();
+  }
+
   function clientToSvg(clientX: number, clientY: number): Point {
     const svgEl = getSvgEl();
     if (!svgEl) return { x: 0, y: 0 };
@@ -333,6 +363,8 @@ export function createPanZoom(getSvgEl: () => SVGSVGElement | undefined, getCont
     clientToSvg,
     svgToClient,
     zoomToFit,
+    syncAspect,
+    observeResize,
     zoomIn,
     zoomOut,
     flyTo,

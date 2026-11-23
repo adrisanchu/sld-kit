@@ -137,7 +137,7 @@ export {
 export { chordFrame, type ChordFrame, type RelCoord } from './composite/lineFrame';
 // Floating-connector box router (promoted from the react-box example).
 export { Port, SIDE_VECTORS, sideAxis, sideFromAngle, rotateSide, facingSide, type BoxSide } from './composite/ports';
-export { OrthogonalRouter, type OrthogonalRouterOptions } from './composite/OrthogonalRouter';
+export { OrthogonalRouter, type OrthogonalRouterOptions, type RouteOptions } from './composite/OrthogonalRouter';
 export { PortResolver, feederKey, type PortResolverOptions } from './composite/PortResolver';
 export {
   segmentAngleDeg,
@@ -165,10 +165,17 @@ export {
   LINE_NAME_MIN_SCALE,
   DEMAND_LEAD_LENGTH,
   HANGING_ASSETS,
+  HANGING_STAGGER_STEP,
+  HANGING_STAGGER_ROWS,
+  TEXT_GROWTH_MAX_SIZE,
   CABLE_DASH_ARRAY,
   TRANSFORMER_SYMBOL,
   TRANSFORMER3W_SYMBOL,
-  DEMAND_SYMBOL
+  DEMAND_SYMBOL,
+  PARALLEL_LANE_SPACING,
+  LEADER_STROKE_WIDTH,
+  LEADER_OPACITY,
+  LEADER_DOT_RADIUS
 } from './composite/layout-constants';
 export { CompositeDocument, type CompositeMeta, type CompositeChange } from './composite/CompositeDocument';
 export {
@@ -197,14 +204,24 @@ export {
   placeLineLabel,
   placeLineName,
   lineNameLayout,
+  lineLabelLayout,
+  hangingLabelLayout,
+  textGrowthCaps,
+  readableTexts,
+  readableTextSize,
+  type TextGrowthCaps,
+  type ReadableTexts,
+  type HangingTieLabel,
   lineNameFitSize,
   fittedLineNameSize,
   readableLineNameSize,
   type LineNameLayout,
+  type TextLeader,
   type LineGlyph,
   type ExternalConnectionTip,
   type CompositeLayout
 } from './composite/CompositeLayoutEngine';
+export { type TextSlot } from './composite/labelCollisions';
 export {
   CompositeSerializer,
   COMPOSITE_SCHEMA_VERSION,

@@ -31,14 +31,29 @@ import {
   type SldDocument
 } from '@sld-kit/core';
 
+/**
+ * One bay and the feeder leaving it. They are two elements in the model, each
+ * with its own text:
+ *  - `label` is the **bay's** short code, the `Position` label drawn inside its
+ *    box in the detail SLD (`D2`);
+ *  - `name` is the **feeder's** label, the external endpoint's label drawn at
+ *    its arrow, and on the hanging tie in box view (`Consumer 2 (350 MW)`). The
+ *    substation editor's dialog shows it as "Name". Omitted, the feeder reuses
+ *    the bay code, as most feeders here do (a line bay `L1` feeding line `L1`).
+ */
 interface Feeder {
   id: string;
+  /** The bay's short code: its position label in the detail SLD. */
   label: string;
+  /** The feeder's own label (its arrow / hanging tie); defaults to `label`. */
+  name?: string;
   direction: ExternalDirection;
   /** Position type of the bay (default `line`). */
   type?: PositionType;
   /** Which bar a double-bus bay hangs off (1 = above BB1, 2 = below BB2). Ignored on single bus. */
   bar?: 1 | 2;
+  /** Double bus: pin the bay to this column (default: the next free one on its side). */
+  col?: number;
 }
 
 interface Sub {
@@ -74,7 +89,7 @@ function buildSub(sub: Sub): SldDocument {
         type: f.type ?? 'line',
         label: f.label,
         row,
-        feeder: { asset: f.type === 'demand' ? 'demand' : 'line', label: f.label, direction: f.direction, id: f.id }
+        feeder: { asset: f.type === 'demand' ? 'demand' : 'line', label: f.name ?? f.label, direction: f.direction, id: f.id }
       }
     ]
   });
@@ -89,6 +104,9 @@ function buildSub(sub: Sub): SldDocument {
 
   const top = sub.feeders.filter((f) => (f.bar ?? 1) === 1);
   const bottom = sub.feeders.filter((f) => f.bar === 2);
+  // Bottom bays fill the columns right of the coupler, unless pinned to one.
+  let next = top.length + 1;
+  const bottomCol = (f: Feeder) => f.col ?? next++;
   return buildDocument({
     meta,
     busbars: [
@@ -99,8 +117,8 @@ function buildSub(sub: Sub): SldDocument {
       ...top.map((f, i) => bay(f, i, 0)),
       // The coupler starts OPEN: the bars run split, so CHARLIE shows as two boxes
       // (39770 tied to ALPHA, 39771 to DELTA + the demand) joined by a muted tie.
-      { col: top.length, positions: [{ id: COUPLER_ID, type: 'central', label: 'BC', row: 2, state: 'open' }] },
-      ...bottom.map((f, i) => bay(f, top.length + 1 + i, 4))
+      { col: top.length, positions: [{ id: COUPLER_ID, type: 'coupler', label: 'BC', row: 2, state: 'open' }] },
+      ...bottom.map((f) => bay(f, bottomCol(f), 4))
     ]
   });
 }
@@ -119,12 +137,15 @@ const SUBS: Sub[] = [
     feeders: [{ id: 'bravo-alpha', label: 'L1', direction: 'left' }]
   },
   {
-    // Double bus: T1 (to ALPHA) on BB1; L2 (to DELTA) and a demand on BB2.
+    // Double bus: T1 (to ALPHA) on BB1; L2 (to DELTA) and two demands on BB2,
+    // D3 right below T1. Their long names crowd the box's bottom edge, so the
+    // box view staggers the two hanging ties.
     id: 'lib-charlie', name: 'CHARLIE', buses: [39770, 39771], kv: 220, x: 0, y: 430,
     feeders: [
       { id: 'charlie-alpha', label: 'T1', direction: 'up', bar: 1 },
       { id: 'charlie-delta', label: 'L2', direction: 'right', bar: 2 },
-      { id: 'charlie-dem', label: 'D2', direction: 'down', type: 'demand', bar: 2 }
+      { id: 'charlie-dem', label: 'D2', name: 'Consumer 2 (350 MW)', direction: 'down', type: 'demand', bar: 2 },
+      { id: 'charlie-dem3', label: 'D3', name: 'Consumer 3 (400 MW)', direction: 'down', type: 'demand', bar: 2, col: 0 }
     ]
   },
   {
@@ -145,7 +166,7 @@ const SUBS: Sub[] = [
     id: 'lib-foxtrot', name: 'FOXTROT', buses: [39831], kv: 220, x: 1360, y: 860,
     feeders: [
       { id: 'foxtrot-echo', label: 'L3', direction: 'up' },
-      { id: 'foxtrot-dem', label: 'D1', direction: 'down', type: 'demand' }
+      { id: 'foxtrot-dem', label: 'D1', name: 'Consumer 1 (500 MW)', direction: 'down', type: 'demand' }
     ]
   }
 ];
@@ -269,7 +290,7 @@ export function buildBoxComposite(): CompositeDocument {
   addLine('l-delta-echo', [anchor('lib-delta', 'delta-echo'), anchor('lib-echo', 'echo-delta')], 'cable');
   addLine('l-echo-foxtrot', [anchor('lib-echo', 'echo-foxtrot'), anchor('lib-foxtrot', 'foxtrot-echo')], 'line');
 
-  // The demands (D1, D2) need no line: in box view the layout draws every
+  // The demands (D1–D3) need no line: in box view the layout draws every
   // feeder to an asset that ends at a child (load, generator, reactor…) leaving
   // its box, with its glyph and label.
 

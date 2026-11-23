@@ -11,6 +11,7 @@ import {
   Serializer,
   SldDocument,
   buildDocument,
+  nextPositionLabel,
   updateExternal,
   type ConnectionJson,
   type Endpoint,
@@ -133,5 +134,30 @@ describe('EXTERNAL_ASSET_KINDS / EXTERNAL_POSITION_TYPES', () => {
 
   it('the default theme colors every default position type', () => {
     for (const type of DEFAULT_POSITION_TYPES) expect(DEFAULT_THEME.positionTypes[type], type).toBeDefined();
+  });
+});
+
+describe('coupler position type', () => {
+  it('is a default position type with its own colour, but never an external', () => {
+    expect(DEFAULT_POSITION_TYPES).toContain('coupler');
+    expect(DEFAULT_THEME.positionTypes.coupler).toBeDefined();
+    expect(EXTERNAL_POSITION_TYPES as readonly string[]).not.toContain('coupler');
+  });
+
+  it('auto-names with the `cpl` prefix', () => {
+    const doc = new SldDocument({ id: 'd', name: 'x' }, { rows: 3, cols: 3 });
+    expect(nextPositionLabel(doc, 'coupler')).toBe('cpl-1');
+    doc.addElement(new Position('c', 'cpl-1', 'coupler', 1, 0));
+    expect(nextPositionLabel(doc, 'coupler')).toBe('cpl-2');
+  });
+
+  it('AddPositionCommand spawns no external for a coupler between two bars', () => {
+    const doc = new SldDocument({ id: 'd', name: 'x' }, { rows: 3, cols: 3 });
+    doc.addElement(new BusBar('bb-1', 'BB1', 0));
+    doc.addElement(new BusBar('bb-2', 'BB2', 2));
+    new CommandStack().execute(new AddPositionCommand(new Position('c', 'C', 'coupler', 1, 1)), doc);
+    const conns = doc.connectionsOf('c');
+    expect(conns.some((c) => c.from.kind === 'external' || c.to.kind === 'external')).toBe(false);
+    expect(conns.flatMap((c) => c.elementIds()).filter((id) => id !== 'c').sort()).toEqual(['bb-1', 'bb-2']);
   });
 });

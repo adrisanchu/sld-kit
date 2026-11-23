@@ -94,9 +94,10 @@ deep-merges a partial theme over the default.
 
 ## Open `PositionType`
 
-`PositionType` is `('line' | 'transformer' | 'central' | 'renewable' |
-'reserve') | (string & {})` — the five defaults seed autocompletion, but any
-string is accepted. Unknown types render with `fallbackPositionType` and
+`PositionType` is `(typeof DEFAULT_POSITION_TYPES)[number] | (string & {})` —
+the defaults (`line`, `transformer`, `central`, `renewable`, `reserve`,
+`storage`, `demand`, `reactor`, `machine`, `coupler`) seed autocompletion, but
+any string is accepted. Unknown types render with `fallbackPositionType` and
 auto-name from the type string. Theme entries and naming prefixes are overridable
 maps, so custom bay types need no library release.
 

@@ -9,6 +9,9 @@ import {
   type ReactNode
 } from 'react';
 import {
+  LEADER_DOT_RADIUS,
+  LEADER_OPACITY,
+  LEADER_STROKE_WIDTH,
   SLD_LAYOUT,
   connectionPath,
   linkFormat,
@@ -17,8 +20,10 @@ import {
   lineFormat,
   lineNameLayout,
   readableLineNameSize,
+  readableTexts,
   rotateSide,
   sectionWorldCorners,
+  textGrowthCaps,
   type CompositeLayout,
   type ChildLayout,
   type CompositeLineLayout,
@@ -27,7 +32,8 @@ import {
   type ExternalDirection,
   type Point,
   type Rect,
-  type BoxSection
+  type BoxSection,
+  type TextLeader
 } from '@sld-kit/core';
 import { createPanZoom, type ContentBounds } from '../panzoom';
 import { useStore } from '../useStore';
@@ -131,6 +137,17 @@ export interface CompositeCanvasProps {
    * the layout size.
    */
   lineNameScreenSize?: { minPx: number } | null;
+  /**
+   * Opt-in zoom-aware texts: when zoomed out, grow every line text (rating
+   * rows, line names, hanging-tie labels) to at least `minPx` on screen, up to
+   * `maxSize` world units (default core `TEXT_GROWTH_MAX_SIZE`, 20: the same
+   * ceiling for every kind, so grown texts read as one size), and each only as
+   * far as it can before touching its neighbours (core `textGrowthCaps`); a
+   * name also stays within its line. Zoomed in, texts keep their layout size.
+   * Supersedes `lineNameScreenSize` when both are set. Screen only: the export
+   * uses the layout size.
+   */
+  textScreenSize?: { minPx: number; maxSize?: number } | null;
   /** Fallback text when a child diagram can't be resolved. */
   notFoundLabel?: string;
   /** Rendered last inside the `<svg>` — where the explorer injects flow overlays. */
@@ -214,6 +231,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     showConnectionLabels = true,
     showChildNames = true,
     lineNameScreenSize = null,
+    textScreenSize = null,
     notFoundLabel = DEFAULT_CHILD_NOT_FOUND,
     children,
     onChildDown,
@@ -259,19 +277,33 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
   // Screen px per world unit from the live viewBox; the core re-places each name
   // at the size that keeps it readable without outgrowing its line.
   const pxPerUnit = (() => {
-    const rect = lineNameScreenSize ? svgRef.current?.getBoundingClientRect() : undefined;
+    const rect = lineNameScreenSize || textScreenSize ? svgRef.current?.getBoundingClientRect() : undefined;
     return rect && viewBox.w > 0 && viewBox.h > 0 ? Math.min(rect.width / viewBox.w, rect.height / viewBox.h) : 0;
   })();
   const minPx = lineNameScreenSize?.minPx;
+  // Zoom-aware texts (all kinds): growth caps once per layout, sizes per zoom.
+  const textMinPx = textScreenSize?.minPx;
+  const textMaxSize = textScreenSize?.maxSize;
+  const growth = useMemo(
+    () => (textMinPx != null ? textGrowthCaps(layout, textMaxSize) : null),
+    [layout, textMinPx, textMaxSize]
+  );
+  const readable = useMemo(
+    () => (growth && textMinPx != null && pxPerUnit > 0 ? readableTexts(layout, growth, pxPerUnit, textMinPx) : null),
+    [layout, growth, pxPerUnit, textMinPx]
+  );
   const lineNames = useMemo(
     () =>
+      readable?.lineNames ??
       layout.lines.map((ln) => {
         if (!ln.nameLabel || minPx == null || !(pxPerUnit > 0)) return ln.nameLabel;
         const size = readableLineNameSize(ln.nameLabel, pxPerUnit, minPx);
         return size === ln.nameLabel.fontSize ? ln.nameLabel : (lineNameLayout(ln, size) ?? ln.nameLabel);
       }),
-    [layout, pxPerUnit, minPx]
+    [layout, pxPerUnit, minPx, readable]
   );
+  const lineLabels = readable?.lineLabels ?? layout.lines.map((ln) => ln.label);
+  const hangerLabels = readable?.hangerLabels ?? layout.hangers.map((h) => h.label);
 
   // ── Hover ─────────────────────────────────────────────────────────────────
   // Children report pointer enter/leave on their hit rects; the canvas masks it
@@ -328,6 +360,10 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
   useEffect(() => {
     pz.zoomToFit();
   }, [pz]);
+
+  // Keep the viewBox aspect in step with the element, so clicks map exactly
+  // after a resize (see `syncAspect`).
+  useEffect(() => pz.observeResize(), [pz]);
 
   // Non-passive wheel: React's synthetic onWheel can't reliably preventDefault.
   useEffect(() => {
@@ -612,12 +648,41 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
         />
       ))}
 
+      {/* Callout leaders under the line texts (as in the export): a thin stroke
+          from a text the layout set away from its line, ending in a dot on it. */}
+      {layout.lines.map((ln, i) => {
+        const leaders = [lineLabels[i]?.leader, lineNames[i]?.leader].filter((l): l is TextLeader => !!l);
+        if (!leaders.length) return null;
+        const cls = lineColorClass(ln);
+        return (
+          <g
+            key={`leader:${ln.line.id}`}
+            className={`sld-line-leader pointer-events-none ${cls ?? 'text-primary'}`}
+            style={cls ? { color: 'var(--sld-pos)' } : undefined}
+          >
+            {leaders.map((l, k) => (
+              <g key={k}>
+                <polyline
+                  points={l.points.map((p) => `${p.x},${p.y}`).join(' ')}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={LEADER_STROKE_WIDTH}
+                  strokeOpacity={LEADER_OPACITY}
+                />
+                <circle cx={l.dot.x} cy={l.dot.y} r={LEADER_DOT_RADIUS} fill="currentColor" />
+              </g>
+            ))}
+          </g>
+        );
+      })}
+
       {/* Line labels above the children (as in the export), tinted like their
           line. Placement is computed by the core layout — rows + backing box. */}
-      {layout.lines.map((ln) => {
-        if (!ln.label) return null;
+      {layout.lines.map((ln, i) => {
+        const label = lineLabels[i];
+        if (!label) return null;
         const cls = lineColorClass(ln);
-        const { box, rows, textAnchor, fontSize } = ln.label;
+        const { box, rows, textAnchor, fontSize } = label;
         return (
           <g
             key={`label:${ln.line.id}`}
@@ -671,20 +736,21 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
       })}
 
       {/* Hanging-tie labels above the children (as in the export). */}
-      {layout.hangers.map((h) =>
-        h.label ? (
+      {layout.hangers.map((h, i) => {
+        const label = hangerLabels[i];
+        return label ? (
           <text
             key={`hang-label:${h.instanceId}:${h.connectionId}`}
-            x={h.label.at.x}
-            y={h.label.at.y}
-            textAnchor={h.label.textAnchor}
-            fontSize={SLD_LAYOUT.labelFontSize}
+            x={label.at.x}
+            y={label.at.y}
+            textAnchor={label.textAnchor}
+            fontSize={label.fontSize ?? SLD_LAYOUT.labelFontSize}
             className="pointer-events-none fill-foreground"
           >
-            {h.label.text}
+            {label.text}
           </text>
-        ) : null
-      )}
+        ) : null;
+      })}
 
       {/* Selection (+ rotation) and hover chrome on top: one frame per child, its
           state in `data-state`. Styleable through its classes and CSS variables

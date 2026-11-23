@@ -8,7 +8,7 @@ import { SldDocument } from './SldDocument';
  *
  * `PositionType` is open, so this is a plain string map of *defaults*, not an
  * exhaustive record: callers may pass their own map, and an unknown type falls
- * back to the type string itself as the prefix (`coupling` → `coupling-1`).
+ * back to the type string itself as the prefix (`bypass` → `bypass-1`).
  */
 export const POSITION_LABEL_PREFIX: Record<string, string> = {
   line: 'line',
@@ -19,7 +19,8 @@ export const POSITION_LABEL_PREFIX: Record<string, string> = {
   storage: 'sto',
   demand: 'dem',
   reactor: 'rea',
-  machine: 'mac'
+  machine: 'mac',
+  coupler: 'cpl'
 };
 
 export const EXTERNAL_LABEL_PREFIX: Record<ExternalAssetKind, string> = {

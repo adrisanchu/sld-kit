@@ -182,8 +182,12 @@ Two finer controls cover layouts drawn the utility way:
 - **`feeder.tap` / `feeder.side`** pin where a feeder leaves. `tap: 'below'`
   taps the row gap under its position (e.g. between the top and central breaker
   of a breaker-and-a-half diameter), and `side: 'left'` runs its lane on the
-  left of the column. `tap: 'above'` on a top-row bay leaves straight from the
-  box edge. Omitted, the layout derives both.
+  left of the column. Omitted, the layout derives both: a bay outside the bar
+  block taps on the side away from the bars, so it sits between bar and feeder
+  (bar → position → tie, and opening the bay cuts the tie); a bay between bars
+  taps toward mid-bay. A left/right feeder off an outer bay leaves its far edge,
+  then turns; several in the same outer gap stack outward in lanes (shortest run
+  innermost, hopping over crossing stems), and the canvas grows to fit.
 - **`position.bars`** lists extra bus bars (by `id` or `label`) a position also
   wires to. Series wiring only reaches the nearest element on each side, so a
   bay drawn on one side of a double busbar (both bars below it) lists both:
@@ -345,16 +349,19 @@ it's absent, the bay is closed. Switching state is part of the electrical model
 ## Open position types
 
 The defaults (`DEFAULT_POSITION_TYPES`) — `line`, `transformer`, `central`,
-`renewable`, `reserve`, `storage`, `demand`, `reactor`, `machine` — are
-suggestions, not a closed set. `PositionType` accepts **any string**, so you
-can model domain-specific bays:
+`renewable`, `reserve`, `storage`, `demand`, `reactor`, `machine`, `coupler` —
+are suggestions, not a closed set. `central` is the middle breaker of a
+breaker-and-a-half diameter; `coupler` is a bus coupler (the bay tying the bars
+of a double bus). Neither carries an external, so neither auto-spawns a feeder
+arrow. `PositionType` accepts **any string**, so you can model domain-specific
+bays:
 
 ```ts
-new Position('p', 'coupling-1', 'coupling', 1, 0);
+new Position('p', 'bypass-1', 'bypass', 1, 0);
 ```
 
 An unknown type renders with the theme's `fallbackPositionType` palette and
-auto-names from the type string (`coupling` → `coupling-1`). Supply your own
+auto-names from the type string (`bypass` → `bypass-1`). Supply your own
 theme entries and naming prefixes to style and name them exactly.
 
 ## Metadata: the opaque `data` channel
@@ -469,6 +476,11 @@ on its own — a short lead, the asset glyph and the feeder label, in
 `layout.hangers` — unless a manual line anchors it or an auto-link joins it.
 Lines and transformers are ties between nodes, so they connect boxes instead.
 Renderers style a hanging tie with `hangerFormat`, like links with `linkFormat`.
+On a crowded box side (labels wider than the gap between ties), the layout
+staggers the leads so the labels clear each other: alternate leads lengthen a
+row (`HANGING_STAGGER_STEP`), or the leads form a staircase with each label
+leaning away from the longer ones. A staggered tie records it in `stagger`; its
+`points`, glyph and label already include it.
 
 **Line routing** (`CompositeLine.routing`, or `meta.defaultRouting` for every
 line and auto-link) is one of:
@@ -477,7 +489,9 @@ line and auto-link) is one of:
 - `orthogonal`: the floating-connector router lays out axis-aligned runs with
   sharp 90° bends. When a route would cut through another child, it detours
   around every child box with as few bends as possible. Output is deterministic,
-  and a route with nothing in its way is left unchanged.
+  and a route with nothing in its way is left unchanged. Parallel routes between
+  the same two box sides bend on separate lanes (`PARALLEL_LANE_SPACING` apart),
+  nested so they don't cross.
 - `curved`: the same route as `orthogonal`, but each bend is drawn as a circular
   arc. The layout sets `cornerRadius` on that line or link (the engine option
   `cornerRadius`, default `CURVE_RADIUS`); `points` stay the sharp polyline.
@@ -534,9 +548,14 @@ const engine = new CompositeLayoutEngine(undefined, undefined, undefined, { line
 - **Zoom-aware (adapters, opt-in):** `nameLabel.maxFontSize` is how far a canvas
   may grow the name when zoomed out (`readableLineNameSize`, re-placed with
   `lineNameLayout`). The export always uses the layout size.
-- Names don't avoid each other or the `lineLabels` rows, and they are always
-  on. The name is Office-safe in the export (plain `<text>`), and unnamed
-  composites export byte-for-byte as before.
+- Names and `lineLabels` rows keep clear of each other, of lines and of boxes:
+  a text whose spot collides flips sides or slides along its line; on a line
+  with no clear spot beside it (tightly packed parallel ties) it becomes a
+  callout just outside the group, with a thin leader ending in a dot on its own
+  line (`label.leader` / `nameLabel.leader`). `ln.labelSlot` / `ln.nameSlot`
+  record the move. A text with a clear spot never moves. Names are always on,
+  Office-safe in the export (plain `<text>`, leaders as `<path>` + `<circle>`),
+  and unnamed composites export byte-for-byte as before.
 
 See [`docs/composite.md`](../../docs/composite.md#line-names) for the full rules.
 

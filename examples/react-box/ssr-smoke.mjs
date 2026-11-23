@@ -241,7 +241,7 @@ const checks = [
   ['an unnamed line draws no name', !html.includes('sld-line-name')],
   [
     'open coupler: two sections, feeders on their own bar',
-    openSections.length === 2 && sectionFeeders(openSections) === 'charlie-alpha | charlie-delta,charlie-dem'
+    openSections.length === 2 && sectionFeeders(openSections) === 'charlie-alpha | charlie-delta,charlie-dem,charlie-dem3'
   ],
   ['open coupler: CHARLIE lays out as two boxes joined by a tie', splitChild.boxes?.length === 2 && splitChild.ties?.length === 1],
   ['open coupler: each box shows its own bus id', splitHtml.includes('>39770<') && splitHtml.includes('>39771<') && !splitHtml.includes('39770 / 39771')],
@@ -250,7 +250,7 @@ const checks = [
   ['closed coupler: merges back into one box, "39770 / 39771"', mergedChild.boxes?.length === 1 && !mergedChild.ties?.length && mergedHtml.includes('>39770 / 39771<')],
   [
     'open bay: feeder stays on its bar, flagged de-energised',
-    sectionFeeders(openBaySections) === 'charlie-alpha | charlie-delta,charlie-dem' &&
+    sectionFeeders(openBaySections) === 'charlie-alpha | charlie-delta,charlie-dem,charlie-dem3' &&
       openBaySections[1].openConnectionIds.join() === 'charlie-delta'
   ],
   ['open bay: its feeder is reported de-energised (greys its line)', openBayFeeders.has('charlie-delta') && openBayFeeders.size === 1],

@@ -32,7 +32,8 @@ export const DEFAULT_POSITION_TYPES = [
   'storage',
   'demand',
   'reactor',
-  'machine'
+  'machine',
+  'coupler'
 ] as const;
 
 /**
@@ -149,8 +150,10 @@ export const LABEL_ANCHORS: readonly LabelAnchor[] = [
  *    to — the virtual junction node, between two positions, instead of the
  *    box edge. Only meaningful when the element is a `Position` and the
  *    connection's other endpoint is `external`; ignored on internal
- *    connections. When absent the layout derives it (opposite the arrow's
- *    direction, i.e. toward mid-bay).
+ *    connections. When absent ("Automatic") the layout derives it: a bay
+ *    outside the bar block taps on the side away from the bars (bar →
+ *    position → tie); a bay between bars taps opposite the arrow's
+ *    direction, i.e. toward mid-bay.
  *  - `side` picks which side of the column the external's vertical lane runs
  *    on. Default `'right'`. Ignored (and greyed in the dialog) when `direction`
  *    is `'left'` or `'right'` — the direction itself says where the line goes.

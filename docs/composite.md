@@ -84,6 +84,15 @@ The router also avoids small jogs:
   entering a box. That trades a little clearance for a straight line. Pass
   `{ minJog: 0 }` to keep every jog.
 
+Parallel routes don't share a bend. Lines and auto-links that join the same two
+box sides with a Z form a **bundle**: each one's mid-line jog gets its own lane,
+`PARALLEL_LANE_SPACING` apart and centred on the midpoint, instead of all bending on
+one shared line. Lanes are assigned so the routes nest without crossing (the order
+with the fewest crossings wins; ties resolve the same way every layout). A route
+alone on its pair of sides keeps its midpoint jog, so single lines don't move. The
+offset only shapes the L/Z the router starts from: a detour around a box still wins.
+Both views bundle: detail-view tips group by their own drawing.
+
 `curved` routing takes exactly the `orthogonal` route and draws each bend as a
 circular arc of `cornerRadius` (engine option, default `CURVE_RADIUS`), clamped to
 half of each adjacent segment. A jog that remains and is shorter than two radii
@@ -161,7 +170,9 @@ of `vertices`, each either a free `point` (fixed in composite coordinates) or an
   rows, anchor and backing box). They sit right of a vertical run, centred above
   a horizontal one, and clear of a transformer glyph. The canvas and the
   exporter draw the same placement, so labels follow dragged boxes and both
-  views. `SetLineDataCommand` keeps `data` edits undoable.
+  views. A label that would overlap other text, a line or a box is moved (see
+  [Text collisions](#text-collisions)). `SetLineDataCommand` keeps `data` edits
+  undoable. For the line's own name, see [Line names](#line-names).
 - Unresolvable anchors (missing child/connection) are dropped; a line left with
   fewer than two points is simply not drawn (the model still keeps it), mirroring
   how dangling `libraryId`s render as placeholders.
@@ -172,6 +183,154 @@ turn an existing auto-link into a line. Each tip sits exactly where a line
 anchored to that feeder attaches: in box mode a perimeter point on the feeder's
 effective side (`pin ?? auto-facing ?? authored`), in detail mode the SLD arrow
 tip, so snap rings never drift from the lines they create.
+
+## Line names
+
+A tie-line is an entity in its own right: the connection id two children share
+is the line's identity, and each child only labels *its* end with the far
+substation ("WEST 1", "SOUTH 1"). To show the line's own name (e.g.
+`L-400 kV West-South 1`), set **`CompositeLine.name`**. The core layout places
+it (`CompositeLineLayout.nameLabel`: text, anchor point, `textAnchor`,
+rotation, size), and both adapters and the exporter draw that same placement.
+Names are always on: they ignore the labels-visibility toggle, like the diagram
+name label.
+
+### Placement
+
+`CompositeLine.namePlacement` (default `middle` · `above` · `parallel`) is the
+line analogue of a child's label slot:
+
+- **`along`**: `start` | `middle` | `end`, at 20% / 50% / 80% of the line's arc
+  length.
+- **`side`**: `above` | `below` the line.
+- **`orientation`**: `parallel` (along the segment, a small gap off the stroke),
+  `perpendicular` (across it, growing away from the line) or `horizontal`
+  (never rotated, beside the line).
+
+The rules that keep a name readable:
+
+- **Reading frame, not vertex order.** `start` and `above` are measured with
+  the line walked left to right (bottom to top when vertical), whatever order
+  its vertices were drawn in. "Above" means the side above the text as it
+  reads along the local segment: up on a horizontal run, left on a vertical
+  one. So swapping the two diagrams a line joins re-derives the same visual
+  spot, and the text still reads correctly.
+- **Never upside-down.** Rotated text is normalized to read left to right
+  (`readableAngle`). A run within `VERTICAL_READING_TOLERANCE` (10°) of
+  vertical reads bottom to top, so a hand-drawn "vertical" leaning a fraction
+  of a degree past vertical doesn't flip its text. Beyond that band the
+  rotation follows the segment, so a perpendicular name on a slightly tilted
+  run may read top to bottom.
+- **Never on a short jog.** If the target point lands on a segment too short
+  for the name (a small dog-leg of an orthogonal route), the name moves to the
+  nearest segment long enough to hold it (`roomyPointAtFraction`), or onto the
+  longest segment when none fits.
+- **Clear of glyphs.** At `middle`, a transformer line's name keeps clear of
+  its two-circle glyph.
+- **Stored placement first.** The name sits where `namePlacement` says unless
+  that spot collides; then it moves (see [Text collisions](#text-collisions)).
+
+### Text collisions
+
+**Hanging-tie labels go first** (box view). The ties leaving one box edge are
+arranged together, sorted along it, and the first clear arrangement wins (else
+the cheapest): every lead at its default length; alternate leads lengthened one
+row (`HANGING_STAGGER_STEP`, room for a label grown to the zoom-aware ceiling,
+see below; a zig-zag); or, on a vertical edge, a staircase
+where each label leans away from the longer leads beside it (`textAnchor`
+`start` or `end`), which fits however close the ties sit. The lead is the
+label's leader, so a staggered tie draws nothing extra; its glyph moves out
+with it and must stay clear too. A lone tie can lengthen its lead to dodge a
+line or box. A staggered tie records it in `stagger`.
+
+Then, after every line is placed, the layout walks the lines in document order
+and checks each text (the `lineLabels` rows, then the name), clear of the final
+hanging ties and their labels too. A text whose default
+slot is clear never moves, and nothing is ever hidden. Otherwise it is moved to
+the cheapest of these slots:
+
+1. **Beside its line:** the same spot on the other side, or sliding along the
+   line, nearest first, up to 0.4 of its length each way (both sides at each
+   step, never closer than 8% to an end).
+2. **A callout,** only when no spot beside the line is clear: the text sits
+   further out, one `CALLOUT_STEP` (8 px) at a time up to 12 rows, at spots
+   spread along the line every 0.1 of its length. A thin leader joins it back
+   to its own line and ends in a dot on it. This is what a line sandwiched in a
+   tight parallel group gets (ties 14 to 16 px apart leave no room beside it):
+   the callouts sit side by side just outside the group, each with its leader
+   crossing the neighbouring lines.
+
+What a slot costs: overlapping another text costs most, then a box or glyph,
+then a line or leader (with a few px of room for the stroke). A callout costs a
+little on its own, so a clear spot beside the line always wins, plus a hair per
+row out, so the nearest clear row wins. Its leader crossing a neighbouring line
+is nearly free; crossing another text, box or leader is not. The result is
+deterministic and runs in core, so both canvases and the export agree. A spatial
+grid keeps it cheap: a few ms on a 60-substation grid, about 25 ms on top of the
+layout when every tie runs in a labelled bundle of three.
+
+A moved text records where it went: `ln.labelSlot` / `ln.nameSlot` (arc
+fraction, side and, for a callout, `offset`). A callout carries
+`label.leader` / `nameLabel.leader` (`TextLeader`: `points` + `dot`), drawn as a
+`LEADER_STROKE_WIDTH` stroke at `LEADER_OPACITY` with a `LEADER_DOT_RADIUS` dot,
+in the line's colour on the canvases. `lineNameLayout` honours `nameSlot`, so a
+zoom-aware canvas resizing a name keeps it (and its leader) in its slot. The
+pass runs at the layout size; texts grown on screen stay apart through their
+growth caps (see the zoom-aware texts below). Text widths are estimated (0.6 em
+per character, erring wide), so the checks are conservative.
+
+### Size
+
+- **Normal size:** the engine option `lineNameFontSize` (world units, default
+  `LINE_NAME_FONT_SIZE` = 12). Match it to the labels around the lines, e.g. 16
+  in box view to match the rating rows. The gap from the line scales with it.
+- **Fit to the line:** a name is never wider than `LINE_NAME_MAX_LINE_FRACTION`
+  (90%) of its line's longest straight run, bends ignored (`lineNameFitSize`),
+  so it shrinks on short lines. It stops shrinking at
+  `LINE_NAME_MIN_SCALE` (half the normal size) and overhangs a very short line
+  rather than becoming unreadable (`fittedLineNameSize`). Text has no DOM to
+  measure in core, so widths are estimated (0.6 em per character, erring wide);
+  in practice a name at the limit fills about three quarters of its line.
+- **Zoom-aware names (canvas, opt-in):** pass `lineNameScreenSize={{ minPx }}`
+  to `CompositeCanvas`. When zoomed out, each name grows to at least `minPx` on
+  screen, so it stays readable from afar, but never past its line's limit
+  (`nameLabel.maxFontSize`). Zoomed in, it keeps its layout size and scales
+  with the drawing, in sync with the labels around it. The canvas re-places
+  names per zoom through `readableLineNameSize` + `lineNameLayout`, without
+  re-running the layout. The export has no zoom, so it always uses the layout
+  size.
+- **Zoom-aware texts (canvas, opt-in):** `textScreenSize={{ minPx, maxSize }}`
+  does the same for every line text: rating rows, line names and hanging-tie
+  labels. Zoomed out, each grows to at least `minPx` on screen, up to one
+  ceiling for every kind, `maxSize` world units (default `TEXT_GROWTH_MAX_SIZE`,
+  20, level with the diagram name label), so grown texts read as one consistent size
+  and keep their proportion to the drawing. Each also stops wherever it would
+  start touching something it was clear of (another text, a line, a leader, a
+  box or a glyph), so the arranged texts never overlap again. Staggered
+  hanging-tie rows are sized for the ceiling (`HANGING_STAGGER_STEP`), so a
+  crowded box edge's labels grow as far as any other. The canvas computes the
+  caps once per layout (`textGrowthCaps`, a largest font size per text, with
+  neighbours checked at the same common size) and re-places the texts per zoom
+  (`readableTexts`, through `lineLabelLayout`, `lineNameLayout` and
+  `hangingLabelLayout`, so moved texts, callouts and staggered ties keep their
+  slots). A name is still held to its line. It supersedes `lineNameScreenSize`
+  when both are set. Computing the caps adds about 2 ms per layout on a
+  60-substation grid, 14 ms when every tie runs in a labelled bundle of three.
+
+### Editing
+
+- **`SetLineNameCommand(id, before, after)`** renames a line and/or moves its
+  name (`{ name?, placement? }` snapshots; an absent name clears it), undoable
+  like `SetChildLabelCommand`.
+- **Naming an auto-link** materializes it: `CompositeLine.fromLink(link, { name,
+  namePlacement })` builds a straight line anchored at both shared feeders, with
+  id = the shared connection id. Adding it with `AddLineCommand` is one undo
+  step. It suppresses and visually replaces the auto-link (the same chord), and
+  deleting it brings the unnamed auto-link back. An editor falls back to a fresh
+  id if a line already took the connection id.
+- **Export.** `CompositeSvgExporter` writes each name as a plain `<text>`,
+  wrapped in a `rotate` group only when rotated, with presentation attributes
+  only (Office-safe). Composites without names export byte-for-byte as before.
 
 ## `Transform2D`
 
@@ -233,9 +392,15 @@ and in the Office-safe export (plain `<text>`, presentation attributes only).
 ## Serialization
 
 `CompositeSerializer` is a sibling of `Serializer` with its own version
-(currently **2**) and `kind: 'composite'`, reusing `SldParseError`. Older
-documents upgrade transparently: v1 → v2 (before manual lines) adds an empty
-line list; v2 → v3 adds per-child name-label placement, defaulting each child to
-`labelAnchor: 'top-left'` / `labelDirection: 0`. Dangling `libraryId`s (and
-dangling line anchors) are legal — they render as placeholders / are dropped
-rather than failing the parse.
+(currently **2**) and `kind: 'composite'`, reusing `SldParseError`. The
+composite schema is early-stage and **current-only**: its version was reset
+(older shapes are rebuilt, not migrated), and later additions — line `kind`,
+`meta.boxMode`, `portDirections`, `meta.autoFacing`, line `data`, `name` and
+`namePlacement` — are all optional fields under v2, so v1 documents load
+unchanged. A version **newer** than the current one is rejected with
+`Unsupported composite version N (maximum: 2)`, including documents saved
+under the old, pre-reset numbering (e.g. `version: 3`), which the library
+can't interpret. An app should surface that message rather than a generic
+"not found"; the Svelte example offers to rebuild a seeded demo.
+Dangling `libraryId`s (and dangling line anchors) are legal — they render as
+placeholders / are dropped rather than failing the parse.

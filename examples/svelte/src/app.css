@@ -45,6 +45,7 @@
     --sld-pos-demand: 0 84% 60%; /* red — consumer/load */
     --sld-pos-reactor: 330 81% 60%; /* pink — shunt reactor */
     --sld-pos-machine: 25 95% 53%; /* orange — synchronous machine */
+    --sld-pos-coupler: 25 5% 45%; /* stone — bus coupler */
 
     /* SLD voltage-level colours (by-voltage color mode) */
     --sld-volt-hv: 0 84% 60%; /* ≥ 400 kV — tailwind red-500 */
@@ -92,6 +93,7 @@
     --sld-pos-demand: 0 90% 68%;
     --sld-pos-reactor: 329 86% 70%;
     --sld-pos-machine: 27 96% 61%;
+    --sld-pos-coupler: 24 6% 64%;
 
     /* SLD voltage-level colours — brightened for dark backgrounds */
     --sld-volt-hv: 0 84% 68%;
@@ -131,6 +133,9 @@
 }
 .sld-pos-machine {
   --sld-pos: var(--sld-pos-machine);
+}
+.sld-pos-coupler {
+  --sld-pos: var(--sld-pos-coupler);
 }
 
 /*

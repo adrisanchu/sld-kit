@@ -42,6 +42,13 @@ export const CURVE_RADIUS = 12;
 export const MIN_JOG = 2 * CURVE_RADIUS;
 
 /**
+ * Spacing between the mid-line jogs of parallel orthogonal routes that join the
+ * same two box sides (a bundle): each takes its own lane, centred on the
+ * midpoint, instead of all bending on one shared line.
+ */
+export const PARALLEL_LANE_SPACING = 16;
+
+/**
  * Uniform box-view frame. Every box in box mode gets this size regardless of how
  * many feeders its child has, so grid-aligned boxes produce exactly straight
  * ties (matching the reference drawings). Pass `boxSize: null` to the
@@ -63,6 +70,26 @@ export const HANGING_ASSETS: readonly string[] = ['renewable', 'storage', 'deman
 
 /** Gap between a hanging tie's glyph and its label, world units. */
 export const HANGING_LABEL_GAP = 4;
+
+/**
+ * The largest font size (world units) a zoom-aware canvas grows a line text to
+ * when zoomed out: rating rows, line names and hanging-tie labels alike, so
+ * grown texts read as one consistent size, level with the diagram name label
+ * (`NAME_LABEL_FONT_SIZE`) and below a box's own name. Texts stop sooner where
+ * they'd touch their neighbours (`textGrowthCaps`); a name also stays within
+ * its line.
+ */
+export const TEXT_GROWTH_MAX_SIZE = 20;
+
+/**
+ * Staggered hanging ties: when labels on a crowded box side would collide, the
+ * collision pass lengthens leads by this much per row, up to this many rows, so
+ * neighbouring labels sit at different heights. A row holds a label grown to
+ * {@link TEXT_GROWTH_MAX_SIZE} (its 1.25 em box plus a little air), so zooming
+ * out lets staggered labels grow as large as any other text.
+ */
+export const HANGING_STAGGER_STEP = Math.ceil(TEXT_GROWTH_MAX_SIZE * 1.25) + 2;
+export const HANGING_STAGGER_ROWS = 4;
 
 /** Dashed stroke for `cable` lines — shared by the exporter and both routers. */
 export const CABLE_DASH_ARRAY = '6 4';
@@ -103,3 +130,11 @@ export const LINE_NAME_MAX_LINE_FRACTION = 0.9;
  * becoming unreadable.
  */
 export const LINE_NAME_MIN_SCALE = 0.5;
+
+/**
+ * A callout's leader (a line text set away from its line, see `TextLeader`):
+ * a thin, muted stroke, with a small dot on the line it belongs to.
+ */
+export const LEADER_STROKE_WIDTH = 0.75;
+export const LEADER_OPACITY = 0.6;
+export const LEADER_DOT_RADIUS = 1.75;

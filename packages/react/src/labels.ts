@@ -27,7 +27,8 @@ export const DEFAULT_POSITION_TOKENS: PositionTokens = {
   storage: 'sld-pos-storage',
   demand: 'sld-pos-demand',
   reactor: 'sld-pos-reactor',
-  machine: 'sld-pos-machine'
+  machine: 'sld-pos-machine',
+  coupler: 'sld-pos-coupler'
 };
 
 /** Human-readable label per position type (used in tooltips + the type picker). */
@@ -40,7 +41,8 @@ export const DEFAULT_POSITION_TYPE_LABELS: Record<string, string> = {
   storage: 'Storage position',
   demand: 'Demand position',
   reactor: 'Reactor position',
-  machine: 'Machine position'
+  machine: 'Machine position',
+  coupler: 'Coupler position'
 };
 
 export interface SldToolbarLabels {
@@ -274,7 +276,8 @@ export const DEFAULT_ASSET_LEGEND_TYPE_LABELS: Record<string, string> = {
   storage: 'Storage',
   demand: 'Demand',
   reactor: 'Reactor',
-  machine: 'Machine'
+  machine: 'Machine',
+  coupler: 'Coupler'
 };
 
 /** Fallback text for a composite child whose diagram can't be resolved. */

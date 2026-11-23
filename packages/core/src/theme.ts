@@ -101,7 +101,7 @@ export interface SldTheme {
 /**
  * The default light theme. Values are exactly the historical `EXPORT_COLORS`
  * + `EXPORT_STRUCTURE_COLORS`, so default exports match legacy output
- * (`reactor` / `machine` were added later, with their own colors). The
+ * (`reactor` / `machine` / `coupler` were added later, with their own colors). The
  * fallback palette is the neutral `reserve` slate — an unknown position type
  * renders legibly instead of crashing.
  */
@@ -119,7 +119,9 @@ export const DEFAULT_THEME: SldTheme = {
     // Shunt reactor: pink.
     reactor: { fill: '#fce7f3', stroke: '#ec4899', text: '#831843' },
     // Synchronous machine (generator, condenser, motor): orange.
-    machine: { fill: '#ffedd5', stroke: '#f97316', text: '#7c2d12' }
+    machine: { fill: '#ffedd5', stroke: '#f97316', text: '#7c2d12' },
+    // Bus coupler (ties the bars of a double bus): neutral stone.
+    coupler: { fill: '#f5f5f4', stroke: '#57534e', text: '#1c1917' }
   },
   fallbackPositionType: { fill: '#f1f5f9', stroke: '#94a3b8', text: '#334155' },
   structure: {

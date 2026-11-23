@@ -17,8 +17,10 @@ import {
   type CompositeLineLayout,
   type LineGlyph,
   type LineLabelLayout,
-  type LineNameLayout
+  type LineNameLayout,
+  type TextLeader
 } from './CompositeLayoutEngine';
+import { LEADER_DOT_RADIUS, LEADER_OPACITY, LEADER_STROKE_WIDTH } from './layout-constants';
 import type { BoxSection } from './sections';
 
 export interface CompositeSvgExportOptions {
@@ -157,6 +159,12 @@ export class CompositeSvgExporter {
     }
 
     // Line labels last, so a label beside a line is never hidden under a box.
+    // Callout leaders first, under every text.
+    for (const line of layout.lines) {
+      for (const leader of [line.label?.leader, line.nameLabel?.leader]) {
+        if (leader) this.renderLeader(b, leader, theme);
+      }
+    }
     for (const line of layout.lines) if (line.label) this.renderLineLabel(b, line.label, theme);
     for (const line of layout.lines) if (line.nameLabel) this.renderLineName(b, line.nameLabel, theme);
     for (const h of layout.hangers) {
@@ -235,6 +243,19 @@ export class CompositeSvgExporter {
    * passing beneath). Office-safe: plain `<rect>` + `<text>`, presentation
    * attributes only.
    */
+  /** A callout's leader: a thin, muted stroke from its line, with a dot on that line. */
+  private renderLeader(b: SvgBuilder, leader: TextLeader, theme: SldTheme): void {
+    const [a, ...rest] = leader.points;
+    b.element('path', {
+      d: `M ${a.x} ${a.y}` + rest.map((p) => ` L ${p.x} ${p.y}`).join(''),
+      fill: 'none',
+      stroke: theme.structure.connection,
+      'stroke-width': LEADER_STROKE_WIDTH,
+      'stroke-opacity': LEADER_OPACITY
+    });
+    b.element('circle', { cx: leader.dot.x, cy: leader.dot.y, r: LEADER_DOT_RADIUS, fill: theme.structure.connection });
+  }
+
   private renderLineLabel(b: SvgBuilder, label: LineLabelLayout, theme: SldTheme): void {
     const { box } = label;
     b.element('rect', { x: box.x, y: box.y, width: box.width, height: box.height, rx: 2, fill: theme.structure.background });
