@@ -19,17 +19,32 @@ export interface LabelObstacles {
   polylines: Point[][];
   /** Boxes the text shouldn't cover: child boxes, line glyphs. */
   rects: Rect[];
+  /**
+   * Who each polyline / rect belongs to, if anyone (same order). A text never
+   * collides with obstacles of its own `owner`, e.g. a hanging tie's label with
+   * its own lead and glyph.
+   */
+  polylineOwners?: (string | undefined)[];
+  rectOwners?: (string | undefined)[];
 }
 
-/** A text placed in a slot: its box and, for a callout, its leader polyline. */
+/**
+ * A text placed in a slot: its box and, for a callout, its leader polyline.
+ * A `free` leader is part of the drawing anyway (a hanging tie's lengthened
+ * lead), so it costs no callout. `extra` boxes move with the text (e.g. that
+ * lead's glyph): they must stay clear too, and later texts avoid them.
+ */
 export interface PlacedText {
   box: Rect;
-  leader?: { points: Point[] };
+  leader?: { points: Point[]; free?: boolean };
+  extra?: Rect[];
 }
 
 /** One text item to place: its default slot and a placer for any other slot. */
 export interface LabelCandidate {
   slot: TextSlot;
+  /** Obstacles tagged with this owner don't count against this text. */
+  owner?: string;
   place: (slot: TextSlot) => PlacedText | null;
   /** Called with the slot that was chosen, when it isn't the default one. */
   apply: (slot: TextSlot) => void;
@@ -120,16 +135,13 @@ function buildCandidateSlots(slot: TextSlot): readonly TextSlot[] {
  * (document order), which makes it deterministic.
  */
 export function resolveLabelCollisions(texts: LabelCandidate[], obstacles: LabelObstacles): void {
-  const index = new SpatialIndex();
-  obstacles.polylines.forEach((line, id) => index.addPolyline('line', id, line));
-  for (const rect of obstacles.rects) index.add({ kind: 'rect', rect }, rect);
-  let leaderId = 0;
+  const index = indexOf(obstacles);
   for (const text of texts) {
     const placeAt = calloutPlacer(text);
     const initial = text.place(text.slot);
     if (!initial) continue;
     let best = initial;
-    let bestCost = cost(initial, text.slot, index);
+    let bestCost = cost(initial, text.slot, index, text.owner);
     if (bestCost > 0) {
       let bestSlot = text.slot;
       /** The row of the first clear callout: rows further out can't do better. */
@@ -142,8 +154,8 @@ export function resolveLabelCollisions(texts: LabelCandidate[], obstacles: Label
         if ((slot.offset ?? 0) > clearRow) break;
         const at = placeAt(slot);
         if (!at) continue;
-        const c = cost(at, slot, index);
-        if (slot.offset && c < CALLOUT_COST + LINE_COST) clearRow = Math.min(clearRow, slot.offset);
+        const c = cost(at, slot, index, text.owner);
+        if (slot.offset && c < calloutCostOf(at) + LINE_COST) clearRow = Math.min(clearRow, slot.offset);
         if (c < bestCost) {
           bestCost = c;
           best = at;
@@ -153,44 +165,106 @@ export function resolveLabelCollisions(texts: LabelCandidate[], obstacles: Label
       }
       if (bestSlot !== text.slot) text.apply(bestSlot);
     }
-    index.add({ kind: 'text', rect: best.box }, best.box);
-    if (best.leader) index.addPolyline('leader', leaderId++, best.leader.points);
+    index.place(best);
   }
 }
 
 /**
- * `text.place`, but a callout beyond the first row is derived from that row by
- * translation: moving a callout one row out shifts its box and its leader's far
- * end along the line's normal (the leader's direction), with nothing else
- * changing. Saves re-running the placer for every row.
+ * Texts that must be arranged together, e.g. the hanging-tie labels along one
+ * box side: each `pattern` gives every text its slot (same order as `texts`),
+ * the first one being the defaults.
+ */
+export interface LabelGroup {
+  texts: LabelCandidate[];
+  patterns: readonly (readonly TextSlot[])[];
+}
+
+/**
+ * Arrange each group as a whole: score every pattern (the texts placed one
+ * after another, each against the obstacles and the ones before it) and apply
+ * the first clear one, else the cheapest; ties keep the earlier pattern, so the
+ * defaults win whenever they're clear. For arrangements a one-text-at-a-time
+ * search can't find, such as a staircase of staggered leads.
+ */
+export function resolveLabelGroups(groups: LabelGroup[], obstacles: LabelObstacles): void {
+  const index = indexOf(obstacles);
+  for (const group of groups) {
+    let best: { pattern: readonly TextSlot[]; placed: (PlacedText | null)[]; cost: number } | null = null;
+    for (const pattern of group.patterns) {
+      const mark = index.mark();
+      let total = 0;
+      const placed = group.texts.map((text, i) => {
+        const at = text.place(pattern[i]);
+        if (at) {
+          total += cost(at, pattern[i], index, text.owner);
+          index.place(at);
+        }
+        return at;
+      });
+      index.rollback(mark);
+      if (!best || total < best.cost) best = { pattern, placed, cost: total };
+      if (total === 0) break;
+    }
+    if (!best) continue;
+    group.texts.forEach((text, i) => {
+      const at = best.placed[i];
+      if (!at) return;
+      if (best.pattern[i] !== group.patterns[0][i]) text.apply(best.pattern[i]);
+      index.place(at);
+    });
+  }
+}
+
+function indexOf(obstacles: LabelObstacles): SpatialIndex {
+  const index = new SpatialIndex();
+  obstacles.polylines.forEach((line, id) => index.addPolyline('line', id, line, obstacles.polylineOwners?.[id]));
+  obstacles.rects.forEach((rect, i) => index.add({ kind: 'rect', rect, owner: obstacles.rectOwners?.[i] }, rect));
+  return index;
+}
+
+/**
+ * `text.place`, but a slot further out than the first one tried at the same
+ * spot is derived from it by translation: moving a callout (or a lengthened
+ * lead) out shifts its box, extras and leader's far end along the leader's
+ * direction, with nothing else changing. Saves re-running the placer per row.
  */
 function calloutPlacer(text: LabelCandidate): (slot: TextSlot) => PlacedText | null {
-  const firstRow = new Map<string, PlacedText | null>();
+  const first = new Map<string, { offset: number; placed: PlacedText | null }>();
   return (slot) => {
-    if (!slot.offset || slot.offset === CALLOUT_STEP) return text.place(slot);
+    if (!slot.offset) return text.place(slot);
     const key = `${slot.fraction}:${slot.side}`;
-    let row1 = firstRow.get(key);
-    if (row1 === undefined) {
-      row1 = text.place({ ...slot, offset: CALLOUT_STEP });
-      firstRow.set(key, row1);
+    const seen = first.get(key);
+    if (!seen) {
+      const placed = text.place(slot);
+      first.set(key, { offset: slot.offset, placed });
+      return placed;
     }
-    const leader = row1?.leader?.points;
-    if (!row1 || !leader) return text.place(slot);
+    const base = seen.placed;
+    const leader = base?.leader?.points;
+    if (!base?.leader || !leader) return text.place(slot);
+    const free = base.leader.free;
     const dot = leader[0];
     const end = leader[leader.length - 1];
     const len = Math.hypot(end.x - dot.x, end.y - dot.y);
     if (len === 0) return text.place(slot);
-    const k = slot.offset - CALLOUT_STEP;
+    const k = slot.offset - seen.offset;
     const dx = ((end.x - dot.x) / len) * k;
     const dy = ((end.y - dot.y) / len) * k;
+    const move = (r: Rect): Rect => ({ ...r, x: r.x + dx, y: r.y + dy });
     return {
-      box: { ...row1.box, x: row1.box.x + dx, y: row1.box.y + dy },
-      leader: { points: [dot, { x: end.x + dx, y: end.y + dy }] }
+      box: move(base.box),
+      leader: { points: [dot, { x: end.x + dx, y: end.y + dy }], ...(free ? { free } : {}) },
+      ...(base.extra ? { extra: base.extra.map(move) } : {})
     };
   };
 }
 
-function cost(text: PlacedText, slot: TextSlot, index: SpatialIndex): number {
+/** What being a callout costs this placement: nothing for a free leader. */
+function calloutCostOf(text: PlacedText): number {
+  return text.leader && !text.leader.free ? CALLOUT_COST : 0;
+}
+
+function cost(text: PlacedText, slot: TextSlot, index: SpatialIndex, owner?: string): number {
   // Texts and boxes may touch (a hairline inset); lines keep their stroke's room.
   const r = inset(text.box, 1);
   const wide = inset(text.box, -LINE_CLEARANCE);
@@ -202,7 +276,20 @@ function cost(text: PlacedText, slot: TextSlot, index: SpatialIndex): number {
   const linesHit = new Set<number>();
   const leadersHit = new Set<number>();
   const linesCrossed = new Set<number>();
+  // Boxes moving with the text (a lengthened lead's glyph) must be clear too.
+  for (const extra of text.extra ?? []) {
+    const e = inset(extra, 1);
+    for (const it of index.query(extra)) {
+      if (owner !== undefined && it.owner === owner) continue;
+      if (it.kind === 'text') {
+        if (rectsOverlap(e, it.rect)) c += TEXT_COST;
+      } else if (it.kind === 'rect') {
+        if (rectsOverlap(e, it.rect)) c += RECT_COST;
+      } else if (segmentHitsRect(it.a, it.b, e)) (it.kind === 'line' ? linesHit : leadersHit).add(it.id);
+    }
+  }
   for (const it of items) {
+    if (owner !== undefined && it.owner === owner) continue;
     if (it.kind === 'text') {
       if (rectsOverlap(r, it.rect)) c += TEXT_COST;
       if (inner && segmentHitsRect(inner[0], inner[1], it.rect)) c += TEXT_COST;
@@ -218,18 +305,17 @@ function cost(text: PlacedText, slot: TextSlot, index: SpatialIndex): number {
     }
   }
   c += (linesHit.size + leadersHit.size) * LINE_COST;
-  if (text.leader) {
-    c += CALLOUT_COST + (CALLOUT_ROW_COST * (slot.offset ?? 0)) / CALLOUT_STEP;
-    c += linesCrossed.size * LEADER_CROSSING_COST;
-  }
+  if (slot.offset) c += (CALLOUT_ROW_COST * slot.offset) / CALLOUT_STEP;
+  if (text.leader) c += calloutCostOf(text) + linesCrossed.size * LEADER_CROSSING_COST;
   return c;
 }
 
-type IndexItem =
+type IndexItem = { owner?: string } & (
   | { kind: 'text'; rect: Rect }
   | { kind: 'rect'; rect: Rect }
   | { kind: 'line'; id: number; a: Point; b: Point }
-  | { kind: 'leader'; id: number; a: Point; b: Point };
+  | { kind: 'leader'; id: number; a: Point; b: Point }
+);
 
 /**
  * A uniform grid over everything placed so far, so a candidate is only tested
@@ -240,6 +326,9 @@ class SpatialIndex {
   /** Per-item visit marks, so a query returns each item once without a Set. */
   private readonly seen = new WeakMap<IndexItem, number>();
   private stamp = 0;
+  /** Every cell push, in order, so a trial placement can be rolled back. */
+  private readonly log: number[] = [];
+  private leaders = 0;
 
   constructor(private readonly size = 64) {}
 
@@ -248,14 +337,34 @@ class SpatialIndex {
       const cell = this.cells.get(key);
       if (cell) cell.push(item);
       else this.cells.set(key, [item]);
+      this.log.push(key);
     });
   }
 
-  addPolyline(kind: 'line' | 'leader', id: number, points: Point[]): void {
+  /** Register a placed text: its box, its extras, and its leader. */
+  place(text: PlacedText): void {
+    for (const rect of [text.box, ...(text.extra ?? [])]) this.add({ kind: 'text', rect }, rect);
+    if (text.leader) this.addPolyline('leader', this.leaders++, text.leader.points);
+  }
+
+  /** A point to {@link rollback} to. */
+  mark(): number {
+    return this.log.length;
+  }
+
+  /** Undo every addition since `mark` (they were pushed last, so pop them). */
+  rollback(mark: number): void {
+    while (this.log.length > mark) {
+      const key = this.log.pop();
+      if (key !== undefined) this.cells.get(key)?.pop();
+    }
+  }
+
+  addPolyline(kind: 'line' | 'leader', id: number, points: Point[], owner?: string): void {
     for (let i = 1; i < points.length; i++) {
       const a = points[i - 1];
       const b = points[i];
-      this.add({ kind, id, a, b }, segmentBounds(a, b));
+      this.add({ kind, id, a, b, owner }, segmentBounds(a, b));
     }
   }
 

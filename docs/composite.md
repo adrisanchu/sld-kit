@@ -232,8 +232,19 @@ The rules that keep a name readable:
 
 ### Text collisions
 
-After every line is placed, the layout walks the lines in document order and
-checks each text (the `lineLabels` rows, then the name). A text whose default
+**Hanging-tie labels go first** (box view). The ties leaving one box edge are
+arranged together, sorted along it, and the first clear arrangement wins (else
+the cheapest): every lead at its default length; alternate leads lengthened one
+row (`HANGING_STAGGER_STEP`, a zig-zag); or, on a vertical edge, a staircase
+where each label leans away from the longer leads beside it (`textAnchor`
+`start` or `end`), which fits however close the ties sit. The lead is the
+label's leader, so a staggered tie draws nothing extra; its glyph moves out
+with it and must stay clear too. A lone tie can lengthen its lead to dodge a
+line or box. A staggered tie records it in `stagger`.
+
+Then, after every line is placed, the layout walks the lines in document order
+and checks each text (the `lineLabels` rows, then the name), clear of the final
+hanging ties and their labels too. A text whose default
 slot is clear never moves, and nothing is ever hidden. Otherwise it is moved to
 the cheapest of these slots:
 

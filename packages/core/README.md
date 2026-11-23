@@ -476,6 +476,11 @@ on its own — a short lead, the asset glyph and the feeder label, in
 `layout.hangers` — unless a manual line anchors it or an auto-link joins it.
 Lines and transformers are ties between nodes, so they connect boxes instead.
 Renderers style a hanging tie with `hangerFormat`, like links with `linkFormat`.
+On a crowded box side (labels wider than the gap between ties), the layout
+staggers the leads so the labels clear each other: alternate leads lengthen a
+row (`HANGING_STAGGER_STEP`), or the leads form a staircase with each label
+leaning away from the longer ones. A staggered tie records it in `stagger`; its
+`points`, glyph and label already include it.
 
 **Line routing** (`CompositeLine.routing`, or `meta.defaultRouting` for every
 line and auto-link) is one of:

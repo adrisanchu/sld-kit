@@ -4,7 +4,10 @@ import {
   CompositeLayoutEngine,
   CompositeLine,
   CompositeSvgExporter,
+  DEMAND_LEAD_LENGTH,
   DiagramInstance,
+  HANGING_STAGGER_STEP,
+  SLD_LAYOUT,
   MapResolver,
   Serializer,
   buildDocument,
@@ -319,5 +322,125 @@ describe('candidateSlots', () => {
       { fraction: 0.4, side: 1 },
       { fraction: 0.4, side: -1 }
     ]);
+  });
+});
+
+describe('Hanging-tie labels (box view)', () => {
+  /**
+   * CHARLIE with a tie up to ALPHA plus `n` hanging ties (generator, demand,
+   * storage) on the same top side: the box edge gives each ~50 px, narrower
+   * than their labels.
+   */
+  function crowded(n: number) {
+    const hanging = [
+      { id: 'sol1', label: 'Sol 1 - 600 MW', asset: 'renewable' as const },
+      { id: 'd3', label: 'D3 - 600 MW', asset: 'demand' as const },
+      { id: 'bat', label: 'Battery 2 - 150 MW', asset: 'storage' as const }
+    ].slice(0, n);
+    const charlie = buildDocument({
+      meta: { id: 'charlie', name: 'CHARLIE', substation: 'CHARLIE', voltageKv: 220 },
+      busbars: [{ label: 'BB', row: 1 }],
+      bays: [
+        {
+          col: 0,
+          positions: [{ type: 'line', row: 0, feeder: { asset: 'line', label: 'T1', direction: 'up', id: 't1' } }]
+        },
+        ...hanging.map((f, i) => ({
+          col: i + 1,
+          positions: [
+            { type: f.asset, row: 0, feeder: { asset: f.asset, label: f.label, direction: 'up' as const, id: f.id } }
+          ]
+        }))
+      ]
+    });
+    const alpha = buildDocument({
+      meta: { id: 'alpha', name: 'ALPHA', substation: 'ALPHA', voltageKv: 400 },
+      busbars: [{ label: 'BB', row: 0 }],
+      bays: [
+        {
+          col: 0,
+          positions: [{ type: 'line', row: 1, feeder: { asset: 'line', label: 'T1', direction: 'down', id: 't1' } }]
+        }
+      ]
+    });
+    const doc = new CompositeDocument({ id: 'x', name: 'x', boxMode: true, defaultRouting: 'orthogonal' });
+    doc.addChild(DiagramInstance.of({ id: 'charlie', libraryId: 'charlie', x: 0, y: 300 }));
+    doc.addChild(DiagramInstance.of({ id: 'alpha', libraryId: 'alpha', x: -120, y: 0 }));
+    doc.addLine(
+      new CompositeLine('t', [
+        { kind: 'anchor', instanceId: 'alpha', connectionId: 't1' },
+        { kind: 'anchor', instanceId: 'charlie', connectionId: 't1' }
+      ])
+    );
+    doc.resolveChildren(
+      new MapResolver(
+        new Map([
+          ['charlie', Serializer.toJSON(charlie)],
+          ['alpha', Serializer.toJSON(alpha)]
+        ])
+      )
+    );
+    return doc;
+  }
+
+  /** Estimated label box, as the layout sizes it (0.62 em per character). */
+  const labelBox = (label: { text: string; at: Point; textAnchor: string }): Rect => {
+    const fs = SLD_LAYOUT.labelFontSize;
+    const width = label.text.length * fs * 0.62;
+    const left =
+      label.textAnchor === 'start'
+        ? label.at.x
+        : label.textAnchor === 'end'
+          ? label.at.x - width
+          : label.at.x - width / 2;
+    return { x: left, y: label.at.y - fs, width, height: fs * 1.25 };
+  };
+
+  it('a hanging tie with room keeps its default lead', () => {
+    const layout = new CompositeLayoutEngine().layout(crowded(1));
+    expect(layout.hangers).toHaveLength(1);
+    expect(layout.hangers[0].stagger).toBeUndefined();
+  });
+
+  for (const n of [2, 3]) {
+    it(`${n} crowded hanging ties stagger their leads so no label overlaps another label, glyph or lead`, () => {
+      const layout = new CompositeLayoutEngine().layout(crowded(n));
+      const hangers = layout.hangers;
+      expect(hangers).toHaveLength(n);
+      expect(hangers.some((h) => h.stagger)).toBe(true);
+      for (const h of hangers) {
+        // The lead, its glyph and its label move together.
+        const [start, end] = [h.points[0], h.points[h.points.length - 1]];
+        expect(Math.hypot(end.x - start.x, end.y - start.y)).toBeCloseTo(DEMAND_LEAD_LENGTH + (h.stagger ?? 0));
+        expect(h.terminus.at).toEqual(end);
+        if (h.stagger) expect(h.stagger % HANGING_STAGGER_STEP).toBe(0);
+      }
+      for (const a of hangers) {
+        const box = shrink(labelBox(a.label!));
+        for (const b of hangers) {
+          if (a === b) continue;
+          expect(rectsOverlap(box, labelBox(b.label!)), `${a.connectionId} × ${b.connectionId} label`).toBe(false);
+          const g = b.terminus.at;
+          expect(
+            rectsOverlap(box, { x: g.x - 11, y: g.y - 11, width: 22, height: 22 }),
+            `${a.connectionId} × ${b.connectionId} glyph`
+          ).toBe(false);
+          expect(polylineHitsRect(b.points, box), `${a.connectionId} on ${b.connectionId} lead`).toBe(false);
+        }
+      }
+    });
+  }
+
+  it('the export draws the staggered leads and labels', () => {
+    const doc = crowded(2);
+    const layout = new CompositeLayoutEngine().layout(doc);
+    const svg = new CompositeSvgExporter().export(doc);
+    const n = (v: number) => String(Math.round(v * 100) / 100);
+    for (const h of layout.hangers) expect(svg).toContain(`x="${n(h.label!.at.x)}" y="${n(h.label!.at.y)}"`);
+  });
+
+  it('is deterministic', () => {
+    const run = () => new CompositeLayoutEngine().layout(crowded(3)).hangers.map((h) => [h.points, h.label, h.stagger]);
+    expect(run()).toEqual(run());
   });
 });

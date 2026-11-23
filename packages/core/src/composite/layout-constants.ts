@@ -71,6 +71,15 @@ export const HANGING_ASSETS: readonly string[] = ['renewable', 'storage', 'deman
 /** Gap between a hanging tie's glyph and its label, world units. */
 export const HANGING_LABEL_GAP = 4;
 
+/**
+ * Staggered hanging ties: when labels on a crowded box side would collide, the
+ * collision pass lengthens leads by this much per row (a label's height plus
+ * a little air), up to this many rows, so neighbouring labels sit at different
+ * heights.
+ */
+export const HANGING_STAGGER_STEP = 18;
+export const HANGING_STAGGER_ROWS = 4;
+
 /** Dashed stroke for `cable` lines — shared by the exporter and both routers. */
 export const CABLE_DASH_ARRAY = '6 4';
 

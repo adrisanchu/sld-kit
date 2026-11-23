@@ -31,6 +31,8 @@ import {
   DEMAND_SYMBOL,
   HANGING_ASSETS,
   HANGING_LABEL_GAP,
+  HANGING_STAGGER_ROWS,
+  HANGING_STAGGER_STEP,
   LINE_LABEL_FONT_SIZE,
   LINE_LABEL_GLYPH_CLEARANCE,
   LINE_LABEL_LINE_HEIGHT,
@@ -45,7 +47,7 @@ import {
   TRANSFORMER3W_SYMBOL
 } from './layout-constants';
 import { arcMidpoint, pointAtFraction, readableAngle, roomyPointAtFraction, segmentAngleDeg, simplify } from './polyline';
-import { resolveLabelCollisions, type LabelCandidate, type TextSlot } from './labelCollisions';
+import { resolveLabelCollisions, resolveLabelGroups, type LabelCandidate, type LabelGroup, type TextSlot } from './labelCollisions';
 import { resolveFormat, type ElementFormat, type ElementFormatResolver, type FormatContext } from '../theme';
 import { feederBoxCenter, layoutSectionBoxes, type BoxSectionsResolver, type SectionBox, type SectionTie } from './sections';
 
@@ -712,13 +714,24 @@ export function readableLineNameSize(label: LineNameLayout, pxPerUnit: number, m
 
 /**
  * A hanging tie's label, just beyond its glyph along the lead: centred above or
- * below a vertical lead, left- or right-aligned past a horizontal one.
+ * below a vertical lead, left- or right-aligned past a horizontal one. On a
+ * vertical lead, `align` can lean the label to one side instead: `start` runs
+ * it rightward from the glyph's left edge, `end` leftward from its right edge
+ * (what a crowded side's staggered labels use, so each spans only the leads on
+ * one side of its own).
  */
-function hangingLabel(text: string, end: Point, side: BoxSide): NonNullable<HangingTieLayout['label']> {
+function hangingLabel(
+  text: string,
+  end: Point,
+  side: BoxSide,
+  align: 'middle' | 'start' | 'end' = 'middle'
+): NonNullable<HangingTieLayout['label']> {
   const reach = SLD_LAYOUT.symbolSize / 2 + HANGING_LABEL_GAP;
   const fs = SLD_LAYOUT.labelFontSize;
-  if (side === 'up') return { text, at: { x: end.x, y: end.y - reach }, textAnchor: 'middle' };
-  if (side === 'down') return { text, at: { x: end.x, y: end.y + reach + fs * 0.8 }, textAnchor: 'middle' };
+  const half = SLD_LAYOUT.symbolSize / 2;
+  const x = align === 'start' ? end.x - half : align === 'end' ? end.x + half : end.x;
+  if (side === 'up') return { text, at: { x, y: end.y - reach }, textAnchor: align };
+  if (side === 'down') return { text, at: { x, y: end.y + reach + fs * 0.8 }, textAnchor: align };
   if (side === 'right') return { text, at: { x: end.x + reach, y: end.y + fs * 0.35 }, textAnchor: 'start' };
   return { text, at: { x: end.x - reach, y: end.y + fs * 0.35 }, textAnchor: 'end' };
 }
@@ -729,6 +742,36 @@ function hangingLabelBox(label: NonNullable<HangingTieLayout['label']>): Rect {
   const width = label.text.length * fs * 0.62;
   const left = label.textAnchor === 'start' ? label.at.x : label.textAnchor === 'end' ? label.at.x - width : label.at.x - width / 2;
   return { x: left, y: label.at.y - fs, width, height: fs * 1.25 };
+}
+
+/**
+ * The arrangements tried for `n` hanging-tie labels along one box side (sorted
+ * along it), first clear one wins (see `resolveLabelGroups`):
+ *
+ *  1. every lead at its default length, labels centred;
+ *  2. alternate leads lengthened one row (a zig-zag), both phases;
+ *  3. on a vertical lead, a staircase: labels leaning right with leads
+ *     lengthening leftward, or leaning left with leads lengthening rightward,
+ *     so each label only spans the shorter leads beside it. This always fits,
+ *     however close the ties sit.
+ *
+ * Horizontal leads (labels already beside their glyph) zig-zag by the widest
+ * label instead, so neighbouring labels sit side by side. A lone tie can still
+ * lengthen its lead to dodge a line or a box.
+ */
+function hangerPatterns(n: number, vertical: boolean, widest: number): TextSlot[][] {
+  const at = (fraction: number, row: number): TextSlot =>
+    row ? { fraction, side: 1, offset: row * HANGING_STAGGER_STEP } : { fraction, side: 1 };
+  const all = (f: (i: number) => TextSlot) => Array.from({ length: n }, (_, i) => f(i));
+  const patterns: TextSlot[][] = [all(() => at(0.5, 0))];
+  if (n === 1) {
+    for (let row = 1; row <= HANGING_STAGGER_ROWS; row++) patterns.push([at(0.5, row)]);
+    return patterns;
+  }
+  const zig = vertical ? 1 : Math.ceil((widest + HANGING_LABEL_GAP * 2) / HANGING_STAGGER_STEP);
+  patterns.push(all((i) => at(0.5, i % 2 ? zig : 0)), all((i) => at(0.5, i % 2 ? 0 : zig)));
+  if (vertical) patterns.push(all((i) => at(1, n - 1 - i)), all((i) => at(0, i)));
+  return patterns;
 }
 
 /** Point at the polyline's arc-length midpoint, plus the angle of the segment it lies on. */
@@ -769,6 +812,12 @@ export interface HangingTieLayout {
   terminus: LineGlyph;
   /** The feeder label beyond the glyph; absent when the feeder has none. */
   label?: { text: string; at: Point; textAnchor: 'start' | 'middle' | 'end' };
+  /**
+   * Set only when the collision pass lengthened the lead (world px past
+   * `DEMAND_LEAD_LENGTH`) so its label clears a neighbour's: staggered leads on
+   * a crowded box side. `points`, `terminus` and `label` already include it.
+   */
+  stagger?: number;
 }
 
 export interface CompositeLayout {
@@ -1578,20 +1627,42 @@ export class CompositeLayoutEngine {
       const r = LINE_LABEL_GLYPH_CLEARANCE;
       return { x: g.at.x - r, y: g.at.y - r, width: 2 * r, height: 2 * r };
     };
-    const rects: Rect[] = [];
+    const childRects: Rect[] = [];
     for (const child of children) {
       if (child.boxes?.length) {
         for (const box of child.boxes) {
           const corners = child.transform.applyRect(box.frame);
           const xs = corners.map((c) => c.x);
           const ys = corners.map((c) => c.y);
-          rects.push({ x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) });
+          childRects.push({ x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) });
         }
-      } else rects.push(child.worldBounds);
+      } else childRects.push(child.worldBounds);
     }
-    for (const l of lines) for (const g of [l.glyph, l.terminus]) if (g) rects.push(glyphBox(g));
-    for (const h of hangers) rects.push(glyphBox(h.terminus));
-    const polylines = [...lines.map((l) => l.points), ...links.map((l) => l.points), ...hangers.map((h) => h.points)];
+    const lineGlyphs: Rect[] = [];
+    for (const l of lines) for (const g of [l.glyph, l.terminus]) if (g) lineGlyphs.push(glyphBox(g));
+    const linePolylines = [...lines.map((l) => l.points), ...links.map((l) => l.points)];
+
+    // Round 1: hanging-tie labels, arranged per box side. A crowded side makes
+    // room by lengthening leads (staggered heights); each lead is its own
+    // label's leader.
+    const hangerGroups = this.hangerGroups(hangers, glyphBox);
+    if (hangerGroups.length) {
+      const owner = (h: HangingTieLayout) => feederKey(h.instanceId, h.connectionId);
+      resolveLabelGroups(hangerGroups, {
+        polylines: [...linePolylines, ...hangers.map((h) => h.points)],
+        polylineOwners: [...linePolylines.map(() => undefined), ...hangers.map(owner)],
+        rects: [...childRects, ...lineGlyphs, ...hangers.map((h) => glyphBox(h.terminus))],
+        rectOwners: [...childRects.map(() => undefined), ...lineGlyphs.map(() => undefined), ...hangers.map(owner)]
+      });
+    }
+
+    // Round 2: line texts, clear of the final hanging ties and their labels.
+    const rects: Rect[] = [...childRects, ...lineGlyphs];
+    for (const h of hangers) {
+      rects.push(glyphBox(h.terminus));
+      if (h.label) rects.push(hangingLabelBox(h.label));
+    }
+    const polylines = [...linePolylines, ...hangers.map((h) => h.points)];
 
     const texts: LabelCandidate[] = [];
     for (const layout of lines) {
@@ -1632,6 +1703,65 @@ export class CompositeLayoutEngine {
       }
     }
     resolveLabelCollisions(texts, { polylines, rects });
+  }
+
+  /**
+   * The hanging-tie labels as collision-pass groups, one per box side (ties
+   * leaving the same box edge), sorted along it. A tie makes room by
+   * lengthening its lead `HANGING_STAGGER_STEP` at a time, carrying its glyph
+   * and label outward: a free leader (the lead is drawn anyway), and the moved
+   * glyph must stay clear too. Each group tries whole-side patterns (see
+   * {@link hangerPatterns}).
+   */
+  private hangerGroups(hangers: HangingTieLayout[], glyphBox: (g: LineGlyph) => Rect): LabelGroup[] {
+    const groups = new Map<string, { along: number; width: number; vertical: boolean; text: LabelCandidate }[]>();
+    for (const h of hangers) {
+      const label = h.label;
+      if (!label || h.points.length < 2) continue;
+      const start = h.points[0];
+      const end = h.points[h.points.length - 1];
+      const len = Math.hypot(end.x - start.x, end.y - start.y);
+      if (len === 0) continue;
+      const dir = { x: (end.x - start.x) / len, y: (end.y - start.y) / len };
+      const side: BoxSide = Math.abs(dir.x) > Math.abs(dir.y) ? (dir.x > 0 ? 'right' : 'left') : dir.y > 0 ? 'down' : 'up';
+      const vertical = side === 'up' || side === 'down';
+      const tipAt = (e: number): Point => ({ x: end.x + dir.x * e, y: end.y + dir.y * e });
+      // `fraction` encodes the label's alignment on a vertical lead: centred
+      // (0.5), leaning right (1) or left (0). A horizontal lead keeps its own.
+      const alignOf = (s: TextSlot) => (s.fraction === 1 ? 'start' : s.fraction === 0 ? 'end' : 'middle');
+      const text: LabelCandidate = {
+        slot: { fraction: 0.5, side: 1 },
+        owner: feederKey(h.instanceId, h.connectionId),
+        place: (s) => {
+          const e = s.offset ?? 0;
+          const tip = tipAt(e);
+          const box = hangingLabelBox(hangingLabel(label.text, tip, side, alignOf(s)));
+          if (!e) return { box };
+          return { box, leader: { points: [end, tip], free: true }, extra: [glyphBox({ ...h.terminus, at: tip })] };
+        },
+        apply: (s) => {
+          const e = s.offset ?? 0;
+          const tip = tipAt(e);
+          h.points = [start, tip];
+          h.terminus = { ...h.terminus, at: tip };
+          h.label = hangingLabel(label.text, tip, side, alignOf(s));
+          if (e) h.stagger = e;
+        }
+      };
+      // One box edge: same child, same side, same edge coordinate (section boxes differ).
+      const key = `${h.instanceId}:${side}:${Math.round(vertical ? start.y : start.x)}`;
+      const entry = { along: vertical ? start.x : start.y, width: hangingLabelBox(label).width, vertical, text };
+      const group = groups.get(key);
+      if (group) group.push(entry);
+      else groups.set(key, [entry]);
+    }
+    return [...groups.values()].map((entries) => {
+      entries.sort((a, b) => a.along - b.along);
+      return {
+        texts: entries.map((e) => e.text),
+        patterns: hangerPatterns(entries.length, entries[0].vertical, Math.max(...entries.map((e) => e.width)))
+      };
+    });
   }
 
   private unionBounds(
