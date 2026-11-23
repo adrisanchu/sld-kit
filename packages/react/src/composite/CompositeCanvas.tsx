@@ -9,6 +9,9 @@ import {
   type ReactNode
 } from 'react';
 import {
+  LEADER_DOT_RADIUS,
+  LEADER_OPACITY,
+  LEADER_STROKE_WIDTH,
   SLD_LAYOUT,
   connectionPath,
   linkFormat,
@@ -27,7 +30,8 @@ import {
   type ExternalDirection,
   type Point,
   type Rect,
-  type BoxSection
+  type BoxSection,
+  type TextLeader
 } from '@sld-kit/core';
 import { createPanZoom, type ContentBounds } from '../panzoom';
 import { useStore } from '../useStore';
@@ -615,6 +619,34 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
           onElementActivate={onElementActivate}
         />
       ))}
+
+      {/* Callout leaders under the line texts (as in the export): a thin stroke
+          from a text the layout set away from its line, ending in a dot on it. */}
+      {layout.lines.map((ln, i) => {
+        const leaders = [ln.label?.leader, lineNames[i]?.leader].filter((l): l is TextLeader => !!l);
+        if (!leaders.length) return null;
+        const cls = lineColorClass(ln);
+        return (
+          <g
+            key={`leader:${ln.line.id}`}
+            className={`sld-line-leader pointer-events-none ${cls ?? 'text-primary'}`}
+            style={cls ? { color: 'var(--sld-pos)' } : undefined}
+          >
+            {leaders.map((l, k) => (
+              <g key={k}>
+                <polyline
+                  points={l.points.map((p) => `${p.x},${p.y}`).join(' ')}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={LEADER_STROKE_WIDTH}
+                  strokeOpacity={LEADER_OPACITY}
+                />
+                <circle cx={l.dot.x} cy={l.dot.y} r={LEADER_DOT_RADIUS} fill="currentColor" />
+              </g>
+            ))}
+          </g>
+        );
+      })}
 
       {/* Line labels above the children (as in the export), tinted like their
           line. Placement is computed by the core layout — rows + backing box. */}

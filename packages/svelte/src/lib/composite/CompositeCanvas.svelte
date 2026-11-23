@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount, createEventDispatcher } from 'svelte';
   import {
+    LEADER_DOT_RADIUS,
+    LEADER_OPACITY,
+    LEADER_STROKE_WIDTH,
     SLD_LAYOUT,
     linkFormat,
     linkNodeDots,
@@ -13,7 +16,8 @@
     type ChildLayout,
     type CompositeLineLayout,
     type ExternalConnectionTip,
-    type Point
+    type Point,
+    type TextLeader
   } from '@sld-kit/core';
   import { createPanZoom, type ContentBounds } from '../panzoom';
   import { DEFAULT_POSITION_TOKENS, DEFAULT_CHILD_NOT_FOUND, type PositionTokens } from '../labels';
@@ -217,6 +221,11 @@
     return rect && vb.w > 0 && vb.h > 0 ? Math.min(rect.width / vb.w, rect.height / vb.h) : 0;
   }
   $: pxPerUnit = pxPerUnitOf($viewBox, lineNameScreenSize !== null);
+  /** A line's callout leaders: its rating's, then its name's at the current size. */
+  function leadersOf(ln: CompositeLineLayout, nl: { leader?: TextLeader } | null | undefined): TextLeader[] {
+    return [ln.label?.leader, nl?.leader].filter((l): l is TextLeader => !!l);
+  }
+
   $: lineNames = layout.lines.map((ln) => {
     if (!ln.nameLabel || !lineNameScreenSize || !(pxPerUnit > 0)) return ln.nameLabel;
     const size = readableLineNameSize(ln.nameLabel, pxPerUnit, lineNameScreenSize.minPx);
@@ -426,6 +435,27 @@
       on:elementactivate
       on:labeldown
     />
+  {/each}
+
+  <!-- Callout leaders under the line texts (as in the export): a thin stroke
+       from a text the layout set away from its line, ending in a dot on it. -->
+  {#each layout.lines as ln, i (ln.line.id)}
+    {@const leaders = leadersOf(ln, lineNames[i])}
+    {#if leaders.length}
+      {@const cls = lineColorClass(ln)}
+      <g class="sld-line-leader pointer-events-none {cls ?? 'text-primary'}" style={cls ? 'color: hsl(var(--sld-pos))' : ''}>
+        {#each leaders as l}
+          <polyline
+            points={l.points.map((p) => `${p.x},${p.y}`).join(' ')}
+            fill="none"
+            stroke="currentColor"
+            stroke-width={LEADER_STROKE_WIDTH}
+            stroke-opacity={LEADER_OPACITY}
+          />
+          <circle cx={l.dot.x} cy={l.dot.y} r={LEADER_DOT_RADIUS} fill="currentColor" />
+        {/each}
+      </g>
+    {/if}
   {/each}
 
   <!-- Line labels above the children (as in the export), tinted like their
