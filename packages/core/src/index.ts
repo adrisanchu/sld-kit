@@ -169,7 +169,10 @@ export {
   TRANSFORMER_SYMBOL,
   TRANSFORMER3W_SYMBOL,
   DEMAND_SYMBOL,
-  PARALLEL_LANE_SPACING
+  PARALLEL_LANE_SPACING,
+  LEADER_STROKE_WIDTH,
+  LEADER_OPACITY,
+  LEADER_DOT_RADIUS
 } from './composite/layout-constants';
 export { CompositeDocument, type CompositeMeta, type CompositeChange } from './composite/CompositeDocument';
 export {
@@ -202,10 +205,12 @@ export {
   fittedLineNameSize,
   readableLineNameSize,
   type LineNameLayout,
+  type TextLeader,
   type LineGlyph,
   type ExternalConnectionTip,
   type CompositeLayout
 } from './composite/CompositeLayoutEngine';
+export { type TextSlot } from './composite/labelCollisions';
 export {
   CompositeSerializer,
   COMPOSITE_SCHEMA_VERSION,

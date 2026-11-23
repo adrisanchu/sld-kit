@@ -13,6 +13,7 @@ import {
   DEFAULT_LINE_NAME_PLACEMENT,
   type CompositeLineKind,
   type LineNamePlacement,
+  type LineNameSide,
   type LineVertexJson
 } from './CompositeLine';
 import { isOrthogonalRouting, routePolyline, type LineRouting } from './routing';
@@ -43,7 +44,8 @@ import {
   TRANSFORMER_SYMBOL,
   TRANSFORMER3W_SYMBOL
 } from './layout-constants';
-import { arcMidpoint, readableAngle, roomyPointAtFraction, segmentAngleDeg, simplify } from './polyline';
+import { arcMidpoint, pointAtFraction, readableAngle, roomyPointAtFraction, segmentAngleDeg, simplify } from './polyline';
+import { resolveLabelCollisions, type LabelCandidate, type TextSlot } from './labelCollisions';
 import { resolveFormat, type ElementFormat, type ElementFormatResolver, type FormatContext } from '../theme';
 import { feederBoxCenter, layoutSectionBoxes, type BoxSectionsResolver, type SectionBox, type SectionTie } from './sections';
 
@@ -401,6 +403,18 @@ export interface CompositeLineLayout {
   /** The line's own name (`CompositeLine.name`), placed per its `namePlacement` — present only when named. */
   nameLabel?: LineNameLayout;
   /**
+   * Set only when the collision pass moved `label` off its default slot (the
+   * arc midpoint, above / right): where it went instead.
+   */
+  labelSlot?: TextSlot;
+  /**
+   * Set only when the collision pass moved the name off its stored
+   * `namePlacement`: the arc fraction (reading order) and side it went to, and
+   * for a callout its `offset` from the line.
+   * {@link lineNameLayout} honours it, so a zoom-aware re-placement keeps it.
+   */
+  nameSlot?: { fraction: number; side: LineNameSide; offset?: number };
+  /**
    * Set only for `curved` routing: draw each bend as a circular arc of this
    * radius (pass it to `connectionPath`). `points` stay the sharp polyline, so
    * glyphs, labels and handles sit exactly where they do for `orthogonal`.
@@ -420,6 +434,19 @@ export interface LineLabelLayout {
   fontSize: number;
   /** Backing box (world), sized from an estimated text width. */
   box: Rect;
+  /** Present only for a callout (a label set away from its line): the leader back to it. */
+  leader?: TextLeader;
+}
+
+/**
+ * The leader of a callout: a text the collision pass set away from its line
+ * (no clear spot beside it, e.g. a line sandwiched in a tight parallel group).
+ * Renderers draw `points` as a thin, subtle stroke and a small dot at `dot`,
+ * the point on the text's own line it belongs to.
+ */
+export interface TextLeader {
+  points: Point[];
+  dot: Point;
 }
 
 /**
@@ -429,29 +456,61 @@ export interface LineLabelLayout {
  */
 export type LineLabelResolver = (line: CompositeLine) => readonly string[] | null | undefined;
 
-/** Place label rows beside a polyline's arc-length midpoint (see {@link LineLabelLayout}). */
-export function placeLineLabel(points: Point[], rows: readonly string[], clearance = 0): LineLabelLayout | null {
-  const mid = arcMidpoint(points);
-  if (!mid || rows.length === 0) return null;
+/**
+ * Place label rows beside a polyline (see {@link LineLabelLayout}): by default
+ * at its arc-length midpoint, above a horizontal run or right of a vertical one.
+ * `slot` moves it to another `fraction` of the arc length (in point order),
+ * the other side (`side: -1`: below / left) and/or out as a callout (`offset`,
+ * adding a {@link TextLeader}), as the collision pass does.
+ */
+export function placeLineLabel(
+  points: Point[],
+  rows: readonly string[],
+  clearance = 0,
+  slot: TextSlot = DEFAULT_LABEL_SLOT
+): LineLabelLayout | null {
+  if (rows.length === 0) return null;
+  const mid = slot.fraction === DEFAULT_LABEL_SLOT.fraction ? arcMidpoint(points) : arcPointAt(points, slot.fraction);
+  if (!mid) return null;
   const rad = (mid.angleDeg * Math.PI) / 180;
   const horizontal = Math.abs(Math.cos(rad)) >= Math.abs(Math.sin(rad));
+  const flipped = slot.side === -1;
   const fontSize = LINE_LABEL_FONT_SIZE;
   const lh = LINE_LABEL_LINE_HEIGHT;
   const width = Math.max(...rows.map((r) => r.length)) * fontSize * 0.6;
   const height = rows.length * lh;
-  const gap = LINE_LABEL_OFFSET + LINE_LABEL_PAD + clearance;
+  const offset = slot.offset ?? 0;
+  const gap = LINE_LABEL_OFFSET + LINE_LABEL_PAD + clearance + offset;
   // Block top-left (text area, before padding).
-  const left = horizontal ? mid.at.x - width / 2 : mid.at.x + gap;
-  const top = horizontal ? mid.at.y - gap - height : mid.at.y - height / 2;
+  const left = horizontal ? mid.at.x - width / 2 : flipped ? mid.at.x - gap - width : mid.at.x + gap;
+  const top = horizontal ? (flipped ? mid.at.y + gap : mid.at.y - gap - height) : mid.at.y - height / 2;
   const x = horizontal ? mid.at.x : left;
   // Baseline of row i: centred in its row pitch (≈0.35em below the row centre).
   const baseline = (i: number) => top + i * lh + lh / 2 + fontSize * 0.35;
-  return {
+  const box = { x: left - LINE_LABEL_PAD, y: top - LINE_LABEL_PAD, width: width + 2 * LINE_LABEL_PAD, height: height + 2 * LINE_LABEL_PAD };
+  const label: LineLabelLayout = {
     rows: rows.map((text, i) => ({ text, x, y: baseline(i) })),
     textAnchor: horizontal ? 'middle' : 'start',
     fontSize,
-    box: { x: left - LINE_LABEL_PAD, y: top - LINE_LABEL_PAD, width: width + 2 * LINE_LABEL_PAD, height: height + 2 * LINE_LABEL_PAD }
+    box
   };
+  if (offset > 0) {
+    // A callout: a straight leader from the line to the box's near edge.
+    const end = horizontal
+      ? { x: mid.at.x, y: flipped ? box.y : box.y + box.height }
+      : { x: flipped ? box.x + box.width : box.x, y: mid.at.y };
+    label.leader = { points: [mid.at, end], dot: mid.at };
+  }
+  return label;
+}
+
+/** A label's default slot: the arc-length midpoint, above / right of the line. */
+const DEFAULT_LABEL_SLOT: TextSlot = { fraction: 0.5, side: 1 };
+
+/** Point at `fraction` of the arc length with its segment angle (like `arcMidpoint`). */
+function arcPointAt(points: Point[], fraction: number): { at: Point; angleDeg: number } | null {
+  const p = pointAtFraction(points, fraction);
+  return p ? { at: p.at, angleDeg: (Math.atan2(p.dy, p.dx) * 180) / Math.PI } : null;
 }
 
 /**
@@ -478,6 +537,8 @@ export interface LineNameLayout {
   maxFontSize: number;
   /** World AABB of the (estimated) rotated text — for bounds/fit, not hit-testing. */
   box: Rect;
+  /** Present only for a callout (a name set away from its line): the leader back to it. */
+  leader?: TextLeader;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -538,7 +599,11 @@ export function placeLineName(
   text: string,
   placement: LineNamePlacement = DEFAULT_LINE_NAME_PLACEMENT,
   clearance = 0,
-  fontSize: number = LINE_NAME_FONT_SIZE
+  fontSize: number = LINE_NAME_FONT_SIZE,
+  /** Arc fraction (reading order) overriding `placement.along` — a collision-resolved slot. */
+  fraction?: number,
+  /** Extra distance from the line for a callout; > 0 adds a {@link TextLeader} back to it. */
+  offset = 0
 ): LineNameLayout | null {
   if (!text || points.length < 2) return null;
   const first = points[0];
@@ -551,11 +616,11 @@ export function placeLineName(
 
   const w = text.length * fontSize * NAME_CHAR_WIDTH;
   const h = fontSize;
-  const offset = (LINE_NAME_OFFSET * fontSize) / LINE_NAME_FONT_SIZE;
+  const lineGap = (LINE_NAME_OFFSET * fontSize) / LINE_NAME_FONT_SIZE;
   // Sit on a segment with room for the name (never on a short orthogonal jog):
   // its full length when it runs along the line, a few gaps' worth otherwise.
-  const need = placement.orientation === 'parallel' ? w + 2 * offset : 4 * offset;
-  const at = roomyPointAtFraction(reading, LINE_NAME_ALONG_FRACTION[placement.along], need);
+  const need = placement.orientation === 'parallel' ? w + 2 * lineGap : 4 * lineGap;
+  const at = roomyPointAtFraction(reading, fraction ?? LINE_NAME_ALONG_FRACTION[placement.along], need);
   if (!at) return null;
 
   const toRad = Math.PI / 180;
@@ -571,7 +636,7 @@ export function placeLineName(
   const adv = { x: Math.cos(r), y: Math.sin(r) }; // text advance
   const up = { x: Math.sin(r), y: -Math.cos(r) }; // baseline → cap
 
-  const gap = offset + clearance;
+  const gap = lineGap + clearance + offset;
   const advN = adv.x * n.x + adv.y * n.y;
   const upN = Math.abs(up.x * n.x + up.y * n.y);
 
@@ -595,7 +660,7 @@ export function placeLineName(
   const minX = Math.min(...xs);
   const minY = Math.min(...ys);
 
-  return {
+  const layout: LineNameLayout = {
     text,
     x: round2(x),
     y: round2(y),
@@ -605,6 +670,12 @@ export function placeLineName(
     maxFontSize: Math.max(fontSize, lineNameFitSize(points, text)),
     box: { x: minX, y: minY, width: Math.max(...xs) - minX, height: Math.max(...ys) - minY }
   };
+  if (offset > 0) {
+    // A callout: a straight leader from the line to the text's near edge.
+    const end = { x: at.at.x + n.x * gap, y: at.at.y + n.y * gap };
+    layout.leader = { points: [at.at, end], dot: at.at };
+  }
+  return layout;
 }
 
 /**
@@ -617,9 +688,14 @@ export function placeLineName(
 export function lineNameLayout(line: CompositeLineLayout, fontSize?: number): LineNameLayout | null {
   const { name, namePlacement } = line.line;
   if (!name) return null;
-  const placement = namePlacement ?? DEFAULT_LINE_NAME_PLACEMENT;
-  const clearance = line.glyph && placement.along === 'middle' ? LINE_LABEL_GLYPH_CLEARANCE : 0;
-  return placeLineName(line.points, name, placement, clearance, fontSize ?? fittedLineNameSize(line.points, name));
+  const stored = namePlacement ?? DEFAULT_LINE_NAME_PLACEMENT;
+  // A collision-resolved slot (see `nameSlot`) moves the name off its stored spot.
+  const slot = line.nameSlot;
+  const placement = slot ? { ...stored, side: slot.side } : stored;
+  const atMiddle = slot ? slot.fraction === LINE_NAME_ALONG_FRACTION.middle : placement.along === 'middle';
+  const clearance = line.glyph && atMiddle ? LINE_LABEL_GLYPH_CLEARANCE : 0;
+  const size = fontSize ?? fittedLineNameSize(line.points, name);
+  return placeLineName(line.points, name, placement, clearance, size, slot?.fraction, slot?.offset ?? 0);
 }
 
 /**
@@ -829,6 +905,7 @@ export class CompositeLayoutEngine {
     const claimed = new Set<string>();
     for (const l of doc.allLines()) for (const id of l.anchoredConnectionIds()) claimed.add(id);
     const links = this.detectLinks(children, claimed, defaultRouting);
+    this.resolveTextCollisions(lines, links, [], children);
     const bounds = this.unionBounds(children, links, lines, []);
     return { children, links, lines, hangers: [], bounds, snapTips: this.externalConnectionTips(children) };
   }
@@ -989,6 +1066,7 @@ export class CompositeLayoutEngine {
     // The remaining auto-links go through the same floating router.
     const links = this.routeFloatingLinks(linkPairs, routingDefault, obstacles, offsets);
     const hangers = boxMode ? this.hangingTies(children, resolver, claimed, links) : [];
+    this.resolveTextCollisions(lines, links, hangers, children);
 
     // Snap targets come from the same resolver that attached the lines, so a
     // ring always sits on the line end it would create (view + effective side).
@@ -1482,6 +1560,78 @@ export class CompositeLayoutEngine {
       });
     }
     return links;
+  }
+
+  /**
+   * Keep line texts readable: move each numeric label and name whose default
+   * slot overlaps another text, a line, a glyph or a child box to the cheapest
+   * clear slot along its line (see `labelCollisions.ts`). Runs after every line
+   * is placed, in document order; a text with a clear default slot is untouched.
+   */
+  private resolveTextCollisions(
+    lines: CompositeLineLayout[],
+    links: CompositeLink[],
+    hangers: HangingTieLayout[],
+    children: ChildLayout[]
+  ): void {
+    const glyphBox = (g: LineGlyph): Rect => {
+      const r = LINE_LABEL_GLYPH_CLEARANCE;
+      return { x: g.at.x - r, y: g.at.y - r, width: 2 * r, height: 2 * r };
+    };
+    const rects: Rect[] = [];
+    for (const child of children) {
+      if (child.boxes?.length) {
+        for (const box of child.boxes) {
+          const corners = child.transform.applyRect(box.frame);
+          const xs = corners.map((c) => c.x);
+          const ys = corners.map((c) => c.y);
+          rects.push({ x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) });
+        }
+      } else rects.push(child.worldBounds);
+    }
+    for (const l of lines) for (const g of [l.glyph, l.terminus]) if (g) rects.push(glyphBox(g));
+    for (const h of hangers) rects.push(glyphBox(h.terminus));
+    const polylines = [...lines.map((l) => l.points), ...links.map((l) => l.points), ...hangers.map((h) => h.points)];
+
+    const texts: LabelCandidate[] = [];
+    for (const layout of lines) {
+      const label = layout.label;
+      if (label) {
+        const rows = label.rows.map((r) => r.text);
+        const clearance = (slot: TextSlot) => (layout.glyph && slot.fraction === 0.5 ? LINE_LABEL_GLYPH_CLEARANCE : 0);
+        const place = (slot: TextSlot) => placeLineLabel(layout.points, rows, clearance(slot), slot);
+        texts.push({
+          slot: { fraction: 0.5, side: 1 },
+          place: (slot) => place(slot),
+          apply: (slot) => {
+            const moved = place(slot);
+            if (!moved) return;
+            layout.label = moved;
+            layout.labelSlot = slot;
+          }
+        });
+      }
+      const name = layout.nameLabel;
+      if (name) {
+        const stored = layout.line.namePlacement ?? DEFAULT_LINE_NAME_PLACEMENT;
+        const sideOf = (slot: TextSlot): LineNameSide =>
+          slot.side === 1 ? stored.side : stored.side === 'above' ? 'below' : 'above';
+        const place = (slot: TextSlot) => {
+          const glyph = layout.glyph && slot.fraction === LINE_NAME_ALONG_FRACTION.middle ? LINE_LABEL_GLYPH_CLEARANCE : 0;
+          return placeLineName(layout.points, name.text, { ...stored, side: sideOf(slot) }, glyph, name.fontSize, slot.fraction, slot.offset ?? 0);
+        };
+        texts.push({
+          slot: { fraction: LINE_NAME_ALONG_FRACTION[stored.along], side: 1 },
+          place: (slot) => place(slot),
+          apply: (slot) => {
+            layout.nameSlot = { fraction: slot.fraction, side: sideOf(slot), ...(slot.offset ? { offset: slot.offset } : {}) };
+            const moved = lineNameLayout(layout, name.fontSize);
+            if (moved) layout.nameLabel = moved;
+          }
+        });
+      }
+    }
+    resolveLabelCollisions(texts, { polylines, rects });
   }
 
   private unionBounds(

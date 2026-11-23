@@ -110,3 +110,11 @@ export const LINE_NAME_MAX_LINE_FRACTION = 0.9;
  * becoming unreadable.
  */
 export const LINE_NAME_MIN_SCALE = 0.5;
+
+/**
+ * A callout's leader (a line text set away from its line, see `TextLeader`):
+ * a thin, muted stroke, with a small dot on the line it belongs to.
+ */
+export const LEADER_STROKE_WIDTH = 0.75;
+export const LEADER_OPACITY = 0.6;
+export const LEADER_DOT_RADIUS = 1.75;

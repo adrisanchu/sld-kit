@@ -543,9 +543,14 @@ const engine = new CompositeLayoutEngine(undefined, undefined, undefined, { line
 - **Zoom-aware (adapters, opt-in):** `nameLabel.maxFontSize` is how far a canvas
   may grow the name when zoomed out (`readableLineNameSize`, re-placed with
   `lineNameLayout`). The export always uses the layout size.
-- Names don't avoid each other or the `lineLabels` rows, and they are always
-  on. The name is Office-safe in the export (plain `<text>`), and unnamed
-  composites export byte-for-byte as before.
+- Names and `lineLabels` rows keep clear of each other, of lines and of boxes:
+  a text whose spot collides flips sides or slides along its line; on a line
+  with no clear spot beside it (tightly packed parallel ties) it becomes a
+  callout just outside the group, with a thin leader ending in a dot on its own
+  line (`label.leader` / `nameLabel.leader`). `ln.labelSlot` / `ln.nameSlot`
+  record the move. A text with a clear spot never moves. Names are always on,
+  Office-safe in the export (plain `<text>`, leaders as `<path>` + `<circle>`),
+  and unnamed composites export byte-for-byte as before.
 
 See [`docs/composite.md`](../../docs/composite.md#line-names) for the full rules.
 

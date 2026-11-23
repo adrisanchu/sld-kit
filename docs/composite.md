@@ -170,8 +170,9 @@ of `vertices`, each either a free `point` (fixed in composite coordinates) or an
   rows, anchor and backing box). They sit right of a vertical run, centred above
   a horizontal one, and clear of a transformer glyph. The canvas and the
   exporter draw the same placement, so labels follow dragged boxes and both
-  views. `SetLineDataCommand` keeps `data` edits undoable. For the line's own
-  name, see [Line names](#line-names).
+  views. A label that would overlap other text, a line or a box is moved (see
+  [Text collisions](#text-collisions)). `SetLineDataCommand` keeps `data` edits
+  undoable. For the line's own name, see [Line names](#line-names).
 - Unresolvable anchors (missing child/connection) are dropped; a line left with
   fewer than two points is simply not drawn (the model still keeps it), mirroring
   how dangling `libraryId`s render as placeholders.
@@ -226,9 +227,45 @@ The rules that keep a name readable:
   longest segment when none fits.
 - **Clear of glyphs.** At `middle`, a transformer line's name keeps clear of
   its two-circle glyph.
-- **No collision avoidance.** Names don't avoid each other or the numeric
-  `lineLabels` rows. The stored placement always wins, so on a box-view line
-  with ratings, put the name on the other side (or at `start` / `end`).
+- **Stored placement first.** The name sits where `namePlacement` says unless
+  that spot collides; then it moves (see [Text collisions](#text-collisions)).
+
+### Text collisions
+
+After every line is placed, the layout walks the lines in document order and
+checks each text (the `lineLabels` rows, then the name). A text whose default
+slot is clear never moves, and nothing is ever hidden. Otherwise it is moved to
+the cheapest of these slots:
+
+1. **Beside its line:** the same spot on the other side, or sliding along the
+   line, nearest first, up to 0.4 of its length each way (both sides at each
+   step, never closer than 8% to an end).
+2. **A callout,** only when no spot beside the line is clear: the text sits
+   further out, one `CALLOUT_STEP` (8 px) at a time up to 12 rows, at spots
+   spread along the line every 0.1 of its length. A thin leader joins it back
+   to its own line and ends in a dot on it. This is what a line sandwiched in a
+   tight parallel group gets (ties 14 to 16 px apart leave no room beside it):
+   the callouts sit side by side just outside the group, each with its leader
+   crossing the neighbouring lines.
+
+What a slot costs: overlapping another text costs most, then a box or glyph,
+then a line or leader (with a few px of room for the stroke). A callout costs a
+little on its own, so a clear spot beside the line always wins, plus a hair per
+row out, so the nearest clear row wins. Its leader crossing a neighbouring line
+is nearly free; crossing another text, box or leader is not. The result is
+deterministic and runs in core, so both canvases and the export agree. A spatial
+grid keeps it cheap: a few ms on a 60-substation grid, about 25 ms on top of the
+layout when every tie runs in a labelled bundle of three.
+
+A moved text records where it went: `ln.labelSlot` / `ln.nameSlot` (arc
+fraction, side and, for a callout, `offset`). A callout carries
+`label.leader` / `nameLabel.leader` (`TextLeader`: `points` + `dot`), drawn as a
+`LEADER_STROKE_WIDTH` stroke at `LEADER_OPACITY` with a `LEADER_DOT_RADIUS` dot,
+in the line's colour on the canvases. `lineNameLayout` honours `nameSlot`, so a
+zoom-aware canvas resizing a name keeps it (and its leader) in its slot. The
+pass runs at the layout size, so a name grown on screen (`lineNameScreenSize`)
+can still touch its neighbours when zoomed far out. Text widths are estimated
+(0.6 em per character, erring wide), so the checks are conservative.
 
 ### Size
 
