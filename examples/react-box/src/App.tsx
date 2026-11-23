@@ -129,8 +129,12 @@ const PLACE_SNAP = 20;
 const snap = (v: number) => Math.round(v / PLACE_SNAP) * PLACE_SNAP;
 
 
-/** Zoomed out, line names grow to at least 11 px on screen — never past 90% of their line. */
-const LINE_NAME_SCREEN_SIZE = { minPx: 11 };
+/**
+ * Zoomed out, line texts (ratings, line names, demand / generator labels) grow
+ * to at least 11 px on screen, each only as far as it can without touching its
+ * neighbours.
+ */
+const TEXT_SCREEN_SIZE = { minPx: 11 };
 
 export default function App() {
   const [composite] = useState(buildBoxComposite);
@@ -736,7 +740,7 @@ export default function App() {
             interactive
             boxMode={boxMode}
             boxSubLabel={busLabel}
-            lineNameScreenSize={LINE_NAME_SCREEN_SIZE}
+            textScreenSize={TEXT_SCREEN_SIZE}
             drawMode={tool === 'draw'}
             orthogonal
             snapTargets={snapTargets}

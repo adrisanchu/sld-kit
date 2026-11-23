@@ -11,7 +11,9 @@
     lineFormat,
     lineNameLayout,
     readableLineNameSize,
+    readableTexts,
     sectionWorldCorners,
+    textGrowthCaps,
     type CompositeLayout,
     type ChildLayout,
     type CompositeLineLayout,
@@ -124,6 +126,17 @@
    * the layout size.
    */
   export let lineNameScreenSize: { minPx: number } | null = null;
+  /**
+   * Opt-in zoom-aware texts: when zoomed out, grow every line text (rating
+   * rows, line names) to at least `minPx` on screen, up to `maxSize` world
+   * units (default core `TEXT_GROWTH_MAX_SIZE`, 20: the same ceiling for every
+   * kind, so grown texts read as one size), and each only as far as it can
+   * before touching its neighbours (core `textGrowthCaps`); a name also stays
+   * within its line. Zoomed in, texts keep their layout size. Supersedes
+   * `lineNameScreenSize` when both are set. Screen only: the export uses the
+   * layout size.
+   */
+  export let textScreenSize: { minPx: number; maxSize?: number } | null = null;
   /** Fallback text when a child diagram can't be resolved. */
   export let notFoundLabel: string = DEFAULT_CHILD_NOT_FOUND;
 
@@ -220,17 +233,27 @@
     const rect = enabled ? svgEl?.getBoundingClientRect() : undefined;
     return rect && vb.w > 0 && vb.h > 0 ? Math.min(rect.width / vb.w, rect.height / vb.h) : 0;
   }
-  $: pxPerUnit = pxPerUnitOf($viewBox, lineNameScreenSize !== null);
-  /** A line's callout leaders: its rating's, then its name's at the current size. */
-  function leadersOf(ln: CompositeLineLayout, nl: { leader?: TextLeader } | null | undefined): TextLeader[] {
-    return [ln.label?.leader, nl?.leader].filter((l): l is TextLeader => !!l);
+  $: pxPerUnit = pxPerUnitOf($viewBox, lineNameScreenSize !== null || textScreenSize !== null);
+  /** A line's callout leaders: its rating's, then its name's, at their current sizes. */
+  function leadersOf(
+    label: { leader?: TextLeader } | null | undefined,
+    nl: { leader?: TextLeader } | null | undefined
+  ): TextLeader[] {
+    return [label?.leader, nl?.leader].filter((l): l is TextLeader => !!l);
   }
 
-  $: lineNames = layout.lines.map((ln) => {
-    if (!ln.nameLabel || !lineNameScreenSize || !(pxPerUnit > 0)) return ln.nameLabel;
-    const size = readableLineNameSize(ln.nameLabel, pxPerUnit, lineNameScreenSize.minPx);
-    return size === ln.nameLabel.fontSize ? ln.nameLabel : (lineNameLayout(ln, size) ?? ln.nameLabel);
-  });
+  // Zoom-aware texts (all kinds): growth caps once per layout, sizes per zoom.
+  $: textMinPx = textScreenSize?.minPx ?? null;
+  $: growth = textMinPx !== null ? textGrowthCaps(layout, textScreenSize?.maxSize) : null;
+  $: readable = growth && textMinPx !== null && pxPerUnit > 0 ? readableTexts(layout, growth, pxPerUnit, textMinPx) : null;
+  $: lineNames =
+    readable?.lineNames ??
+    layout.lines.map((ln) => {
+      if (!ln.nameLabel || !lineNameScreenSize || !(pxPerUnit > 0)) return ln.nameLabel;
+      const size = readableLineNameSize(ln.nameLabel, pxPerUnit, lineNameScreenSize.minPx);
+      return size === ln.nameLabel.fontSize ? ln.nameLabel : (lineNameLayout(ln, size) ?? ln.nameLabel);
+    });
+  $: lineLabels = readable?.lineLabels ?? layout.lines.map((ln) => ln.label);
 
   // ── Hover ─────────────────────────────────────────────────────────────────
   // Children report pointer enter/leave on their hit rects; the canvas masks it
@@ -440,7 +463,7 @@
   <!-- Callout leaders under the line texts (as in the export): a thin stroke
        from a text the layout set away from its line, ending in a dot on it. -->
   {#each layout.lines as ln, i (ln.line.id)}
-    {@const leaders = leadersOf(ln, lineNames[i])}
+    {@const leaders = leadersOf(lineLabels[i], lineNames[i])}
     {#if leaders.length}
       {@const cls = lineColorClass(ln)}
       <g class="sld-line-leader pointer-events-none {cls ?? 'text-primary'}" style={cls ? 'color: hsl(var(--sld-pos))' : ''}>
@@ -460,25 +483,26 @@
 
   <!-- Line labels above the children (as in the export), tinted like their
        line. Placement is computed by the core layout — rows + backing box. -->
-  {#each layout.lines as ln (ln.line.id)}
-    {#if ln.label}
+  {#each layout.lines as ln, i (ln.line.id)}
+    {@const label = lineLabels[i]}
+    {#if label}
       {@const cls = lineColorClass(ln)}
       <g class="pointer-events-none {cls ?? 'text-primary'}" style={cls ? 'color: hsl(var(--sld-pos))' : ''}>
         <rect
-          x={ln.label.box.x}
-          y={ln.label.box.y}
-          width={ln.label.box.width}
-          height={ln.label.box.height}
+          x={label.box.x}
+          y={label.box.y}
+          width={label.box.width}
+          height={label.box.height}
           rx={2}
           class="fill-background"
           fill-opacity={0.9}
         />
-        {#each ln.label.rows as r}
+        {#each label.rows as r}
           <text
             x={r.x}
             y={r.y}
-            text-anchor={ln.label.textAnchor}
-            font-size={ln.label.fontSize}
+            text-anchor={label.textAnchor}
+            font-size={label.fontSize}
             font-weight={700}
             fill="currentColor">{r.text}</text
           >

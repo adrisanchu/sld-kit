@@ -59,8 +59,11 @@
    */
   export let doc: CompositeDocument;
 
-  /** Zoomed out, line names grow to at least 11 px on screen — never past 90% of their line. */
-  const LINE_NAME_SCREEN_SIZE = { minPx: 11 };
+  /**
+   * Zoomed out, line texts (ratings, line names) grow to at least 11 px on
+   * screen, each only as far as it can without touching its neighbours.
+   */
+  const TEXT_SCREEN_SIZE = { minPx: 11 };
   export let userRole: string = 'viewer';
 
   const svgExporter = new CompositeSvgExporter();
@@ -669,7 +672,7 @@
     {showPositionLabels}
     {showBusBarLabels}
     {showConnectionLabels}
-    lineNameScreenSize={LINE_NAME_SCREEN_SIZE}
+    textScreenSize={TEXT_SCREEN_SIZE}
     notFoundLabel={SLD_CHILD_NOT_FOUND}
     on:childdown={handleChildDown}
     on:rotatestart={handleRotateStart}
