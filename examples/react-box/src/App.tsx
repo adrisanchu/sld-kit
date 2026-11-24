@@ -58,14 +58,14 @@ import {
   Magnet,
   Maximize,
   Move,
-  PenLine,
   Plus,
   Pointer,
   Redo2,
   Spline,
   SquarePen,
   Trash2,
-  Undo2
+  Undo2,
+  Waypoints
 } from 'lucide-react';
 import { buildBoxComposite, ratingLabels, voltageClass, voltageFill } from './fixture';
 import { barBusIdLabel, boxSplit, openFeeders, sectionLabel } from './topology';
@@ -87,12 +87,16 @@ import {
   type DraftVertex
 } from './editor/terminals';
 
+/**
+ * The kinds a drawn line can have. No `demand`: a consumer is a feeder hanging
+ * off its substation's bay (drawn by the layout in box view), not a line
+ * between boxes.
+ */
 const LINE_KINDS: { kind: CompositeLineKind; label: string }[] = [
   { kind: 'line', label: 'Overhead' },
   { kind: 'cable', label: 'Cable' },
   { kind: 'transformer', label: 'Transformer' },
-  { kind: 'transformer3w', label: 'Three-winding transformer' },
-  { kind: 'demand', label: 'Demand' }
+  { kind: 'transformer3w', label: 'Three-winding transformer' }
 ];
 
 /**
@@ -211,6 +215,8 @@ export default function App() {
   const lastChildDown = useRef<{ id: string; t: number } | null>(null);
   // `openEdit` is declared further down; the drag handler reaches it through a ref.
   const openEditRef = useRef<(id: string) => void>(() => {});
+  // Likewise `openCreate`, for the `N` shortcut.
+  const openCreateRef = useRef<() => void>(() => {});
   // The click trailing a placing pointer-down must not reach the canvas (Draw
   // would read it as a line point).
   const swallowClick = useRef(false);
@@ -281,7 +287,8 @@ export default function App() {
   // ── Draw: lines join bays (feeder terminals), one line per terminal ───────
   // Only free terminals are snap targets. Ending on a box body opens the bay
   // picker (a free feeder, or a new bay grown on commit). An anchored end after
-  // the start finishes the line; a double-click finishes a free lead (demand).
+  // the start finishes the line; clicks in between add bends. Both ends must
+  // land on a feeder or a substation (no free leads).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const snapTargets = useMemo(() => freeTips(layout, composite), [layout, composite, version]);
 
@@ -329,9 +336,11 @@ export default function App() {
         });
         return;
       }
+      // A line starts on a feeder or a substation; empty canvas only bends it.
+      if (draft.length === 0) return setHint('Start the line on a feeder dot or a substation');
       addVertex({ kind: 'point', point });
     },
-    [tool, picker, layout, boxMode, addVertex]
+    [tool, picker, layout, boxMode, draft.length, addVertex]
   );
 
   const commitDraw = useCallback(() => {
@@ -530,6 +539,7 @@ export default function App() {
     setPicker(null);
     setEditor({ mode: 'create', voltageKv: lastKv });
   };
+  openCreateRef.current = openCreate;
   /** Open an existing substation's detailed SLD in the editor dialog. */
   const openEdit = (instanceId: string) => {
     const doc = composite.getChild(instanceId)?.resolved;
@@ -653,10 +663,14 @@ export default function App() {
         blur();
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && (selectedLineId || selectedChildId)) deleteSelected();
-      // Tool shortcuts (no modifiers): O operate, V move, L draw.
+      // Tool shortcuts (no modifiers): O operate, V move, L draw; N new substation.
       if (!e.metaKey && !e.ctrlKey && !e.altKey) {
         const next = ({ o: 'operate', v: 'move', l: 'draw' } as const)[e.key.toLowerCase() as 'o' | 'v' | 'l'];
         if (next) chooseTool(next);
+        if (e.key.toLowerCase() === 'n') {
+          e.preventDefault(); // don't type the "n" into the dialog's autofocused name field
+          openCreateRef.current();
+        }
       }
     };
     window.addEventListener('keydown', onKey);
@@ -822,7 +836,10 @@ export default function App() {
             <Move className="h-4 w-4" />
           </ToolButton>
           <ToolButton title="Draw line (L)" active={tool === 'draw'} onClick={() => chooseTool('draw')}>
-            <PenLine className="h-4 w-4" />
+            <Waypoints className="h-4 w-4" />
+          </ToolButton>
+          <ToolButton title="New substation (N)" active={!!placing} onClick={openCreate}>
+            <Plus className="h-4 w-4" />
           </ToolButton>
 
           {tool === 'move' && selectedChildId && (
@@ -840,17 +857,6 @@ export default function App() {
 
           {tool === 'draw' && (
             <div className="mx-1 flex items-center rounded-md border border-border p-0.5 text-xs">
-              <button
-                type="button"
-                title="New substation"
-                onClick={openCreate}
-                className={`flex items-center gap-1 rounded px-2 py-0.5 transition-colors ${
-                  placing ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <Plus className="h-3.5 w-3.5" /> Substation
-              </button>
-              <span className="mx-1 h-4 w-px bg-border" />
               {LINE_KINDS.map((k) => (
                 <button
                   key={k.kind}
@@ -928,7 +934,7 @@ export default function App() {
             {hint ??
               (draft.length === 0
                 ? 'Click a free feeder dot or a substation to start a line · Esc to cancel'
-                : 'Click a feeder dot or a substation to finish · click to bend · double-click ends a free lead')}
+                : 'Click a feeder dot or a substation to finish · click to bend')}
           </p>
         )}
         {picker && pickerChild && (

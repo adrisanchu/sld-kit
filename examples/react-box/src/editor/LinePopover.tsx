@@ -95,7 +95,7 @@ export function LinePopover({ anchor, onDetach, line, kinds, onApply, onClose }:
     if (kind === 'transformer') {
       const v = toNum(mva);
       data = v != null ? { ratings: { mva: v } } : undefined;
-    } else if (kind !== 'demand') {
+    } else {
       const cap = capacity.map(toNum) as SeasonalCapacity;
       data = cap.some((v) => v != null) ? { ratings: { capacity: cap } } : undefined;
     }
@@ -142,8 +142,6 @@ export function LinePopover({ anchor, onDetach, line, kinds, onApply, onClose }:
               className="w-24 rounded-md border border-border bg-background px-2 py-1 text-right text-sm text-foreground"
             />
           </label>
-        ) : kind === 'demand' ? (
-          <p className="text-xs text-muted-foreground">Demands carry no rating.</p>
         ) : (
           <div className="grid grid-cols-2 gap-2">
             {SEASONS.map((s, i) => (

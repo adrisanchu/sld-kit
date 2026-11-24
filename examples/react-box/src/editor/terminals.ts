@@ -131,7 +131,6 @@ export function barFor(doc: SldDocument, sectionKey: string | null): string | nu
 
 /** Position type (and so feeder asset) for a line kind. */
 export function bayTypeFor(kind: CompositeLineKind): PositionType {
-  if (kind === 'demand') return 'demand';
   if (kind === 'transformer') return 'transformer';
   return 'line';
 }
@@ -287,6 +286,10 @@ class AddDraftLineCommand implements Command<CompositeDocument> {
 /** Why a draft can't become a line (a user-facing hint), or `null` when it can. */
 export function draftProblem(composite: CompositeDocument, draft: DraftVertex[]): string | null {
   if (draft.length < 2) return 'A line needs at least two points';
+  // Both ends join a bay: a line never ends in mid-air (consumers are feeders, not lines).
+  if (draft[0].kind === 'point' || draft[draft.length - 1].kind === 'point') {
+    return 'End the line on a feeder dot or a substation';
+  }
   const anchors = draft.filter((v): v is Extract<DraftVertex, { kind: 'anchor' }> => v.kind === 'anchor');
   for (const a of anchors) {
     if (isUsed(composite, a.instanceId, a.connectionId)) return 'That feeder already has a line — pick a free one';
