@@ -164,8 +164,10 @@ export default function App() {
         new LayoutEngine({ ...SLD_LAYOUT, busBarLabelAnchor: 'center-left' }, { busBarLabel: barBusIdLabel }),
         undefined,
         undefined,
-        // Line names at 16, the size of the rating labels beside them.
-        { lineLabels: ratingLabels, boxSections: boxSplit, lineNameFontSize: 16 }
+        // Line names at 16, the size of the rating labels beside them. Detail
+        // view spreads the drawings apart so they never overlap, while the
+        // stored positions stay the compact box-view ones.
+        { lineLabels: ratingLabels, boxSections: boxSplit, lineNameFontSize: 16, detailSpread: {} }
       ),
     []
   );
@@ -178,10 +180,17 @@ export default function App() {
   // (its detail drawing, centred on its box); everything else stays a box.
   const expanded = operating && composite.meta.boxMode && focusedId ? [focusedId] : [];
   const expandedKey = expanded.join();
+  // Detail view: the substation last dragged, which the spread must not push —
+  // its neighbours make room instead, during the drag and after the drop (so
+  // it stays where it was dropped). View state, like a selection.
+  const [dragFixed, setDragFixed] = useState<string | null>(null);
 
   // `version` is the load-bearing dep: `composite` mutates in place.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const layout = useMemo(() => engine.layout(composite, { expanded }), [engine, composite, version, expandedKey]);
+  const layout = useMemo(
+    () => engine.layout(composite, { expanded, fixed: dragFixed ? [dragFixed] : [] }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [engine, composite, version, expandedKey, dragFixed]
+  );
 
   const canvasRef = useRef<CompositeCanvasHandle>(null);
 
@@ -224,10 +233,13 @@ export default function App() {
 
   // Box drag: transient setChildTransform during the gesture, one undoable
   // TransformChildCommand committed on pointer-up (mirrors the Svelte editor).
+  // `base` is where the drag moves from: the stored spot plus the detail
+  // spread's offset, i.e. where the drawing is shown — so it doesn't jump.
   const dragRef = useRef<{
     id: string;
     startPtr: Point;
     before: { x: number; y: number; angleDeg: number };
+    base: Point;
   } | null>(null);
 
   const boxMode = !!composite.meta.boxMode;
@@ -409,13 +421,15 @@ export default function App() {
       const child = composite.getChild(id);
       const handle = canvasRef.current;
       if (!child || !handle) return;
+      const shown = layout.children.find((c) => c.instance.id === id)?.spreadOffset ?? { x: 0, y: 0 };
       dragRef.current = {
         id,
         startPtr: handle.clientToSvg(event.clientX, event.clientY),
-        before: { x: child.x, y: child.y, angleDeg: child.angleDeg }
+        before: { x: child.x, y: child.y, angleDeg: child.angleDeg },
+        base: { x: child.x + shown.x, y: child.y + shown.y }
       };
     },
-    [tool, composite]
+    [tool, composite, layout]
   );
 
   // Global drag handlers: move transiently, commit one undoable step on release.
@@ -425,10 +439,11 @@ export default function App() {
       const handle = canvasRef.current;
       if (!d || !handle) return;
       const p = handle.clientToSvg(e.clientX, e.clientY);
+      setDragFixed(d.id);
       composite.setChildTransform(
         d.id,
-        d.before.x + (p.x - d.startPtr.x),
-        d.before.y + (p.y - d.startPtr.y),
+        d.base.x + (p.x - d.startPtr.x),
+        d.base.y + (p.y - d.startPtr.y),
         d.before.angleDeg
       );
     };
@@ -820,7 +835,7 @@ export default function App() {
 
         {/* Minimal floating chrome — the app owns all orchestration; the canvas
             just emits semantic callbacks (see the adapter contract). */}
-        <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 flex-wrap items-center gap-1 rounded-full border border-border bg-background/85 px-2 py-1 shadow-lg backdrop-blur-sm">
+        <div className="absolute bottom-4 left-1/2 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-wrap items-center gap-1 rounded-full border border-border bg-background/85 px-2 py-1 shadow-lg backdrop-blur-sm">
           <ToolButton
             title="Operate (O) — open a substation, toggle its switches"
             active={tool === 'operate'}

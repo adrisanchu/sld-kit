@@ -166,6 +166,16 @@ detailFixture.updateMeta({ boxMode: false });
 const detailEngine = new CompositeLayoutEngine(new LayoutEngine({ ...SLD_LAYOUT, busBarLabelAnchor: 'center-left' }, { busBarLabel: barBusIdLabel }));
 const detailHtml = renderToStaticMarkup(h(CompositeCanvas, { layout: detailEngine.layout(detailFixture) }));
 const detailSvg = new CompositeSvgExporter(detailEngine).export(detailFixture);
+// Detail spread (as the app runs it): the fixture's detail drawings never
+// overlap, while its box view keeps the stored, compact positions.
+const overlaps = (a, b) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+const anyOverlap = (children) =>
+  children.some((a, i) => children.some((b, j) => j > i && overlaps(a.worldBounds, b.worldBounds)));
+const spreadEngine = new CompositeLayoutEngine(undefined, undefined, undefined, { detailSpread: {} });
+const spreadDetail = spreadEngine.layout(detailFixture);
+const spreadBox = spreadEngine.layout(fixture);
+const plainBox = new CompositeLayoutEngine().layout(fixture);
 // `curved` takes the same route as `orthogonal` and rounds its bends, on screen
 // and in the (office-safe) export. BRAVO drops 200px so the ALPHA–BRAVO tie
 // bends. Obstacle avoidance is covered by the core tests.
@@ -286,6 +296,11 @@ const checks = [
     'split box view: a hovered section gets a frame through its own (world) corners',
     sectionHoverHtml.includes(`points="${sectionWorldCorners(splitChild, splitChild.boxes[1].key).map((p) => `${p.x},${p.y}`).join(' ')}"`) &&
       sectionHoverHtml.includes(`data-section="${splitChild.boxes[1].key}"`)
+  ],
+  ['detail spread: no detail drawings overlap', !anyOverlap(spreadDetail.children)],
+  [
+    'detail spread: the box view is untouched',
+    JSON.stringify(spreadBox.children.map((c) => c.worldBounds)) === JSON.stringify(plainBox.children.map((c) => c.worldBounds))
   ],
   ['selection frame carries the child\'s colour class', selectedHtml.includes('class="sld-selection text-primary pointer-events-none sld-volt-400" data-state="selected"')]
 ];
