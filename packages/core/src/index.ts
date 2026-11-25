@@ -240,6 +240,7 @@ export {
   type SectionTie
 } from './composite/sections';
 export { tallyComposite, type CompositeTally } from './composite/tally';
+export { tidyCommand, TIDY_BOX_GAP, type TidyOptions } from './composite/tidy';
 export {
   removeOverlaps,
   projectLocations,
