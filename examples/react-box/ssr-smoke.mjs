@@ -16,6 +16,7 @@ import {
   CompositeDocument,
   CompositeLayoutEngine,
   CompositeLine,
+  CompositeSerializer,
   CompositeSvgExporter,
   DiagramInstance,
   LayoutEngine,
@@ -32,6 +33,8 @@ import {
 import { CompositeCanvas } from '@sld-kit/react';
 import { buildBoxComposite, bayId, COUPLER_ID } from './src/fixture.ts';
 import { barBusIdLabel, boxSplit, busTopology, openFeeders, sectionLabel } from './src/topology.ts';
+import { sampleBatch } from './src/samples/sampleBatch.ts';
+import { readBatch, boxSizes, placeDiagrams, appendCommand, appendOrigin } from './src/importBatch.ts';
 
 const sub = (id, name, busId, kv, feeders) =>
   buildDocument({
@@ -176,6 +179,37 @@ const spreadEngine = new CompositeLayoutEngine(undefined, undefined, undefined, 
 const spreadDetail = spreadEngine.layout(detailFixture);
 const spreadBox = spreadEngine.layout(fixture);
 const plainBox = new CompositeLayoutEngine().layout(fixture);
+// Bulk import: the fictional sample batch, geo-placed and appended to the demo
+// fixture as ONE undoable step, with lines from the feeder ids the diagrams share.
+const importTarget = buildBoxComposite();
+const importStack = new CommandStack();
+const importEngine = new CompositeLayoutEngine(undefined, undefined, undefined, { detailSpread: {} });
+const batch = readBatch(sampleBatch());
+const batchPositions = placeDiagrams(batch.diagrams, boxSizes(importEngine, batch.diagrams), { mode: 'geo', compaction: 0.6 });
+const childrenBefore = importTarget.allChildren().length;
+const linesBefore = importTarget.allLines().length;
+importStack.execute(
+  appendCommand(importTarget, batch.diagrams, batchPositions, appendOrigin(importEngine.layout(importTarget).bounds)),
+  importTarget
+);
+const importedBox = importEngine.layout(importTarget);
+importTarget.updateMeta({ boxMode: false });
+const importedDetail = importEngine.layout(importTarget);
+importTarget.updateMeta({ boxMode: true });
+const importedLines = importTarget.allLines().length - linesBefore;
+importStack.undo(importTarget);
+// A batch holding a composite opens it, its children resolved from the batch
+// (relinked to the diagrams' fresh ids) and given the box view's defaults.
+const someDiagrams = sampleBatch().slice(0, 4);
+const plainComposite = new CompositeDocument({ id: 'sample-composite', name: 'Sample composite' });
+someDiagrams.forEach((f, i) => {
+  const id = JSON.parse(f.text).meta.id;
+  plainComposite.addChild(DiagramInstance.of({ id: `i-${id}`, libraryId: id, x: i * 360, y: 0 }));
+});
+const opened = readBatch([
+  ...someDiagrams,
+  { path: 'sample-composite.json', text: JSON.stringify(CompositeSerializer.toJSON(plainComposite)) }
+]).composite;
 // `curved` takes the same route as `orthogonal` and rounds its bends, on screen
 // and in the (office-safe) export. BRAVO drops 200px so the ALPHA–BRAVO tie
 // bends. Obstacle avoidance is covered by the core tests.
@@ -301,6 +335,22 @@ const checks = [
   [
     'detail spread: the box view is untouched',
     JSON.stringify(spreadBox.children.map((c) => c.worldBounds)) === JSON.stringify(plainBox.children.map((c) => c.worldBounds))
+  ],
+  ['import: every sample file is valid', batch.results.length === batch.diagrams.length && batch.results.every((r) => r.status === 'imported')],
+  ['import: every diagram lands on the canvas', importedBox.children.length === childrenBefore + batch.diagrams.length],
+  ['import: shared feeder ids become lines', importedLines > 0 && importedBox.lines.length >= importedLines],
+  ['import: no boxes overlap', !anyOverlap(importedBox.children)],
+  ['import: no detail drawings overlap', !anyOverlap(importedDetail.children)],
+  [
+    'import: one undo removes the whole batch',
+    importTarget.allChildren().length === childrenBefore && importTarget.allLines().length === linesBefore
+  ],
+  [
+    'import: a composite in the batch opens, every child resolved, as a box view',
+    opened?.allChildren().length === 4 &&
+      opened.allChildren().every((c) => c.resolved) &&
+      opened.meta.boxMode === true &&
+      opened.meta.defaultRouting === 'orthogonal'
   ],
   ['selection frame carries the child\'s colour class', selectedHtml.includes('class="sld-selection text-primary pointer-events-none sld-volt-400" data-state="selected"')]
 ];

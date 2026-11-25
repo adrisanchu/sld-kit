@@ -75,6 +75,8 @@ import { TargetPin } from './editor/TargetPin';
 import type { AnchorFn } from './editor/Floating';
 import type { LineRatingData } from './fixture';
 import { SubstationDialog, type SubstationEditTarget } from './editor/SubstationDialog';
+import { ImportDialog } from './editor/ImportDialog';
+import { appendCommand, appendOrigin, boxSizes } from './importBatch';
 import {
   barFor,
   boxAt,
@@ -141,8 +143,9 @@ const snap = (v: number) => Math.round(v / PLACE_SNAP) * PLACE_SNAP;
 const TEXT_SCREEN_SIZE = { minPx: 11 };
 
 export default function App() {
-  const [composite] = useState(buildBoxComposite);
-  const [stack] = useState(() => new CommandStack<CompositeDocument>());
+  // Both are replaced when an imported composite is opened (a fresh history).
+  const [composite, setComposite] = useState<CompositeDocument>(buildBoxComposite);
+  const [stack, setStack] = useState(() => new CommandStack<CompositeDocument>());
 
   // The document mutates in place, so a version counter — not its identity — is
   // what tells React to re-derive (the hook is generic over CompositeDocument).
@@ -169,7 +172,9 @@ export default function App() {
         // stored positions stay the compact box-view ones.
         { lineLabels: ratingLabels, boxSections: boxSplit, lineNameFontSize: 16, detailSpread: {} }
       ),
-    []
+    // A fresh engine per opened composite, so no cached layout outlives it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [composite]
   );
   const [tool, setTool] = useState<Tool>('move');
   // Operate: the substation the user opened (box view: expanded in place;
@@ -230,6 +235,9 @@ export default function App() {
   // would read it as a line point).
   const swallowClick = useRef(false);
   const [dark, setDark] = useState(false);
+  // The bulk-import dialog; `fitPending` frames the canvas once an import lands.
+  const [importing, setImporting] = useState(false);
+  const [fitPending, setFitPending] = useState(false);
 
   // Box drag: transient setChildTransform during the gesture, one undoable
   // TransformChildCommand committed on pointer-up (mirrors the Svelte editor).
@@ -668,7 +676,7 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
-      if (editor) return; // the dialog owns the keyboard while open
+      if (editor || importing) return; // a dialog owns the keyboard while open
       if (e.key === 'Escape') {
         setDraft([]);
         setPicker(null);
@@ -690,7 +698,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedLineId, selectedChildId, deleteSelected, blur, chooseTool, editor]);
+  }, [selectedLineId, selectedChildId, deleteSelected, blur, chooseTool, editor, importing]);
 
   const exportSvg = () => {
     // Export through the same engine the canvas uses, so the SVG carries the
@@ -703,6 +711,35 @@ export default function App() {
     });
     downloadText(`${slugify(composite.meta.name)}.svg`, svg, 'image/svg+xml');
   };
+  // ── Bulk import: append diagrams, or open a composite ─────────────────────
+  const importSizes = useCallback((docs: SldDocument[]) => boxSizes(engine, docs), [engine]);
+  const appendBatch = (docs: SldDocument[], positions: Map<string, Point>) => {
+    // Right of what's already there, as ONE undoable step (boxes + their lines).
+    const origin = appendOrigin(layout.children.length ? layout.bounds : null);
+    run(appendCommand(composite, docs, positions, origin, PLACE_SNAP));
+    setImporting(false);
+    setFitPending(true);
+  };
+  const openComposite = (next: CompositeDocument) => {
+    setComposite(next);
+    setStack(new CommandStack<CompositeDocument>());
+    setFocusedId(null);
+    setSelectedChildId(null);
+    setSelectedLineId(null);
+    setLineEditAt(null);
+    setDraft([]);
+    setPicker(null);
+    setPlacing(null);
+    setDragFixed(null);
+    setImporting(false);
+    setFitPending(true);
+  };
+  useEffect(() => {
+    if (!fitPending) return;
+    setFitPending(false);
+    canvasRef.current?.flyToFit({ durationMs: 450 });
+  }, [fitPending, layout]);
+
   const exportJson = () =>
     downloadText(
       `${slugify(composite.meta.name)}.json`,
@@ -927,6 +964,14 @@ export default function App() {
           </ToolButton>
 
           <Divider />
+          <button
+            type="button"
+            title="Import diagram / composite JSON files"
+            onClick={() => setImporting(true)}
+            className="rounded px-2 py-1 text-xs hover:bg-accent"
+          >
+            Import
+          </button>
           <button type="button" onClick={exportSvg} className="rounded px-2 py-1 text-xs hover:bg-accent">
             SVG
           </button>
@@ -974,6 +1019,15 @@ export default function App() {
             kinds={LINE_KINDS}
             onApply={applyLineEdit}
             onClose={() => setLineEditAt(null)}
+          />
+        )}
+        {importing && (
+          <ImportDialog
+            existingNames={composite.allChildren().flatMap((c) => (c.resolved ? [c.resolved.meta.name] : []))}
+            sizesOf={importSizes}
+            onAppend={appendBatch}
+            onOpen={openComposite}
+            onCancel={() => setImporting(false)}
           />
         )}
         {editor && (
