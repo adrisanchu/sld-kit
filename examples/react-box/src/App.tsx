@@ -27,6 +27,7 @@ import {
   DEFAULT_LINE_NAME_PLACEMENT,
   SetPortDirectionCommand,
   SetChildrenLockedCommand,
+  tidyCommand,
   UpdateLineKindCommand,
   TransformChildCommand,
   newId,
@@ -69,6 +70,7 @@ import {
   SquarePen,
   Trash2,
   Undo2,
+  WandSparkles,
   Waypoints
 } from 'lucide-react';
 import { buildBoxComposite, ratingLabels, voltageClass, voltageFill } from './fixture';
@@ -81,6 +83,7 @@ import type { LineRatingData } from './fixture';
 import { SubstationDialog, type SubstationEditTarget } from './editor/SubstationDialog';
 import { ImportDialog } from './editor/ImportDialog';
 import { boltDecor } from './editor/BoltDecor';
+import { TidyPrompt } from './editor/TidyPrompt';
 import { appendCommand, appendOrigin, boxSizes } from './importBatch';
 import {
   barFor,
@@ -181,8 +184,16 @@ export default function App() {
         undefined,
         // Line names at 16, the size of the rating labels beside them. Detail
         // view spreads the drawings apart so they never overlap, while the
-        // stored positions stay the compact box-view ones.
-        { lineLabels: ratingLabels, boxSections: boxSplit, lineNameFontSize: 16, detailSpread: {} }
+        // stored positions stay the compact box-view ones. `freeze`: between
+        // Tidies the layout only changes where the composite did — a drag moves
+        // (and re-routes) only what's dragged, so big grids stay fast and calm.
+        {
+          lineLabels: ratingLabels,
+          boxSections: boxSplit,
+          lineNameFontSize: 16,
+          detailSpread: {},
+          freeze: true
+        }
       ),
     // A fresh engine per opened composite, so no cached layout outlives it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -201,12 +212,15 @@ export default function App() {
   // its neighbours make room instead, during the drag and after the drop (so
   // it stays where it was dropped). View state, like a selection.
   const [dragFixed, setDragFixed] = useState<string | null>(null);
+  // Bumped by a Tidy: the engine forgot its frozen layout, even when no
+  // position changed (so `version` didn't move), and must lay out again.
+  const [tidyTick, setTidyTick] = useState(0);
 
   // `version` is the load-bearing dep: `composite` mutates in place.
   const layout = useMemo(
     () => engine.layout(composite, { expanded, fixed: dragFixed ? [dragFixed] : [] }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [engine, composite, version, expandedKey, dragFixed]
+    [engine, composite, version, expandedKey, dragFixed, tidyTick]
   );
 
   const canvasRef = useRef<CompositeCanvasHandle>(null);
@@ -223,6 +237,13 @@ export default function App() {
     const t = setTimeout(() => setHint(null), 2500);
     return () => clearTimeout(t);
   }, [hint]);
+  // A neutral confirmation (e.g. "Layout tidied"), shown in any tool.
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 2500);
+    return () => clearTimeout(t);
+  }, [notice]);
   // Last pointer-down position (viewport px), to anchor popovers.
   const lastPointer = useRef({ x: 0, y: 0 });
   const mainRef = useRef<HTMLElement>(null);
@@ -250,6 +271,18 @@ export default function App() {
   // The bulk-import dialog; `fitPending` frames the canvas once an import lands.
   const [importing, setImporting] = useState(false);
   const [fitPending, setFitPending] = useState(false);
+  // Tidy asks first when some substations are locked.
+  const [tidyAsk, setTidyAsk] = useState(false);
+  const lockedCount = composite.allChildren().filter((c) => c.locked).length;
+  /** Re-run the layout algorithms on everything: one undoable step for what moves. */
+  const runTidy = (includeLocked: boolean) => {
+    setTidyAsk(false);
+    const cmd = tidyCommand(composite, engine, { includeLocked });
+    if (cmd) run(cmd);
+    setTidyTick((t) => t + 1);
+    setNotice(cmd ? 'Layout tidied · undo to go back' : 'Layout tidied');
+  };
+  const tidy = () => (lockedCount > 0 ? setTidyAsk(true) : runTidy(false));
 
   // Box drag: transient setChildTransform during the gesture, one undoable
   // TransformChildCommand committed on pointer-up (mirrors the Svelte editor).
@@ -731,7 +764,7 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
-      if (editor || importing) return; // a dialog owns the keyboard while open
+      if (editor || importing || tidyAsk) return; // a dialog owns the keyboard while open
       // Escape steps back: first it cancels whatever is in progress (a line
       // being drawn, the bay picker, a substation being placed, a line's editor);
       // with nothing in progress, it leaves Draw for the default Move tool.
@@ -776,6 +809,7 @@ export default function App() {
     chooseTool,
     editor,
     importing,
+    tidyAsk,
     draft.length,
     picker,
     placing,
@@ -1028,6 +1062,9 @@ export default function App() {
           >
             <Spline className="h-4 w-4" />
           </ToolButton>
+          <ToolButton title="Tidy the layout (re-route all lines, separate boxes)" onClick={tidy}>
+            <WandSparkles className="h-4 w-4" />
+          </ToolButton>
           <ToolButton
             title={`${selectedLocked ? 'Unlock position' : 'Lock position'} (${LOCK_KEY})`}
             active={selectedLocked}
@@ -1077,6 +1114,11 @@ export default function App() {
             Click to place {placing.meta.name} · Esc to cancel
           </p>
         )}
+        {notice && (
+          <p className="pointer-events-none absolute left-1/2 top-12 z-10 -translate-x-1/2 rounded-full border border-border bg-background px-3 py-1 text-xs shadow">
+            {notice}
+          </p>
+        )}
         {tool === 'move' && hint && (
           <p className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-amber-500 px-3 py-1 text-xs text-white shadow">
             {hint}
@@ -1118,6 +1160,7 @@ export default function App() {
             onClose={() => setLineEditAt(null)}
           />
         )}
+        {tidyAsk && <TidyPrompt lockedCount={lockedCount} onTidy={runTidy} onCancel={() => setTidyAsk(false)} />}
         {importing && (
           <ImportDialog
             existingNames={composite.allChildren().flatMap((c) => (c.resolved ? [c.resolved.meta.name] : []))}
