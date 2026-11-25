@@ -175,7 +175,8 @@ export {
   PARALLEL_LANE_SPACING,
   LEADER_STROKE_WIDTH,
   LEADER_OPACITY,
-  LEADER_DOT_RADIUS
+  LEADER_DOT_RADIUS,
+  DETAIL_SPREAD_GAP
 } from './composite/layout-constants';
 export { CompositeDocument, type CompositeMeta, type CompositeChange } from './composite/CompositeDocument';
 export {

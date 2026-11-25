@@ -25,6 +25,7 @@ import { PortResolver, feederKey } from './PortResolver';
 import { facingSide, rotateSide, type BoxSide, type Port } from './ports';
 import {
   BOX_SIZE,
+  DETAIL_SPREAD_GAP,
   CABLE_DASH_ARRAY,
   CURVE_RADIUS,
   DEMAND_LEAD_LENGTH,
@@ -60,6 +61,7 @@ import {
 } from './labelCollisions';
 import { resolveFormat, type ElementFormat, type ElementFormatResolver, type FormatContext } from '../theme';
 import { feederBoxCenter, layoutSectionBoxes, type BoxSectionsResolver, type SectionBox, type SectionTie } from './sections';
+import { removeOverlaps } from './arrange';
 
 /** Fixed frame for an unresolved child, so it stays selectable and movable. */
 export const PLACEHOLDER_FRAME = { width: 360, height: 240 } as const;
@@ -134,6 +136,13 @@ export interface ChildLayout {
    * feeders attached at the drawing's tips instead of the box perimeter.
    */
   expanded?: boolean;
+  /**
+   * Detail view with `detailSpread` on: how far the overlap removal moved this
+   * child from its home spot (its drawing centred on its box). Absent when it
+   * didn't move. Adding it to the instance's `x`/`y` makes the displayed spot
+   * the stored one (e.g. when a drag starts, so the child doesn't jump).
+   */
+  spreadOffset?: Point;
 }
 
 /** Per-call layout request (view state, not document state). */
@@ -144,6 +153,22 @@ export interface CompositeLayoutRequest {
    * one substation in place (e.g. to operate its switches). Ignored in detail view.
    */
   expanded?: Iterable<string>;
+  /**
+   * Detail view with `detailSpread` on: instance ids the overlap removal must
+   * not move — e.g. the child being dragged, so it stays under the pointer
+   * while its neighbours make room.
+   */
+  fixed?: Iterable<string>;
+}
+
+/** Where `makeChildLayout` puts a child's frame relative to its instance position. */
+interface ChildPlacement {
+  /** Centre the frame on a box of this size at the instance position (instead of at its top-left). */
+  centreOn?: { width: number; height: number };
+  /** Flag the child as expanded in place (box view). */
+  expanded?: boolean;
+  /** Extra world translation (the detail spread's offset). */
+  shift?: Point;
 }
 
 /**
@@ -1108,6 +1133,16 @@ export interface CompositeLayoutOptions {
    * canvas starts from it (see {@link readableLineNameSize}).
    */
   lineNameFontSize?: number;
+  /**
+   * Detail view: keep the detail drawings from overlapping. A child's stored
+   * position is its *box* position; with this on, detail view centres each
+   * drawing on its box and pushes overlapping drawings apart (order-preserving,
+   * see `removeOverlaps`) — at layout time only, nothing is persisted. So the
+   * box view stays compact while the detail view never overlaps, and the
+   * export (same engine) matches. `gap` defaults to {@link DETAIL_SPREAD_GAP}.
+   * Off by default: detail drawings sit at the instance's top-left, as before.
+   */
+  detailSpread?: { gap?: number } | false;
 }
 
 export class CompositeLayoutEngine {
@@ -1117,6 +1152,9 @@ export class CompositeLayoutEngine {
   private readonly boxSections?: BoxSectionsResolver;
   private readonly cornerRadius: number;
   private readonly lineNameFontSize: number;
+  private readonly spreadGap: number | null;
+  /** Last detail spread, keyed by its inputs, so re-renders don't re-solve it. */
+  private spreadMemo: { key: string; offsets: Map<string, Point> } | null = null;
   /** Detail-view child layouts with swapped directions, keyed by `(libraryId, dir signature)`. */
   private detailLayoutCache = new Map<string, DiagramLayout>();
 
@@ -1133,6 +1171,7 @@ export class CompositeLayoutEngine {
     this.boxSections = options.boxSections;
     this.cornerRadius = options.cornerRadius ?? CURVE_RADIUS;
     this.lineNameFontSize = options.lineNameFontSize ?? LINE_NAME_FONT_SIZE;
+    this.spreadGap = options.detailSpread ? (options.detailSpread.gap ?? DETAIL_SPREAD_GAP) : null;
   }
 
   layout(doc: CompositeDocument, request: CompositeLayoutRequest = {}): CompositeLayout {
@@ -1143,11 +1182,20 @@ export class CompositeLayoutEngine {
     // Box view can expand some children in place: their detail drawing, centred
     // on the box they replace (so the camera can fly onto the same spot).
     const expanded = new Set(boxMode ? (request.expanded ?? []) : []);
+    // Detail spread: every detail drawing starts centred on its box (then the
+    // overlap removal below moves it), like an expanded child in box view.
+    const spread = !boxMode && this.spreadGap !== null;
+    const placeOf = (instance: DiagramInstance): ChildPlacement =>
+      expanded.has(instance.id)
+        ? { centreOn: this.boxFrameSize(instance), expanded: true }
+        : spread
+          ? { centreOn: this.boxFrameSize(instance) }
+          : {};
     let children = doc.allChildren().map((instance) => {
       if (expanded.has(instance.id) && instance.resolved) {
-        return this.makeChildLayout(instance, this.childEngine.layout(instance.resolved), false, this.boxFrameSize(instance));
+        return this.makeChildLayout(instance, this.childEngine.layout(instance.resolved), false, placeOf(instance));
       }
-      return this.makeChildLayout(instance, instance.resolved ? engine.layout(instance.resolved) : null, boxMode);
+      return this.makeChildLayout(instance, instance.resolved ? engine.layout(instance.resolved) : null, boxMode, placeOf(instance));
     });
 
     // The floating-connector model (attach-per-view, node-relative leads,
@@ -1159,17 +1207,22 @@ export class CompositeLayoutEngine {
     const floating = boxMode || isOrthogonalRouting(defaultRouting);
     if (floating) {
       const autoFacing = doc.meta.autoFacing ?? false;
+      // Peers face each other from their home spots (box centres), so a feeder
+      // leaves on the same side in both views, spread or not.
       const peerCenterOf = autoFacing ? this.buildPeerCenters(doc, children) : undefined;
       // Detail view renders real child geometry, so a feeder whose effective
       // direction differs from its authored one needs the child *re-laid-out* with
       // that endpoint swapped — physically moving the arrow tip. Box view keeps
       // the rectangle and only re-picks the perimeter side, so it is untouched.
-      if (!boxMode) children = this.applyEffectiveDirections(doc, children, engine, autoFacing, peerCenterOf);
+      if (!boxMode) children = this.applyEffectiveDirections(doc, children, engine, autoFacing, peerCenterOf, placeOf);
       // An expanded child is real detail geometry too: same arrow re-layout.
-      else if (expanded.size) children = this.applyEffectiveDirections(doc, children, this.childEngine, autoFacing, peerCenterOf, expanded);
+      else if (expanded.size) children = this.applyEffectiveDirections(doc, children, this.childEngine, autoFacing, peerCenterOf, placeOf, expanded);
+      // Spread on the final frames (the arrow re-layout may have resized them).
+      if (spread) children = this.spreadDetail(children, request.fixed, placeOf);
       return this.layoutFloating(doc, children, boxMode, defaultRouting, autoFacing, peerCenterOf);
     }
 
+    if (spread) children = this.spreadDetail(children, request.fixed, placeOf);
     const lines = this.resolveLines(doc.allLines(), children, defaultRouting);
     // A manual line for a shared id takes precedence: suppress its auto-link.
     const claimed = new Set<string>();
@@ -1185,17 +1238,18 @@ export class CompositeLayoutEngine {
    * frame. In box mode a resolved child gets the uniform `boxSize` frame (when
    * set); its compact layout is still kept, since the port resolver reads the
    * feeder tips from it to order same-side slots along the box edge.
-   */
-  /**
-   * `centreOn`: lay the frame out centred on a box of this size at the instance
-   * position (an expanded child replacing its box) instead of at its top-left.
+   *
+   * `placement.centreOn`: lay the frame out centred on a box of this size at the
+   * instance position (an expanded child replacing its box, or a spread detail
+   * drawing) instead of at its top-left; `placement.shift` then moves it further.
    */
   private makeChildLayout(
     instance: DiagramInstance,
     layout: DiagramLayout | null,
     boxMode = false,
-    centreOn?: { width: number; height: number }
+    placement: ChildPlacement = {}
   ): ChildLayout {
+    const { centreOn, shift } = placement;
     const size = !layout ? PLACEHOLDER_FRAME : boxMode && this.boxSize ? this.boxSize : layout.size;
     let frame: Rect = { x: 0, y: 0, width: size.width, height: size.height };
     // Box view: a consumer split lays several same-size boxes side by side; the
@@ -1209,8 +1263,8 @@ export class CompositeLayoutEngine {
     }
     const pivot: Point = { x: frame.width / 2, y: frame.height / 2 };
     // Centring keeps the world centre where the box's was: (x + bw/2, y + bh/2).
-    const dx = centreOn ? (centreOn.width - frame.width) / 2 : 0;
-    const dy = centreOn ? (centreOn.height - frame.height) / 2 : 0;
+    const dx = (centreOn ? (centreOn.width - frame.width) / 2 : 0) + (shift?.x ?? 0);
+    const dy = (centreOn ? (centreOn.height - frame.height) / 2 : 0) + (shift?.y ?? 0);
     const transform = new Transform2D(instance.x + dx, instance.y + dy, instance.angleDeg, pivot);
     return {
       instance,
@@ -1223,8 +1277,43 @@ export class CompositeLayoutEngine {
       name: instance.resolved?.meta.name || instance.libraryId,
       nameLabel: resolveNameLabelLayout(frame, instance.labelAnchor, instance.labelDirection, instance.angleDeg),
       ...(boxes ? { boxes, ties } : {}),
-      ...(centreOn ? { expanded: true } : {})
+      ...(placement.expanded ? { expanded: true } : {}),
+      ...(shift && (shift.x || shift.y) ? { spreadOffset: { ...shift } } : {})
     };
+  }
+
+  /**
+   * Detail spread: push overlapping detail drawings apart (see
+   * `CompositeLayoutOptions.detailSpread`), keeping `fixed` ids put, and
+   * re-wrap the moved children. Memoised on the inputs (ids, frames, fixed),
+   * so a re-render with nothing moved reuses the last solution.
+   */
+  private spreadDetail(
+    children: ChildLayout[],
+    fixed: Iterable<string> | undefined,
+    placeOf: (instance: DiagramInstance) => ChildPlacement
+  ): ChildLayout[] {
+    const gap = this.spreadGap ?? DETAIL_SPREAD_GAP;
+    const fixedIds = [...(fixed ?? [])].sort();
+    const items = children.map((c) => ({ id: c.instance.id, rect: c.worldBounds }));
+    const key = [
+      gap,
+      fixedIds.join(','),
+      ...items.map(({ id, rect: r }) => `${id}:${r.x},${r.y},${r.width},${r.height}`)
+    ].join('|');
+    let offsets = this.spreadMemo?.key === key ? this.spreadMemo.offsets : null;
+    if (!offsets) {
+      // No crowd expansion: it scales about the fixed child when there is one
+      // and about the centroid otherwise, so starting a drag would shift the
+      // whole drawing. Pairwise pushes alone give the same answer either way.
+      offsets = removeOverlaps(items, { gap, fixed: fixedIds, expand: false });
+      this.spreadMemo = { key, offsets };
+    }
+    return children.map((child) => {
+      const d = offsets.get(child.instance.id);
+      if (!d || (!d.x && !d.y)) return child;
+      return this.makeChildLayout(child.instance, child.layout, false, { ...placeOf(child.instance), shift: d });
+    });
   }
 
   /** The frame size a child has as a (single) box: the uniform `boxSize`, else its compact layout's. */
@@ -1249,6 +1338,8 @@ export class CompositeLayoutEngine {
     engine: LayoutEngine,
     autoFacing: boolean,
     peerCenterOf: Map<string, Point> | undefined,
+    /** How each child's frame sits on its instance position (centred, expanded…). */
+    placeOf: (instance: DiagramInstance) => ChildPlacement,
     /** Restrict to these instance ids (box view: just the expanded children). */
     only?: ReadonlySet<string>
   ): ChildLayout[] {
@@ -1270,7 +1361,7 @@ export class CompositeLayoutEngine {
       if (overrides.size === 0) return child; // no effective change → share the cached layout
 
       const relaid = this.relaidChildLayout(instance.libraryId, instance.resolved, engine, overrides);
-      return this.makeChildLayout(instance, relaid, false, child.expanded ? this.boxFrameSize(instance) : undefined);
+      return this.makeChildLayout(instance, relaid, false, placeOf(instance));
     });
   }
 

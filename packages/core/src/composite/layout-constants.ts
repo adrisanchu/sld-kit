@@ -56,6 +56,9 @@ export const PARALLEL_LANE_SPACING = 16;
  */
 export const BOX_SIZE = { width: 200, height: 72 } as const;
 
+/** Default clearance between detail drawings when `detailSpread` is on (see `CompositeLayoutOptions`). */
+export const DETAIL_SPREAD_GAP = 48;
+
 /** How far a demand's dangling lead hangs off its feeder, node-relative. */
 export const DEMAND_LEAD_LENGTH = 64;
 
