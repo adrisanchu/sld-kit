@@ -151,10 +151,12 @@ export interface ArrangeOptions {
   /** Clearance between boxes, in world units (default 40). */
   gap?: number;
   /**
-   * How hard to pull far-apart boxes together, 0..1 (default 0.6). Along each
-   * axis, the empty stretch between consecutive boxes is capped: at `1` to one
-   * box (a tight layout that only keeps the order), rising to ten boxes as it
-   * nears `0`; `0` keeps the anchors' true proportions.
+   * How much to even out the density, 0..1 (default 0.6). Each axis blends the
+   * anchors' true (scaled) position with their rank along that axis: `0` keeps
+   * the true proportions (a dense cluster stays dense, outliers stay far), `1`
+   * spaces them evenly by order alone. Either way, who sits west / north of
+   * whom is kept. Above 0 it also caps the arrangement's overall size, tighter
+   * the higher it goes.
    */
   compaction?: number;
 }
@@ -171,11 +173,11 @@ interface Cluster {
  * Arrange boxes from their anchors into a compact layout without overlaps:
  *
  * 1. Items with the same anchor form one cluster, side by side in input order.
- * 2. The anchors are scaled so neighbouring boxes sit about one box apart
- *    (the median nearest-neighbour distance becomes a box diagonal plus `gap`).
- * 3. Along each axis, long empty stretches are capped (see `compaction`), so
- *    outliers move in and lines get shorter, while the order along that axis
- *    is kept.
+ * 2. Each axis is blended towards the anchors' rank order (see `compaction`):
+ *    dense clusters open up and far outliers move in, so lines get shorter,
+ *    while the order along each axis is kept exactly.
+ * 3. The result is scaled so neighbouring boxes sit about one box apart (the
+ *    median nearest-neighbour distance becomes a box diagonal plus `gap`).
  * 4. Remaining overlaps are pushed apart with {@link removeOverlaps}.
  *
  * Returns each id's top-left corner; the arrangement's bounding box starts at
@@ -191,15 +193,20 @@ export function arrangeByAnchors(items: readonly ArrangeItem[], options: Arrange
   const cellW = Math.max(...clusters.map((c) => c.width)) + gap;
   const cellH = Math.max(...clusters.map((c) => c.height)) + gap;
 
-  // Scale: median nearest-neighbour distance → one box diagonal (+ gap).
-  const nn = medianNearestNeighbour(clusters.map((c) => c.anchor));
-  const scale = nn > 0 ? Math.hypot(cellW, cellH) / nn : 1;
-  const centres = clusters.map((c) => ({ x: c.anchor.x * scale, y: c.anchor.y * scale }));
-
-  // Cap the empty stretches along each axis (order kept).
-  const capOf = (cell: number) => (compaction <= 0 ? Infinity : cell * (1 + 9 * (1 - compaction)));
-  capGaps(centres, 'x', capOf(cellW));
-  capGaps(centres, 'y', capOf(cellH));
+  // Even out the density (order kept), then scale: median nearest-neighbour
+  // distance → one box diagonal (+ gap).
+  const blended = blendWithRanks(
+    clusters.map((c) => c.anchor),
+    compaction
+  );
+  const nn = medianNearestNeighbour(blended);
+  const scale = Math.min(
+    nn > 0 ? Math.hypot(cellW, cellH) / nn : 1,
+    // …but, compacting, never sprawl over more than AREA_FACTOR / compaction ×
+    // the boxes' own area (no cap at 0: true distances stay true).
+    compaction > 0 ? areaScale(blended, (clusters.length * cellW * cellH * AREA_FACTOR) / compaction) : Infinity
+  );
+  const centres = blended.map((p) => ({ x: p.x * scale, y: p.y * scale }));
 
   // Separate what still overlaps.
   const rects = clusters.map((c, i) => ({
@@ -224,6 +231,23 @@ export function arrangeByAnchors(items: readonly ArrangeItem[], options: Arrange
     }
   });
   return out;
+}
+
+/**
+ * Fully compacted, the arrangement covers at most this many times the boxes'
+ * own area (cells, gaps included): room for the lines between them, without
+ * letting a sparse region sprawl. Tighter than that, the overlap removal opens
+ * dense spots up. Less compaction allows proportionally more room.
+ */
+const AREA_FACTOR = 4;
+
+/** The scale that gives the points' bounding box `area` (Infinity when it's degenerate). */
+function areaScale(points: readonly Point[], area: number): number {
+  const w = Math.max(...points.map((p) => p.x)) - Math.min(...points.map((p) => p.x));
+  const h = Math.max(...points.map((p) => p.y)) - Math.min(...points.map((p) => p.y));
+  // A line of points (no height or width) scales by its length instead.
+  const extent = w > 0 && h > 0 ? Math.sqrt(w * h) : Math.max(w, h);
+  return extent > 0 ? Math.sqrt(area) / extent : Infinity;
 }
 
 function clusterByAnchor(items: readonly ArrangeItem[], gap: number): Cluster[] {
@@ -256,17 +280,28 @@ function medianNearestNeighbour(points: readonly Point[]): number {
   return nearest.length % 2 ? nearest[mid] : (nearest[mid - 1] + nearest[mid]) / 2;
 }
 
-/** Cap each consecutive gap along `axis` at `cap`, keeping the order (ties stay tied). */
-function capGaps(points: Point[], axis: 'x' | 'y', cap: number): void {
-  if (!Number.isFinite(cap)) return;
-  const order = points.map((_, i) => i).sort((i, j) => points[i][axis] - points[j][axis] || i - j);
-  let prevOld = points[order[0]][axis];
-  let prevNew = prevOld;
-  for (let k = 1; k < order.length; k++) {
-    const p = points[order[k]];
-    const old = p[axis];
-    p[axis] = prevNew + Math.min(old - prevOld, cap);
-    prevOld = old;
-    prevNew = p[axis];
-  }
+/**
+ * Normalise the points (keeping their aspect) and blend each axis with its
+ * rank: `t` = 0 returns the true shape, 1 spaces the distinct values along
+ * each axis evenly over the same extent. Both maps keep the order along each
+ * axis (equal values share a rank), so their blend does too.
+ */
+function blendWithRanks(points: readonly Point[], t: number): Point[] {
+  const minX = Math.min(...points.map((p) => p.x));
+  const minY = Math.min(...points.map((p) => p.y));
+  const extentX = Math.max(...points.map((p) => p.x)) - minX;
+  const extentY = Math.max(...points.map((p) => p.y)) - minY;
+  const unit = Math.max(extentX, extentY) || 1;
+  const rankOf = (axis: 'x' | 'y', extent: number) => {
+    const distinct = [...new Set(points.map((p) => p[axis]))].sort((a, b) => a - b);
+    const index = new Map(distinct.map((v, i) => [v, i]));
+    const steps = Math.max(1, distinct.length - 1);
+    return (v: number) => ((index.get(v) ?? 0) / steps) * (extent / unit);
+  };
+  const rankX = rankOf('x', extentX);
+  const rankY = rankOf('y', extentY);
+  return points.map((p) => ({
+    x: (1 - t) * ((p.x - minX) / unit) + t * rankX(p.x),
+    y: (1 - t) * ((p.y - minY) / unit) + t * rankY(p.y)
+  }));
 }

@@ -145,12 +145,12 @@ describe('arrangeByAnchors', () => {
     expect(Math.min(...rects.map((r) => r.y))).toBeCloseTo(0);
   });
 
-  it('keeps who is west / north of whom on a sparse grid', () => {
+  it.each([0, 0.5, 1])('keeps who is west / north of whom on a sparse grid (compaction %s)', (compaction) => {
     // A 4×3 lattice with uneven spacing: nothing collides, so only scale + caps act.
     const xs = [0, 1, 1.5, 6];
     const ys = [0, 2, 2.4];
     const items = xs.flatMap((x, i) => ys.map((y, j) => item(`${i}-${j}`, x, y)));
-    const out = arrangeByAnchors(items);
+    const out = arrangeByAnchors(items, { compaction });
     for (const a of items) {
       for (const b of items) {
         const ca = centre(out.get(a.id)!);
@@ -161,20 +161,21 @@ describe('arrangeByAnchors', () => {
     }
   });
 
-  it('pulls a far outlier in (compaction caps the empty stretch)', () => {
+  it('pulls a far outlier in (compaction evens out the spacing)', () => {
     const items = [item('a', 0, 0), item('b', 1, 0), item('c', 2, 0), item('far', 100, 0)];
-    const spread = (c: number) => {
+    const gaps = (c: number) => {
       const out = arrangeByAnchors(items, { compaction: c });
-      return out.get('far')!.x - out.get('c')!.x;
+      return { near: out.get('c')!.x - out.get('b')!.x, far: out.get('far')!.x - out.get('c')!.x };
     };
-    const geographic = spread(0);
-    const compact = spread(1);
-    expect(compact).toBeLessThan(geographic / 10);
-    // Fully compact: the outlier sits one cell (box + gap) past its neighbour.
-    expect(compact).toBeCloseTo(BOX.width + 40);
-    // In between, monotone.
-    expect(spread(0.5)).toBeLessThan(geographic);
-    expect(spread(0.5)).toBeGreaterThan(compact);
+    const geographic = gaps(0);
+    expect(geographic.far / geographic.near).toBeCloseTo(98, 0);
+    // Fully compact: spaced by order alone.
+    const compact = gaps(1);
+    expect(compact.far).toBeCloseTo(compact.near);
+    // In between, the outlier's stretch shrinks relative to its neighbours'.
+    const mid = gaps(0.5);
+    expect(mid.far / mid.near).toBeLessThan(geographic.far / geographic.near);
+    expect(mid.far / mid.near).toBeGreaterThan(1);
   });
 
   it('lays out items sharing an anchor side by side, in input order', () => {

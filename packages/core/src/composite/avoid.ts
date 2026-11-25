@@ -140,6 +140,15 @@ class Heap {
 }
 
 /**
+ * Above this many obstacles, a search first looks only at a window around the
+ * two ends (see {@link orthogonalPath}): a big composite then routes each line
+ * among its neighbours instead of across the whole grid.
+ */
+const WINDOW_MIN_OBSTACLES = 16;
+/** The window's margin around the ends' bounding box (at least this, else 1.5 × the largest obstacle side). */
+const WINDOW_MARGIN = 400;
+
+/**
  * Shortest orthogonal path from `start` to `end` that never enters an
  * obstacle's interior, minimising `length + bendPenalty × bends`. `startHeading`
  * is the direction the line is already travelling at `start` (the port's exit
@@ -147,6 +156,12 @@ class Heap {
  * direction it must travel on arrival (into the far port), and arriving any
  * other way costs one bend. Returns the corner points strictly between `start`
  * and `end` (the caller owns the endpoints), or `null` when no path exists.
+ *
+ * With many obstacles the search first stays inside a window around the two
+ * ends, among the obstacles that reach into it; only when no path fits there
+ * does it search the whole grid. A detour beyond the window would be a long
+ * one anyway, so this changes the result only in rare, extreme cases, and
+ * keeps a large composite (a hundred boxes and more) routable interactively.
  */
 export function orthogonalPath(
   start: Point,
@@ -156,8 +171,74 @@ export function orthogonalPath(
   obstacles: Rect[],
   bendPenalty = BEND_PENALTY
 ): Point[] | null {
-  const xs = candidateCoords([start.x, end.x, ...obstacles.flatMap((r) => [r.x, r.x + r.width])]);
-  const ys = candidateCoords([start.y, end.y, ...obstacles.flatMap((r) => [r.y, r.y + r.height])]);
+  if (obstacles.length > WINDOW_MIN_OBSTACLES) {
+    const side = Math.max(...obstacles.map((r) => Math.max(r.width, r.height)));
+    const margin = Math.max(WINDOW_MARGIN, 1.5 * side);
+    const x = Math.min(start.x, end.x) - margin;
+    const y = Math.min(start.y, end.y) - margin;
+    const window: Rect = {
+      x,
+      y,
+      width: Math.max(start.x, end.x) + margin - x,
+      height: Math.max(start.y, end.y) + margin - y
+    };
+    const local = obstacles.filter(
+      (r) =>
+        r.x < window.x + window.width &&
+        r.x + r.width > window.x &&
+        r.y < window.y + window.height &&
+        r.y + r.height > window.y
+    );
+    if (local.length < obstacles.length) {
+      const found = gridSearch(start, startHeading, end, endHeading, local, bendPenalty, window);
+      if (found) return found;
+    }
+  }
+  return gridSearch(start, startHeading, end, endHeading, obstacles, bendPenalty, null);
+}
+
+/** Index of the first value of sorted `arr` greater than `v`. */
+function firstAbove(arr: number[], v: number): number {
+  let lo = 0;
+  let hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid] > v) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo;
+}
+
+/**
+ * The Dijkstra behind {@link orthogonalPath}, over the visibility grid of
+ * `obstacles` (clipped to `window` when given). Blocked nodes and edges are
+ * marked up front, one obstacle at a time over the grid cells it covers, with
+ * the same open-interior rules as `insideRect` / `segmentHitsRect`.
+ */
+function gridSearch(
+  start: Point,
+  startHeading: Heading,
+  end: Point,
+  endHeading: Heading | null,
+  obstacles: Rect[],
+  bendPenalty: number,
+  window: Rect | null
+): Point[] | null {
+  const within = (v: number, lo: number, size: number) => !window || (v >= lo - EPS && v <= lo + size + EPS);
+  const bounds = window ? [window.x, window.x + window.width] : [];
+  const boundsY = window ? [window.y, window.y + window.height] : [];
+  const xs = candidateCoords([
+    start.x,
+    end.x,
+    ...bounds,
+    ...obstacles.flatMap((r) => [r.x, r.x + r.width]).filter((v) => within(v, window?.x ?? 0, window?.width ?? 0))
+  ]);
+  const ys = candidateCoords([
+    start.y,
+    end.y,
+    ...boundsY,
+    ...obstacles.flatMap((r) => [r.y, r.y + r.height]).filter((v) => within(v, window?.y ?? 0, window?.height ?? 0))
+  ]);
   const nx = xs.length;
   const ny = ys.length;
   const idx = (i: number, j: number) => j * nx + i;
@@ -168,12 +249,25 @@ export function orthogonalPath(
   const ej = ys.findIndex((v) => near(v, end.y));
   if (si < 0 || sj < 0 || ei < 0 || ej < 0) return null;
 
-  // Grid nodes strictly inside an obstacle are blocked.
+  // Blocked: nodes strictly inside an obstacle, and edges through its interior.
+  // `hBlocked[idx(i, j)]` is the edge (i, j)→(i+1, j); `vBlocked` (i, j)→(i, j+1).
   const blocked = new Uint8Array(nx * ny);
-  for (let j = 0; j < ny; j++) {
-    for (let i = 0; i < nx; i++) {
-      const p = { x: xs[i], y: ys[j] };
-      if (obstacles.some((r) => insideRect(p, r))) blocked[idx(i, j)] = 1;
+  const hBlocked = new Uint8Array(nx * ny);
+  const vBlocked = new Uint8Array(nx * ny);
+  for (const r of obstacles) {
+    const left = r.x + EPS;
+    const right = r.x + r.width - EPS;
+    const top = r.y + EPS;
+    const bottom = r.y + r.height - EPS;
+    const i0 = firstAbove(xs, left); // first column strictly right of the left edge
+    const j0 = firstAbove(ys, top);
+    for (let j = j0; j < ny && ys[j] < bottom; j++) {
+      for (let i = i0; i < nx && xs[i] < right; i++) blocked[idx(i, j)] = 1;
+      // Horizontal edges on this (interior) row that overlap the open x-range.
+      for (let i = Math.max(0, i0 - 1); i < nx - 1 && xs[i] < right; i++) hBlocked[idx(i, j)] = 1;
+    }
+    for (let i = i0; i < nx && xs[i] < right; i++) {
+      for (let j = Math.max(0, j0 - 1); j < ny - 1 && ys[j] < bottom; j++) vBlocked[idx(i, j)] = 1;
     }
   }
   const startNode = idx(si, sj);
@@ -181,21 +275,36 @@ export function orthogonalPath(
   if (blocked[startNode] || blocked[endNode]) return null;
 
   const STEP: Record<Heading, [number, number]> = { 0: [1, 0], 1: [0, 1], 2: [-1, 0], 3: [0, -1] };
+  /** Whether the unit move from (i, j) along `h` crosses an obstacle's interior. */
+  const edgeBlocked = (i: number, j: number, h: Heading) =>
+    h === 0
+      ? hBlocked[idx(i, j)]
+      : h === 2
+        ? hBlocked[idx(i - 1, j)]
+        : h === 1
+          ? vBlocked[idx(i, j)]
+          : vBlocked[idx(i, j - 1)];
   const nStates = nx * ny * 4;
   const dist = new Float64Array(nStates).fill(Infinity);
   const prev = new Int32Array(nStates).fill(-1);
   const heap = new Heap();
   let seq = 0;
+  // A*: the heap is ordered by cost + the Manhattan distance left, a lower
+  // bound on what any route still has to travel (bends only add to it), so
+  // the first routes reaching the end are still the cheapest.
+  const toEnd = (i: number, j: number) => Math.abs(xs[i] - end.x) + Math.abs(ys[j] - end.y);
   const startState = startNode * 4 + startHeading;
   dist[startState] = 0;
-  heap.push(0, seq++, startState);
+  heap.push(toEnd(si, sj), seq++, startState);
 
   let best = -1;
   let bestCost = Infinity;
   while (heap.size > 0) {
-    const { cost, state } = heap.pop();
-    if (cost > dist[state] || cost >= bestCost) continue;
+    const { cost: f, state } = heap.pop();
+    if (f >= bestCost) break; // nothing left in the heap can beat the best route
     const node = state >> 2;
+    const cost = dist[state];
+    if (f > cost + toEnd(node % nx, (node - (node % nx)) / nx) + EPS) continue; // stale entry
     const h = (state & 3) as Heading;
     if (node === endNode) {
       const total = cost + (endHeading !== null && h !== endHeading ? bendPenalty : 0);
@@ -214,16 +323,13 @@ export function orthogonalPath(
       const nj = j + dj;
       if (ni < 0 || nj < 0 || ni >= nx || nj >= ny) continue;
       const nn = idx(ni, nj);
-      if (blocked[nn]) continue;
-      const a = { x: xs[i], y: ys[j] };
-      const b = { x: xs[ni], y: ys[nj] };
-      if (obstacles.some((r) => segmentHitsRect(a, b, r))) continue;
-      const nc = cost + Math.abs(b.x - a.x) + Math.abs(b.y - a.y) + (nh === h ? 0 : bendPenalty);
+      if (blocked[nn] || edgeBlocked(i, j, nh)) continue;
+      const nc = cost + Math.abs(xs[ni] - xs[i]) + Math.abs(ys[nj] - ys[j]) + (nh === h ? 0 : bendPenalty);
       const ns = nn * 4 + nh;
       if (nc < dist[ns]) {
         dist[ns] = nc;
         prev[ns] = state;
-        heap.push(nc, seq++, ns);
+        heap.push(nc + toEnd(ni, nj), seq++, ns);
       }
     }
   }
