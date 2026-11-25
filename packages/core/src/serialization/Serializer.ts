@@ -22,7 +22,7 @@ export class Serializer {
   static toJSON(doc: SldDocument): SldDocumentJson {
     return {
       version: SLD_SCHEMA_VERSION,
-      meta: { ...doc.meta },
+      meta: { ...doc.meta, ...(doc.meta.location ? { location: { ...doc.meta.location } } : {}) },
       grid: { ...doc.grid },
       elements: doc.all().map((e) => e.toJSON())
     };

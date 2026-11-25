@@ -1,5 +1,5 @@
 import { EXTERNAL_ASSET_KINDS } from '../types';
-import type { ElementJson, Endpoint, SldDocumentJson } from '../types';
+import type { ElementJson, Endpoint, GeoLocation, SldDocumentJson } from '../types';
 
 export const SLD_SCHEMA_VERSION = 2;
 
@@ -208,6 +208,8 @@ export function parseDocument(input: unknown): { errors: SldParseError[]; doc?: 
       name: m.name as string,
       substation: typeof m.substation === 'string' ? m.substation : undefined,
       voltageKv: typeof m.voltageKv === 'number' ? m.voltageKv : undefined,
+      // Dropped (like a malformed voltageKv) unless both coordinates are in range.
+      ...(isGeoLocation(m.location) ? { location: { lat: m.location.lat, lng: m.location.lng } } : {}),
       createdAt: typeof m.createdAt === 'string' ? m.createdAt : now,
       updatedAt: typeof m.updatedAt === 'string' ? m.updatedAt : now,
       // Opaque document-level metadata, passed through untouched.
@@ -284,3 +286,16 @@ function validateEndpoint(ep: unknown, connId: string, side: 'from' | 'to', fail
 // when absent, so nothing in existing documents needs rewriting. Registering
 // the identity migration lets the version bump upgrade v1 files on load.
 registerMigration(1, (json) => ({ ...json, version: 2 }));
+
+function isGeoLocation(v: unknown): v is GeoLocation {
+  if (!v || typeof v !== 'object') return false;
+  const { lat, lng } = v as Record<string, unknown>;
+  return (
+    typeof lat === 'number' &&
+    typeof lng === 'number' &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    Math.abs(lat) <= 90 &&
+    Math.abs(lng) <= 180
+  );
+}

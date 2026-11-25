@@ -250,6 +250,12 @@ export type ElementJson<TData = unknown> = BusBarJson<TData> | PositionJson<TDat
 
 // ── Document ─────────────────────────────────────────────────────────────────
 
+/** A point on the globe, in decimal degrees (WGS 84): `lat` in [-90, 90], `lng` in [-180, 180]. */
+export interface GeoLocation {
+  lat: number;
+  lng: number;
+}
+
 export interface DocumentMeta {
   id: string;
   name: string;
@@ -257,6 +263,11 @@ export interface DocumentMeta {
   substation?: string;
   /** Voltage level, in kV (e.g. 400). */
   voltageKv?: number;
+  /**
+   * Where the diagram sits geographically. Never read by the layout of a single
+   * diagram; composite tools use it to place children (see `arrangeByAnchors`).
+   */
+  location?: GeoLocation;
   createdAt: string;
   updatedAt: string;
   /** Opaque document-level metadata, roundtripped untouched. */
