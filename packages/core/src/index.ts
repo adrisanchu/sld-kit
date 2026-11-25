@@ -240,6 +240,15 @@ export {
 } from './composite/sections';
 export { tallyComposite, type CompositeTally } from './composite/tally';
 export {
+  removeOverlaps,
+  projectLocations,
+  arrangeByAnchors,
+  type OverlapItem,
+  type RemoveOverlapsOptions,
+  type ArrangeItem,
+  type ArrangeOptions
+} from './composite/arrange';
+export {
   AddChildCommand,
   RemoveChildCommand,
   TransformChildCommand,
