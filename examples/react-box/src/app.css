@@ -399,11 +399,87 @@
   }
 }
 
+/*
+  Locked substations — "bolted to the board" (see editor/BoltDecor.tsx): a hard
+  offset plate under the box and a padlock tab on its corner, in neutral ink so
+  it never competes with the voltage hues, the dashes (cables, open feeders) or
+  the selection accent. Screen only; the export doesn't draw it.
+*/
+:root {
+  --sld-bolt: oklch(0.446 0.043 257.281);
+}
+.dark {
+  --sld-bolt: oklch(0.869 0.022 252.894);
+}
+.sld-bolt-plate {
+  fill: var(--sld-bolt);
+  fill-opacity: 0.34;
+  animation: sld-fx-fade 200ms ease-out backwards;
+}
+.sld-bolt-plate[data-view='detail'] {
+  fill-opacity: 0.06;
+}
+.sld-bolt-frame {
+  fill: none;
+  stroke: var(--sld-bolt);
+  stroke-opacity: 0.5;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.sld-bolt-fill {
+  fill: var(--sld-bolt);
+}
+.sld-bolt-glyph {
+  fill: none;
+  stroke: var(--background);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+.sld-bolt-glyph-body {
+  fill: var(--background);
+}
+/* Locking clamps the tab on; a refused drag rattles it. */
+.sld-bolt-tab {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sld-bolt-clamp 240ms cubic-bezier(0.2, 1.4, 0.4, 1) backwards;
+}
+.sld-bolt-shake {
+  animation: sld-bolt-shake 380ms ease-in-out;
+}
+@keyframes sld-bolt-clamp {
+  from {
+    opacity: 0;
+    transform: scale(1.4);
+  }
+}
+@keyframes sld-bolt-shake {
+  20% {
+    translate: -2.5px 0;
+  }
+  40% {
+    translate: 2.5px 0;
+  }
+  60% {
+    translate: -1.5px 0;
+  }
+  80% {
+    translate: 1px 0;
+  }
+}
+/* A locked box can't be dragged: no move cursor over it. */
+.sld-child[data-locked='true'] .cursor-move {
+  cursor: default;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sld-fx,
   .sld-fx *,
   .sld-selection *,
   .sld-halo *,
+  .sld-bolt-plate,
+  .sld-bolt-tab,
+  .sld-bolt-shake,
   .sld-pop {
     animation: none !important;
     transition: none !important;

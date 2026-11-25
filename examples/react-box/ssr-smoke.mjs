@@ -179,6 +179,21 @@ const spreadEngine = new CompositeLayoutEngine(undefined, undefined, undefined, 
 const spreadDetail = spreadEngine.layout(detailFixture);
 const spreadBox = spreadEngine.layout(fixture);
 const plainBox = new CompositeLayoutEngine().layout(fixture);
+// Lock: a locked child carries data-locked, and the canvas draws the app's
+// `childDecor` under the children (plate) and over them (badge).
+const lockedFixture = buildBoxComposite();
+lockedFixture.setChildLocked('lib-delta', true);
+const lockedHtml = renderToStaticMarkup(
+  h(CompositeCanvas, {
+    layout: new CompositeLayoutEngine().layout(lockedFixture),
+    boxMode: true,
+    childDecor: (c) =>
+      c.instance.locked
+        ? { under: h('rect', { 'data-decor': 'under' }), over: h('circle', { 'data-decor': 'over' }) }
+        : null
+  })
+);
+const lockedSvg = new CompositeSvgExporter(new CompositeLayoutEngine()).export(lockedFixture, { boxMode: true });
 // Bulk import: the fictional sample batch, geo-placed and appended to the demo
 // fixture as ONE undoable step, with lines from the feeder ids the diagrams share.
 const importTarget = buildBoxComposite();
@@ -352,6 +367,14 @@ const checks = [
       opened.meta.boxMode === true &&
       opened.meta.defaultRouting === 'orthogonal'
   ],
+  ['lock: a locked child is marked data-locked (and only it)', count(lockedHtml, 'data-locked="true"') === 1],
+  [
+    'lock: childDecor draws under the children and over them',
+    lockedHtml.indexOf('data-decor="under"') > -1 &&
+      lockedHtml.indexOf('data-decor="under"') < lockedHtml.indexOf('data-locked="true"') &&
+      lockedHtml.indexOf('data-decor="over"') > lockedHtml.indexOf('data-locked="true"')
+  ],
+  ['lock: the export draws nothing for it', !lockedSvg.includes('locked') && !lockedSvg.includes('decor')],
   ['selection frame carries the child\'s colour class', selectedHtml.includes('class="sld-selection text-primary pointer-events-none sld-volt-400" data-state="selected"')]
 ];
 

@@ -182,7 +182,12 @@ export function ChildDiagramView({
   }
 
   return (
-    <g transform={child.transform.toSvgTransform()} opacity={dimmed ? 0.3 : 1} className="sld-child">
+    <g
+      transform={child.transform.toSvgTransform()}
+      opacity={dimmed ? 0.3 : 1}
+      className="sld-child"
+      data-locked={child.instance.locked ? 'true' : undefined}
+    >
       {/* The morph ghost: the previous frame's outline scaling into the new one. */}
       {morph && (
         <rect

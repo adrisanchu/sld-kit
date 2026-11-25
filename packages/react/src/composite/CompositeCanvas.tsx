@@ -52,6 +52,20 @@ function glyphBox(g: LineGlyph): Rect {
   return { x: g.at.x - s / 2, y: g.at.y - s / 2, width: s, height: s };
 }
 
+/** What a {@link CompositeCanvasProps.childDecor} function is told about the view. */
+export interface ChildDecorView {
+  /** Screen pixels per world unit at the current zoom: divide a px size by it to draw at a fixed screen size. */
+  pxPerUnit: number;
+}
+
+/** App-drawn decoration for one child, in world coordinates (see {@link CompositeCanvasProps.childDecor}). */
+export interface ChildDecor {
+  /** Drawn beneath every child (above the lines): e.g. a shadow or plate. */
+  under?: ReactNode;
+  /** Drawn above the children, beneath the selection / hover frames: e.g. a badge. */
+  over?: ReactNode;
+}
+
 export interface CompositeCanvasProps {
   layout: CompositeLayout;
   selectedId?: string | null;
@@ -150,6 +164,15 @@ export interface CompositeCanvasProps {
   textScreenSize?: { minPx: number; maxSize?: number } | null;
   /** Fallback text when a child diagram can't be resolved. */
   notFoundLabel?: string;
+  /**
+   * Per-child decoration the app draws itself (e.g. a "locked" badge), in world
+   * coordinates, never hit-testable. Re-called on every zoom, with the current
+   * {@link ChildDecorView.pxPerUnit}, so a badge can keep a constant screen
+   * size. Return `null` for an undecorated child. Screen only: the export never
+   * sees it. Locked children also carry `data-locked="true"` on their group,
+   * for pure-CSS styling.
+   */
+  childDecor?: (child: ChildLayout, view: ChildDecorView) => ChildDecor | null;
   /** Rendered last inside the `<svg>` — where the explorer injects flow overlays. */
   children?: ReactNode;
 
@@ -233,6 +256,7 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     lineNameScreenSize = null,
     textScreenSize = null,
     notFoundLabel = DEFAULT_CHILD_NOT_FOUND,
+    childDecor,
     children,
     onChildDown,
     onChildHover,
@@ -277,7 +301,8 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
   // Screen px per world unit from the live viewBox; the core re-places each name
   // at the size that keeps it readable without outgrowing its line.
   const pxPerUnit = (() => {
-    const rect = lineNameScreenSize || textScreenSize ? svgRef.current?.getBoundingClientRect() : undefined;
+    const rect =
+      lineNameScreenSize || textScreenSize || childDecor ? svgRef.current?.getBoundingClientRect() : undefined;
     return rect && viewBox.w > 0 && viewBox.h > 0 ? Math.min(rect.width / viewBox.w, rect.height / viewBox.h) : 0;
   })();
   const minPx = lineNameScreenSize?.minPx;
@@ -515,6 +540,10 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     () => [...layout.children.filter((c) => !c.expanded), ...layout.children.filter((c) => c.expanded)],
     [layout]
   );
+  // App decorations, asked once per render (they follow the zoom).
+  const decor = childDecor
+    ? orderedChildren.map((child) => ({ id: child.instance.id, ...(childDecor(child, { pxPerUnit }) ?? {}) }))
+    : null;
   const fmt = formatResolver ?? undefined;
 
   return (
@@ -621,6 +650,14 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
 
       {/* Children in z-order — an expanded child last, so its drawing sits above
           the neighbouring boxes it may overlap. */}
+      {decor?.map(({ id, under }) =>
+        under ? (
+          <g key={`decor-under:${id}`} className="pointer-events-none">
+            {under}
+          </g>
+        ) : null
+      )}
+
       {orderedChildren.map((child) => (
         <ChildDiagramView
           key={child.instance.id}
@@ -751,6 +788,15 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
           </text>
         ) : null;
       })}
+
+      {/* App decorations above the children (e.g. badges), under the selection. */}
+      {decor?.map(({ id, over }) =>
+        over ? (
+          <g key={`decor-over:${id}`} className="pointer-events-none">
+            {over}
+          </g>
+        ) : null
+      )}
 
       {/* Selection (+ rotation) and hover chrome on top: one frame per child, its
           state in `data-state`. Styleable through its classes and CSS variables

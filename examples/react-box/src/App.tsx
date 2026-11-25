@@ -26,6 +26,7 @@ import {
   SetLineNameCommand,
   DEFAULT_LINE_NAME_PLACEMENT,
   SetPortDirectionCommand,
+  SetChildrenLockedCommand,
   UpdateLineKindCommand,
   TransformChildCommand,
   newId,
@@ -49,12 +50,15 @@ import {
   slugify,
   useCommandStack,
   useSldDocument,
+  type ChildDecorView,
   type CompositeCanvasHandle
 } from '@sld-kit/react';
 import {
   ArrowLeft,
   Boxes,
   Layers,
+  Lock,
+  LockOpen,
   Magnet,
   Maximize,
   Move,
@@ -76,6 +80,7 @@ import type { AnchorFn } from './editor/Floating';
 import type { LineRatingData } from './fixture';
 import { SubstationDialog, type SubstationEditTarget } from './editor/SubstationDialog';
 import { ImportDialog } from './editor/ImportDialog';
+import { boltDecor } from './editor/BoltDecor';
 import { appendCommand, appendOrigin, boxSizes } from './importBatch';
 import {
   barFor,
@@ -129,6 +134,9 @@ type Picker = { point: Point; instanceId: string; sectionKey: string | null };
 const VIEW_STYLE = resolveViewStyle({
   composite: { selection: { padding: 8, radius: 6, bodyRadius: 4, cornerArm: 22, hoverCornerArm: 14 } }
 });
+
+/** The shortcut modifier as shown in tooltips and hints. */
+const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
 /** Placement grid for a new substation (composite units). */
 const PLACE_SNAP = 20;
@@ -410,6 +418,41 @@ export default function App() {
     setDraft((d) => (d.some((v) => v.kind !== 'point' && v.instanceId === id) ? [] : d));
   }, [selectedLineId, selectedChildId, focusedId, composite, run]);
 
+  // ── Lock: pin a substation exactly where it is ────────────────────────────
+  // Position only: a locked box keeps its stored x/y in both views, no layout
+  // algorithm moves it and it can't be dragged (it can still be deleted).
+  const selectedLocked = !!(selectedChildId && composite.getChild(selectedChildId)?.locked);
+  const toggleLock = useCallback(() => {
+    if (!selectedChildId || selectedLineId) return;
+    const child = composite.getChild(selectedChildId);
+    if (!child) return;
+    if (child.locked) return run(new SetChildrenLockedCommand([child.id], false));
+    // Detail view may show the drawing away from its stored spot (the spread):
+    // lock it where it's SHOWN, so both views agree — one undoable step.
+    const shown = layout.children.find((c) => c.instance.id === child.id)?.spreadOffset;
+    if (!shown) return run(new SetChildrenLockedCommand([child.id], true));
+    const before = { x: child.x, y: child.y, angleDeg: child.angleDeg };
+    const after = { ...before, x: child.x + shown.x, y: child.y + shown.y };
+    run(
+      new BatchCommand('Lock position', [
+        new TransformChildCommand('Move box', child.id, before, after),
+        new SetChildrenLockedCommand([child.id], true)
+      ])
+    );
+  }, [selectedChildId, selectedLineId, composite, layout, run]);
+  // A refused drag rattles the box's padlock for a moment.
+  const [shakeId, setShakeId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!shakeId) return;
+    const t = setTimeout(() => setShakeId(null), 400);
+    return () => clearTimeout(t);
+  }, [shakeId]);
+  const childDecor = useCallback(
+    (child: ChildLayout, view: ChildDecorView) =>
+      boltDecor(child, view, { boxMode, shake: child.instance.id === shakeId }),
+    [boxMode, shakeId]
+  );
+
   const handleChildDown = useCallback(
     ({ id, event }: { id: string; event: React.PointerEvent }) => {
       if (tool !== 'move') return;
@@ -429,6 +472,14 @@ export default function App() {
       const child = composite.getChild(id);
       const handle = canvasRef.current;
       if (!child || !handle) return;
+      if (child.locked) {
+        dragRef.current = null;
+        // Released over the background, the trailing click would clear the selection.
+        swallowClick.current = true;
+        setShakeId(id);
+        setHint(`Locked — unlock to move (${MOD}⇧L)`);
+        return;
+      }
       const shown = layout.children.find((c) => c.instance.id === id)?.spreadOffset ?? { x: 0, y: 0 };
       dragRef.current = {
         id,
@@ -686,6 +737,12 @@ export default function App() {
         blur();
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && (selectedLineId || selectedChildId)) deleteSelected();
+      // ⌘/Ctrl + Shift + L: lock / unlock the selected substation.
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        toggleLock();
+        return;
+      }
       // Tool shortcuts (no modifiers): O operate, V move, L draw; N new substation.
       if (!e.metaKey && !e.ctrlKey && !e.altKey) {
         const next = ({ o: 'operate', v: 'move', l: 'draw' } as const)[e.key.toLowerCase() as 'o' | 'v' | 'l'];
@@ -698,7 +755,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedLineId, selectedChildId, deleteSelected, blur, chooseTool, editor, importing]);
+  }, [selectedLineId, selectedChildId, deleteSelected, toggleLock, blur, chooseTool, editor, importing]);
 
   const exportSvg = () => {
     // Export through the same engine the canvas uses, so the SVG carries the
@@ -821,6 +878,7 @@ export default function App() {
             childColorClass={childColorClass}
             lineColorClass={lineColorClass}
             formatResolver={formatResolver}
+            childDecor={childDecor}
             onChildDown={handleChildDown}
             onCanvasPoint={onCanvasPoint}
             onDrawCommit={commitDraw}
@@ -945,6 +1003,14 @@ export default function App() {
             <Spline className="h-4 w-4" />
           </ToolButton>
           <ToolButton
+            title={`${selectedLocked ? 'Unlock position' : 'Lock position'} (${MOD}⇧L)`}
+            active={selectedLocked}
+            disabled={!selectedChildId || !!selectedLineId}
+            onClick={toggleLock}
+          >
+            {selectedLocked ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
+          </ToolButton>
+          <ToolButton
             title={selectedChildId && !selectedLineId ? 'Delete substation (and its lines)' : 'Delete line'}
             disabled={!selectedLineId && !selectedChildId}
             onClick={deleteSelected}
@@ -983,6 +1049,11 @@ export default function App() {
         {placing && (
           <p className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs text-primary-foreground shadow">
             Click to place {placing.meta.name} · Esc to cancel
+          </p>
+        )}
+        {tool === 'move' && hint && (
+          <p className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-amber-500 px-3 py-1 text-xs text-white shadow">
+            {hint}
           </p>
         )}
         {tool === 'draw' && !placing && (
