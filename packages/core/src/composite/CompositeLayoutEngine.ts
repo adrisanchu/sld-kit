@@ -156,7 +156,8 @@ export interface CompositeLayoutRequest {
   /**
    * Detail view with `detailSpread` on: instance ids the overlap removal must
    * not move — e.g. the child being dragged, so it stays under the pointer
-   * while its neighbours make room.
+   * while its neighbours make room. Locked children (`DiagramInstance.locked`)
+   * are always fixed, listed here or not.
    */
   fixed?: Iterable<string>;
 }
@@ -1294,7 +1295,9 @@ export class CompositeLayoutEngine {
     placeOf: (instance: DiagramInstance) => ChildPlacement
   ): ChildLayout[] {
     const gap = this.spreadGap ?? DETAIL_SPREAD_GAP;
-    const fixedIds = [...(fixed ?? [])].sort();
+    // Locked placements never move, like the request's `fixed` ids.
+    const locked = children.filter((c) => c.instance.locked).map((c) => c.instance.id);
+    const fixedIds = [...new Set([...(fixed ?? []), ...locked])].sort();
     const items = children.map((c) => ({ id: c.instance.id, rect: c.worldBounds }));
     const key = [
       gap,

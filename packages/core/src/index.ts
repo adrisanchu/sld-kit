@@ -262,6 +262,7 @@ export {
   SetLineNameCommand,
   SetBoxModeCommand,
   SetPortDirectionCommand,
+  SetChildrenLockedCommand,
   ChildDocumentCommand,
   SetAutoFacingCommand,
   SetDefaultRoutingCommand

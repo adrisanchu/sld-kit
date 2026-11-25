@@ -22,7 +22,8 @@ import {
 // Additive schema. v2 introduced line `kind` and `meta.boxMode`, and also carries
 // per-instance `portDirections` (feeder exit-direction pins) and
 // `meta.autoFacing` — both optional with defaults (missing `portDirections` →
-// none, missing `autoFacing` → strict), so no version bump or structural
+// none, missing `autoFacing` → strict) and per-instance `locked` (missing →
+// unlocked), so no version bump or structural
 // migration is required. v1 documents load transparently (missing `kind` →
 // `line`, missing `boxMode` → detailed). Line `name`/`namePlacement` are
 // optional too (missing → unnamed / default placement).
@@ -66,7 +67,8 @@ export class CompositeSerializer {
         angleDeg: normalizeAngle(c.angleDeg),
         labelAnchor: c.labelAnchor,
         labelDirection: normalizeQuarterTurn(c.labelDirection),
-        ...(Object.keys(c.portDirections).length ? { portDirections: { ...c.portDirections } } : {})
+        ...(Object.keys(c.portDirections).length ? { portDirections: { ...c.portDirections } } : {}),
+        ...(c.locked ? { locked: true } : {})
       })),
       lines: doc.allLines().map((l) => l.toJSON())
     };
@@ -213,6 +215,9 @@ function parseChildren(rawChildren: Record<string, unknown>[], fail: Fail): Diag
       childFail(`Child ${id}: invalid labelDirection`);
     }
     const portDirections = parsePortDirections(child.portDirections, id, childFail);
+    if (child.locked !== undefined && typeof child.locked !== 'boolean') {
+      childFail(`Child ${id}: invalid locked (expected true or false)`);
+    }
     if (!ok) continue;
     children.push({
       id,
@@ -222,7 +227,8 @@ function parseChildren(rawChildren: Record<string, unknown>[], fail: Fail): Diag
       angleDeg: normalizeAngle(child.angleDeg as number),
       labelAnchor: (child.labelAnchor as LabelAnchor | undefined) ?? 'top-left',
       labelDirection: normalizeQuarterTurn((child.labelDirection as number | undefined) ?? 0),
-      ...(portDirections ? { portDirections } : {})
+      ...(portDirections ? { portDirections } : {}),
+      ...(child.locked === true ? { locked: true } : {})
     });
   }
   return children;

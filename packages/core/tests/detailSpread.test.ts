@@ -119,6 +119,27 @@ describe('detail spread', () => {
     expect(minGap(layout)).toBeGreaterThanOrEqual(DETAIL_SPREAD_GAP - 1e-6);
   });
 
+  it('never moves a locked child, and stays clear of it', () => {
+    const doc = rowDoc();
+    // Unlocked, bravo is pushed aside; locked, it stays on its own box centre.
+    expect(childOf(spreading().layout(doc), 'bravo').spreadOffset).toBeDefined();
+    doc.setChildLocked('bravo', true);
+    const layout = spreading().layout(doc);
+    const bravo = childOf(layout, 'bravo');
+    expect(bravo.spreadOffset).toBeUndefined();
+    expect(centre(bravo.worldBounds).x).toBeCloseTo(boxCentre(bravo).x);
+    expect(centre(bravo.worldBounds).y).toBeCloseTo(boxCentre(bravo).y);
+    expect(minGap(layout)).toBeGreaterThanOrEqual(DETAIL_SPREAD_GAP - 1e-6);
+  });
+
+  it('keeps a locked child and a dragged one both put', () => {
+    const doc = rowDoc();
+    doc.setChildLocked('bravo', true);
+    const layout = spreading().layout(doc, { fixed: ['charlie'] });
+    expect(childOf(layout, 'bravo').spreadOffset).toBeUndefined();
+    expect(childOf(layout, 'charlie').spreadOffset).toBeUndefined();
+  });
+
   it('adopting the offset into x/y keeps the child where it was shown', () => {
     const doc = rowDoc();
     const engine = spreading();

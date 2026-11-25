@@ -226,6 +226,40 @@ export class SetLineNameCommand implements Command<CompositeDocument> {
 }
 
 /**
+ * Lock (or unlock) the placement of one or more children — a locked child keeps
+ * its exact position: no layout algorithm moves it. Takes a list of ids (ready
+ * for multi-select); each child's previous state is recorded on the first `do`,
+ * so undo restores a mixed selection exactly. Unknown ids are skipped.
+ */
+export class SetChildrenLockedCommand implements Command<CompositeDocument> {
+  readonly label: string;
+  private before: Map<string, boolean> | null = null;
+  private readonly ids: string[];
+
+  constructor(
+    ids: Iterable<string>,
+    private locked: boolean
+  ) {
+    this.ids = [...ids];
+    this.label = locked ? 'Lock position' : 'Unlock position';
+  }
+
+  do(doc: CompositeDocument): void {
+    this.before ??= new Map(
+      this.ids.flatMap((id) => {
+        const child = doc.getChild(id);
+        return child ? [[id, child.locked] as const] : [];
+      })
+    );
+    for (const id of this.before.keys()) doc.setChildLocked(id, this.locked);
+  }
+
+  undo(doc: CompositeDocument): void {
+    for (const [id, locked] of this.before ?? []) doc.setChildLocked(id, locked);
+  }
+}
+
+/**
  * Pin (or clear) a feeder's exit direction on a child, via before/after
  * snapshots — a deliberate per-instance override that beats the auto-facing
  * policy and the child's authored direction. `undefined` clears the pin (back to

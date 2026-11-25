@@ -50,6 +50,12 @@ export interface DiagramInstanceJson {
    * {@link DiagramInstance.effectiveDirection}. Omitted when empty.
    */
   portDirections?: Record<string, ExternalDirection>;
+  /**
+   * The placement is locked: its stored position is exact in every view and no
+   * layout algorithm moves it (see {@link DiagramInstance.locked}). Omitted when
+   * unlocked, the default.
+   */
+  locked?: boolean;
 }
 
 /** Options for {@link DiagramInstance.of} — the readable way to place a child. */
@@ -66,6 +72,8 @@ export interface DiagramInstanceOptions {
   label?: LabelPlacement;
   /** Per-feeder exit-direction pins (connectionId → side); defaults to none. */
   portDirections?: Record<string, ExternalDirection>;
+  /** Lock the placement (default unlocked). */
+  locked?: boolean;
 }
 
 /**
@@ -79,6 +87,14 @@ export class DiagramInstance {
   /** Resolved at open time; null = missing/corrupt child → placeholder. */
   resolved: SldDocument | null = null;
   resolveAttempted = false;
+  /**
+   * The user locked this placement: its stored `x`/`y` is exact in both views
+   * and no layout algorithm moves it — the detail spread keeps it fixed (as do
+   * future clean-ups unless asked to include locked placements). Position only:
+   * its lines still route, and it can still be deleted or expanded. Owned by the
+   * composition (two composites can lock the same diagram independently).
+   */
+  locked = false;
 
   constructor(
     public readonly id: string,
@@ -102,7 +118,7 @@ export class DiagramInstance {
    * one pass without a follow-up `SetChildLabelCommand`.
    */
   static of(opts: DiagramInstanceOptions): DiagramInstance {
-    return new DiagramInstance(
+    const inst = new DiagramInstance(
       opts.id ?? newId(),
       opts.libraryId,
       opts.x ?? 0,
@@ -112,6 +128,8 @@ export class DiagramInstance {
       normalizeQuarterTurn(opts.label?.direction ?? 0),
       { ...(opts.portDirections ?? {}) }
     );
+    inst.locked = opts.locked ?? false;
+    return inst;
   }
 
   /**
@@ -174,12 +192,13 @@ export class DiagramInstance {
       angleDeg: this.angleDeg,
       labelAnchor: this.labelAnchor,
       labelDirection: this.labelDirection,
-      ...(hasPins ? { portDirections: { ...this.portDirections } } : {})
+      ...(hasPins ? { portDirections: { ...this.portDirections } } : {}),
+      ...(this.locked ? { locked: true } : {})
     };
   }
 
   static fromJSON(json: DiagramInstanceJson): DiagramInstance {
-    return new DiagramInstance(
+    const inst = new DiagramInstance(
       json.id ?? newId(),
       json.libraryId,
       json.x,
@@ -189,5 +208,7 @@ export class DiagramInstance {
       normalizeQuarterTurn(json.labelDirection ?? 0),
       { ...(json.portDirections ?? {}) }
     );
+    inst.locked = json.locked === true;
+    return inst;
   }
 }

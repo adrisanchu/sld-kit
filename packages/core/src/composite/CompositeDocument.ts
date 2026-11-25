@@ -149,6 +149,14 @@ export class CompositeDocument {
     this.emit({ type: 'children', ids: [id] });
   }
 
+  /** Lock or unlock a child's placement (see `DiagramInstance.locked`). */
+  setChildLocked(id: string, locked: boolean): void {
+    const child = this.children.get(id);
+    if (!child || child.locked === locked) return;
+    child.locked = locked;
+    this.emit({ type: 'children', ids: [id] });
+  }
+
   /**
    * Pin (or clear, with `undefined`) a feeder's exit-direction override on a
    * child. A composition-owned presentation choice, mirroring `setChildLabel` —
