@@ -135,8 +135,12 @@ const VIEW_STYLE = resolveViewStyle({
   composite: { selection: { padding: 8, radius: 6, bodyRadius: 4, cornerArm: 22, hoverCornerArm: 14 } }
 });
 
-/** The shortcut modifier as shown in tooltips and hints. */
-const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+/**
+ * The lock shortcut as shown in tooltips and hints: ⌥L / Alt+L ("L for lock";
+ * plain and Shift+L are Draw). ⌘/Ctrl+Shift+L works too where the browser lets
+ * it through — password managers often claim it.
+ */
+const LOCK_KEY = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌥L' : 'Alt+L';
 
 /** Placement grid for a new substation (composite units). */
 const PLACE_SNAP = 20;
@@ -477,7 +481,7 @@ export default function App() {
         // Released over the background, the trailing click would clear the selection.
         swallowClick.current = true;
         setShakeId(id);
-        setHint(`Locked — unlock to move (${MOD}⇧L)`);
+        setHint(`Locked — unlock to move (${LOCK_KEY})`);
         return;
       }
       const shown = layout.children.find((c) => c.instance.id === id)?.spreadOffset ?? { x: 0, y: 0 };
@@ -728,17 +732,25 @@ export default function App() {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
       if (editor || importing) return; // a dialog owns the keyboard while open
+      // Escape steps back: first it cancels whatever is in progress (a line
+      // being drawn, the bay picker, a substation being placed, a line's editor);
+      // with nothing in progress, it leaves Draw for the default Move tool.
       if (e.key === 'Escape') {
+        const inProgress = draft.length > 0 || !!picker || !!placing || !!lineEditAt;
         setDraft([]);
         setPicker(null);
         setLineEditAt(null);
         setPlacing(null);
         setGhostAt(null);
         blur();
+        if (!inProgress && tool === 'draw') chooseTool('move');
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && (selectedLineId || selectedChildId)) deleteSelected();
-      // ⌘/Ctrl + Shift + L: lock / unlock the selected substation.
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
+      // ⌥L / Alt+L (or ⌘/Ctrl+Shift+L): lock / unlock the selected substation.
+      // By physical key: ⌥L types "¬" on a Mac.
+      const lockAlt = e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey;
+      const lockMod = (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey;
+      if (e.code === 'KeyL' && (lockAlt || lockMod)) {
         e.preventDefault();
         toggleLock();
         return;
@@ -755,7 +767,21 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedLineId, selectedChildId, deleteSelected, toggleLock, blur, chooseTool, editor, importing]);
+  }, [
+    selectedLineId,
+    selectedChildId,
+    deleteSelected,
+    toggleLock,
+    blur,
+    chooseTool,
+    editor,
+    importing,
+    draft.length,
+    picker,
+    placing,
+    lineEditAt,
+    tool
+  ]);
 
   const exportSvg = () => {
     // Export through the same engine the canvas uses, so the SVG carries the
@@ -1003,7 +1029,7 @@ export default function App() {
             <Spline className="h-4 w-4" />
           </ToolButton>
           <ToolButton
-            title={`${selectedLocked ? 'Unlock position' : 'Lock position'} (${MOD}⇧L)`}
+            title={`${selectedLocked ? 'Unlock position' : 'Lock position'} (${LOCK_KEY})`}
             active={selectedLocked}
             disabled={!selectedChildId || !!selectedLineId}
             onClick={toggleLock}
@@ -1064,8 +1090,8 @@ export default function App() {
           >
             {hint ??
               (draft.length === 0
-                ? 'Click a free feeder dot or a substation to start a line · Esc to cancel'
-                : 'Click a feeder dot or a substation to finish · click to bend')}
+                ? 'Click a free feeder dot or a substation to start a line · Esc to stop drawing'
+                : 'Click a feeder dot or a substation to finish · click to bend · Esc to cancel the line')}
           </p>
         )}
         {picker && pickerChild && (
