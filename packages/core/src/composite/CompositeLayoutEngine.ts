@@ -25,6 +25,7 @@ import { PortResolver, feederKey } from './PortResolver';
 import { facingSide, rotateSide, type BoxSide, type Port } from './ports';
 import {
   BOX_SIZE,
+  DETAIL_SPREAD_GAP,
   CABLE_DASH_ARRAY,
   CURVE_RADIUS,
   DEMAND_LEAD_LENGTH,
@@ -60,6 +61,7 @@ import {
 } from './labelCollisions';
 import { resolveFormat, type ElementFormat, type ElementFormatResolver, type FormatContext } from '../theme';
 import { feederBoxCenter, layoutSectionBoxes, type BoxSectionsResolver, type SectionBox, type SectionTie } from './sections';
+import { removeOverlaps } from './arrange';
 
 /** Fixed frame for an unresolved child, so it stays selectable and movable. */
 export const PLACEHOLDER_FRAME = { width: 360, height: 240 } as const;
@@ -134,6 +136,13 @@ export interface ChildLayout {
    * feeders attached at the drawing's tips instead of the box perimeter.
    */
   expanded?: boolean;
+  /**
+   * Detail view with `detailSpread` on: how far the overlap removal moved this
+   * child from its home spot (its drawing centred on its box). Absent when it
+   * didn't move. Adding it to the instance's `x`/`y` makes the displayed spot
+   * the stored one (e.g. when a drag starts, so the child doesn't jump).
+   */
+  spreadOffset?: Point;
 }
 
 /** Per-call layout request (view state, not document state). */
@@ -144,6 +153,57 @@ export interface CompositeLayoutRequest {
    * one substation in place (e.g. to operate its switches). Ignored in detail view.
    */
   expanded?: Iterable<string>;
+  /**
+   * Detail view with `detailSpread` on: instance ids the overlap removal must
+   * not move — e.g. the child being dragged, so it stays under the pointer
+   * while its neighbours make room. Locked children (`DiagramInstance.locked`)
+   * are always fixed, listed here or not.
+   */
+  fixed?: Iterable<string>;
+  /**
+   * Treat locked children as unlocked for this pass — for a clean-up that is
+   * allowed to move them (e.g. `tidyCommand` with `includeLocked`). Off by
+   * default: locked children are always fixed.
+   */
+  ignoreLocks?: boolean;
+}
+
+/**
+ * The frozen layout state of one composite (see `CompositeLayoutOptions.freeze`):
+ * each routed line's last route, and each detail drawing's last spread offset.
+ */
+interface FrozenState {
+  /** Keyed `box:` / `detail:` + `line:<id>` / `link:<connectionId>`: the ports it was routed for, and the route. */
+  routes: Map<string, { key: string; points: Point[] }>;
+  /** Detail spread, keyed by instance id: the frame it was solved for, and its offset. */
+  spread: Map<string, { rect: string; offset: Point }> | null;
+}
+
+/** Everything a `ChildLayout` shows, besides its instance and drawing (compared by identity). */
+function childKey(c: ChildLayout): string {
+  return JSON.stringify([
+    c.transform.toSvgTransform(),
+    c.frame,
+    c.worldBounds,
+    c.labelAngleDeg,
+    c.name,
+    c.nameLabel,
+    c.boxes ?? null,
+    c.ties ?? null,
+    c.expanded ?? false,
+    c.spreadOffset ?? null,
+    c.instance.locked
+  ]);
+}
+
+/** Where `makeChildLayout` puts a child's frame relative to its instance position. */
+interface ChildPlacement {
+  /** Centre the frame on a box of this size at the instance position (instead of at its top-left). */
+  centreOn?: { width: number; height: number };
+  /** Flag the child as expanded in place (box view). */
+  expanded?: boolean;
+  /** Extra world translation (the detail spread's offset). */
+  shift?: Point;
 }
 
 /**
@@ -1075,6 +1135,10 @@ interface FloatingLinkPair {
   pb: Port;
 }
 
+/** What a route depends on at one end: where the port is, which way it leaves, and the drawing it leaves. */
+const portKey = (p: Port): string =>
+  `${p.point.x},${p.point.y},${p.side}${p.owner ? `@${p.owner.x},${p.owner.y},${p.owner.width},${p.owner.height}` : ''}`;
+
 /** The world point a resolved floating endpoint attaches at (port attach point or free point). */
 const floatingEndPoint = (e: NonNullable<BoxEnd>): Point => (e.port ? e.port.point : e.point);
 
@@ -1108,6 +1172,30 @@ export interface CompositeLayoutOptions {
    * canvas starts from it (see {@link readableLineNameSize}).
    */
   lineNameFontSize?: number;
+  /**
+   * Detail view: keep the detail drawings from overlapping. A child's stored
+   * position is its *box* position; with this on, detail view centres each
+   * drawing on its box and pushes overlapping drawings apart (order-preserving,
+   * see `removeOverlaps`) — at layout time only, nothing is persisted. So the
+   * box view stays compact while the detail view never overlaps, and the
+   * export (same engine) matches. `gap` defaults to {@link DETAIL_SPREAD_GAP}.
+   * Off by default: detail drawings sit at the instance's top-left, as before.
+   */
+  detailSpread?: { gap?: number } | false;
+  /**
+   * Freeze the layout between edits, so it changes only where the document did:
+   * - a line keeps its last route until one of its own end ports changes —
+   *   another box moving across it doesn't re-route it;
+   * - in detail view (with `detailSpread`), a drawing whose frame didn't change
+   *   keeps its spread offset and holds still; only moved or new drawings are
+   *   placed, around the rest.
+   * A drag then moves only what is dragged, and a large composite stays fast
+   * (unchanged children are shared either way; see `layout`). The state is
+   * kept per document; {@link CompositeLayoutEngine.invalidate}
+   * (e.g. a "Tidy" — see `tidyCommand`) re-solves everything from scratch.
+   * Off by default: every layout is solved from scratch.
+   */
+  freeze?: boolean;
 }
 
 export class CompositeLayoutEngine {
@@ -1117,8 +1205,23 @@ export class CompositeLayoutEngine {
   private readonly boxSections?: BoxSectionsResolver;
   private readonly cornerRadius: number;
   private readonly lineNameFontSize: number;
-  /** Detail-view child layouts with swapped directions, keyed by `(libraryId, dir signature)`. */
-  private detailLayoutCache = new Map<string, DiagramLayout>();
+  private readonly spreadGap: number | null;
+  private readonly freeze: boolean;
+  /** Frozen layout state per composite (`freeze`); a WeakMap, so a dropped document takes its state with it. */
+  private frozen = new WeakMap<CompositeDocument, FrozenState>();
+  /** Last detail spread, keyed by its inputs, so re-renders don't re-solve it. */
+  private spreadMemo: { key: string; offsets: Map<string, Point> } | null = null;
+  /**
+   * Detail-view child layouts with swapped directions, per child document and
+   * direction signature; dropped when the document changes (see `changesOf`).
+   */
+  private detailLayoutCache = new WeakMap<SldDocument, { changes: number; layouts: Map<string, DiagramLayout> }>();
+  /** Each child document's drawing per child engine, until the document changes (see `changesOf`). */
+  private docLayouts = new WeakMap<SldDocument, { changes: number; layouts: Map<LayoutEngine, DiagramLayout> }>();
+  /** How many changes each child document has notified since this engine first drew it. */
+  private changeCounts = new WeakMap<SldDocument, { n: number }>();
+  /** Last pass's child layouts per composite, by instance id (see `share`). */
+  private lastChildren = new WeakMap<CompositeDocument, Map<string, { key: string; child: ChildLayout }>>();
 
   constructor(
     private childEngine: LayoutEngine = new LayoutEngine(),
@@ -1133,8 +1236,61 @@ export class CompositeLayoutEngine {
     this.boxSections = options.boxSections;
     this.cornerRadius = options.cornerRadius ?? CURVE_RADIUS;
     this.lineNameFontSize = options.lineNameFontSize ?? LINE_NAME_FONT_SIZE;
+    this.spreadGap = options.detailSpread ? (options.detailSpread.gap ?? DETAIL_SPREAD_GAP) : null;
+    this.freeze = options.freeze ?? false;
   }
 
+  /**
+   * Forget the frozen layout (see `CompositeLayoutOptions.freeze`) of `doc`, or
+   * of every document: the next layout re-routes every line and re-solves the
+   * detail spread from scratch. Without `freeze` there is nothing to forget.
+   */
+  invalidate(doc?: CompositeDocument): void {
+    if (doc) this.frozen.delete(doc);
+    else this.frozen = new WeakMap();
+    this.spreadMemo = null;
+  }
+
+  /** The frozen state of `doc`, created on first use; `null` unless `freeze` is on. */
+  private frozenState(doc: CompositeDocument): FrozenState | null {
+    if (!this.freeze) return null;
+    let state = this.frozen.get(doc);
+    if (!state) {
+      state = { routes: new Map(), spread: null };
+      this.frozen.set(doc, state);
+    }
+    return state;
+  }
+
+  /**
+   * A route, reused from the frozen state while `key` (the ports and lane it was
+   * routed for) is unchanged; computed and remembered otherwise. Without
+   * `freeze`, always computed.
+   */
+  private frozenRoute(
+    state: FrozenState | null,
+    id: string,
+    key: string,
+    compute: () => Point[] | null
+  ): Point[] | null {
+    if (!state) return compute();
+    // Copies in and out: a layout's points are its own, never the remembered ones.
+    const hit = state.routes.get(id);
+    if (hit && hit.key === key) return hit.points.map((p) => ({ ...p }));
+    const points = compute();
+    if (points) state.routes.set(id, { key, points: points.map((p) => ({ ...p })) });
+    else state.routes.delete(id);
+    return points;
+  }
+
+  /**
+   * Lay out a composite for the current view (`meta.boxMode`).
+   *
+   * **Structurally shared:** a child that comes out the same as in this
+   * engine's previous layout of `doc` keeps the very same `ChildLayout` object
+   * (and drawing), so a renderer can skip it by identity — React `memo`, Vue
+   * `shallowRef`, Svelte `immutable`. Treat layouts as read-only.
+   */
   layout(doc: CompositeDocument, request: CompositeLayoutRequest = {}): CompositeLayout {
     const boxMode = doc.meta.boxMode ?? false;
     const defaultRouting = doc.meta.defaultRouting;
@@ -1143,11 +1299,21 @@ export class CompositeLayoutEngine {
     // Box view can expand some children in place: their detail drawing, centred
     // on the box they replace (so the camera can fly onto the same spot).
     const expanded = new Set(boxMode ? (request.expanded ?? []) : []);
+    // Detail spread: every detail drawing starts centred on its box (then the
+    // overlap removal below moves it), like an expanded child in box view.
+    const spread = !boxMode && this.spreadGap !== null;
+    const placeOf = (instance: DiagramInstance): ChildPlacement =>
+      expanded.has(instance.id)
+        ? { centreOn: this.boxFrameSize(instance), expanded: true }
+        : spread
+          ? { centreOn: this.boxFrameSize(instance) }
+          : {};
     let children = doc.allChildren().map((instance) => {
       if (expanded.has(instance.id) && instance.resolved) {
-        return this.makeChildLayout(instance, this.childEngine.layout(instance.resolved), false, this.boxFrameSize(instance));
+        return this.makeChildLayout(instance, this.drawingOf(this.childEngine, instance.resolved), false, placeOf(instance));
       }
-      return this.makeChildLayout(instance, instance.resolved ? engine.layout(instance.resolved) : null, boxMode);
+      const drawing = instance.resolved ? this.drawingOf(engine, instance.resolved) : null;
+      return this.makeChildLayout(instance, drawing, boxMode, placeOf(instance));
     });
 
     // The floating-connector model (attach-per-view, node-relative leads,
@@ -1159,17 +1325,22 @@ export class CompositeLayoutEngine {
     const floating = boxMode || isOrthogonalRouting(defaultRouting);
     if (floating) {
       const autoFacing = doc.meta.autoFacing ?? false;
+      // Peers face each other from their home spots (box centres), so a feeder
+      // leaves on the same side in both views, spread or not.
       const peerCenterOf = autoFacing ? this.buildPeerCenters(doc, children) : undefined;
       // Detail view renders real child geometry, so a feeder whose effective
       // direction differs from its authored one needs the child *re-laid-out* with
       // that endpoint swapped — physically moving the arrow tip. Box view keeps
       // the rectangle and only re-picks the perimeter side, so it is untouched.
-      if (!boxMode) children = this.applyEffectiveDirections(doc, children, engine, autoFacing, peerCenterOf);
+      if (!boxMode) children = this.applyEffectiveDirections(doc, children, engine, autoFacing, peerCenterOf, placeOf);
       // An expanded child is real detail geometry too: same arrow re-layout.
-      else if (expanded.size) children = this.applyEffectiveDirections(doc, children, this.childEngine, autoFacing, peerCenterOf, expanded);
-      return this.layoutFloating(doc, children, boxMode, defaultRouting, autoFacing, peerCenterOf);
+      else if (expanded.size) children = this.applyEffectiveDirections(doc, children, this.childEngine, autoFacing, peerCenterOf, placeOf, expanded);
+      // Spread on the final frames (the arrow re-layout may have resized them).
+      if (spread) children = this.spreadDetail(doc, children, request, placeOf);
+      return this.share(doc, this.layoutFloating(doc, children, boxMode, defaultRouting, autoFacing, peerCenterOf));
     }
 
+    if (spread) children = this.spreadDetail(doc, children, request, placeOf);
     const lines = this.resolveLines(doc.allLines(), children, defaultRouting);
     // A manual line for a shared id takes precedence: suppress its auto-link.
     const claimed = new Set<string>();
@@ -1177,7 +1348,14 @@ export class CompositeLayoutEngine {
     const links = this.detectLinks(children, claimed, defaultRouting);
     this.resolveTextCollisions(lines, links, [], children);
     const bounds = this.unionBounds(children, links, lines, []);
-    return { children, links, lines, hangers: [], bounds, snapTips: this.externalConnectionTips(children) };
+    return this.share(doc, {
+      children,
+      links,
+      lines,
+      hangers: [],
+      bounds,
+      snapTips: this.externalConnectionTips(children)
+    });
   }
 
   /**
@@ -1185,17 +1363,18 @@ export class CompositeLayoutEngine {
    * frame. In box mode a resolved child gets the uniform `boxSize` frame (when
    * set); its compact layout is still kept, since the port resolver reads the
    * feeder tips from it to order same-side slots along the box edge.
-   */
-  /**
-   * `centreOn`: lay the frame out centred on a box of this size at the instance
-   * position (an expanded child replacing its box) instead of at its top-left.
+   *
+   * `placement.centreOn`: lay the frame out centred on a box of this size at the
+   * instance position (an expanded child replacing its box, or a spread detail
+   * drawing) instead of at its top-left; `placement.shift` then moves it further.
    */
   private makeChildLayout(
     instance: DiagramInstance,
     layout: DiagramLayout | null,
     boxMode = false,
-    centreOn?: { width: number; height: number }
+    placement: ChildPlacement = {}
   ): ChildLayout {
+    const { centreOn, shift } = placement;
     const size = !layout ? PLACEHOLDER_FRAME : boxMode && this.boxSize ? this.boxSize : layout.size;
     let frame: Rect = { x: 0, y: 0, width: size.width, height: size.height };
     // Box view: a consumer split lays several same-size boxes side by side; the
@@ -1209,8 +1388,8 @@ export class CompositeLayoutEngine {
     }
     const pivot: Point = { x: frame.width / 2, y: frame.height / 2 };
     // Centring keeps the world centre where the box's was: (x + bw/2, y + bh/2).
-    const dx = centreOn ? (centreOn.width - frame.width) / 2 : 0;
-    const dy = centreOn ? (centreOn.height - frame.height) / 2 : 0;
+    const dx = (centreOn ? (centreOn.width - frame.width) / 2 : 0) + (shift?.x ?? 0);
+    const dy = (centreOn ? (centreOn.height - frame.height) / 2 : 0) + (shift?.y ?? 0);
     const transform = new Transform2D(instance.x + dx, instance.y + dy, instance.angleDeg, pivot);
     return {
       instance,
@@ -1223,8 +1402,71 @@ export class CompositeLayoutEngine {
       name: instance.resolved?.meta.name || instance.libraryId,
       nameLabel: resolveNameLabelLayout(frame, instance.labelAnchor, instance.labelDirection, instance.angleDeg),
       ...(boxes ? { boxes, ties } : {}),
-      ...(centreOn ? { expanded: true } : {})
+      ...(placement.expanded ? { expanded: true } : {}),
+      ...(shift && (shift.x || shift.y) ? { spreadOffset: { ...shift } } : {})
     };
+  }
+
+  /**
+   * Detail spread: push overlapping detail drawings apart (see
+   * `CompositeLayoutOptions.detailSpread`), keeping `fixed` ids put, and
+   * re-wrap the moved children. Memoised on the inputs (ids, frames, fixed),
+   * so a re-render with nothing moved reuses the last solution.
+   */
+  private spreadDetail(
+    doc: CompositeDocument,
+    children: ChildLayout[],
+    request: CompositeLayoutRequest,
+    placeOf: (instance: DiagramInstance) => ChildPlacement
+  ): ChildLayout[] {
+    const gap = this.spreadGap ?? DETAIL_SPREAD_GAP;
+    // Locked placements never move, like the request's `fixed` ids (unless a
+    // clean-up asked to include them).
+    const locked = request.ignoreLocks ? [] : children.filter((c) => c.instance.locked).map((c) => c.instance.id);
+    const fixedIds = [...new Set([...(request.fixed ?? []), ...locked])].sort();
+    const items = children.map((c) => ({ id: c.instance.id, rect: c.worldBounds }));
+    const rectKey = (r: Rect) => `${r.x},${r.y},${r.width},${r.height}`;
+    const key = [gap, fixedIds.join(','), ...items.map(({ id, rect }) => `${id}:${rectKey(rect)}`)].join('|');
+    const state = this.frozenState(doc);
+    let offsets = !state && this.spreadMemo?.key === key ? this.spreadMemo.offsets : null;
+    if (!offsets) {
+      const previous = state?.spread;
+      if (previous) {
+        // Frozen: a drawing whose frame didn't change holds its last spot and
+        // stays put; only moved / new drawings are placed, around the rest.
+        const zero = { x: 0, y: 0 };
+        const keptOffset = (id: string, rect: Rect) => {
+          const prev = previous.get(id);
+          return prev && prev.rect === rectKey(rect) ? prev.offset : null;
+        };
+        const kept = items.filter((it) => keptOffset(it.id, it.rect)).map((it) => it.id);
+        const shifted = items.map((it) => {
+          const d = keptOffset(it.id, it.rect) ?? zero;
+          return { id: it.id, rect: { ...it.rect, x: it.rect.x + d.x, y: it.rect.y + d.y } };
+        });
+        const placed = removeOverlaps(shifted, { gap, fixed: [...kept, ...fixedIds], expand: false });
+        offsets = new Map(items.map((it) => [it.id, keptOffset(it.id, it.rect) ?? placed.get(it.id) ?? zero]));
+      } else {
+        // No crowd expansion: it scales about the fixed child when there is one
+        // and about the centroid otherwise, so starting a drag would shift the
+        // whole drawing. Pairwise pushes alone give the same answer either way.
+        offsets = removeOverlaps(items, { gap, fixed: fixedIds, expand: false });
+      }
+      const solved = offsets;
+      if (state) {
+        state.spread = new Map(
+          items.map((it) => [it.id, { rect: rectKey(it.rect), offset: solved.get(it.id) ?? { x: 0, y: 0 } }])
+        );
+      } else {
+        this.spreadMemo = { key, offsets };
+      }
+    }
+    const solved = offsets;
+    return children.map((child) => {
+      const d = solved.get(child.instance.id);
+      if (!d || (!d.x && !d.y)) return child;
+      return this.makeChildLayout(child.instance, child.layout, false, { ...placeOf(child.instance), shift: d });
+    });
   }
 
   /** The frame size a child has as a (single) box: the uniform `boxSize`, else its compact layout's. */
@@ -1249,6 +1491,8 @@ export class CompositeLayoutEngine {
     engine: LayoutEngine,
     autoFacing: boolean,
     peerCenterOf: Map<string, Point> | undefined,
+    /** How each child's frame sits on its instance position (centred, expanded…). */
+    placeOf: (instance: DiagramInstance) => ChildPlacement,
     /** Restrict to these instance ids (box view: just the expanded children). */
     only?: ReadonlySet<string>
   ): ChildLayout[] {
@@ -1269,21 +1513,28 @@ export class CompositeLayoutEngine {
       }
       if (overrides.size === 0) return child; // no effective change → share the cached layout
 
-      const relaid = this.relaidChildLayout(instance.libraryId, instance.resolved, engine, overrides);
-      return this.makeChildLayout(instance, relaid, false, child.expanded ? this.boxFrameSize(instance) : undefined);
+      const relaid = this.relaidChildLayout(instance.resolved, engine, overrides);
+      return this.makeChildLayout(instance, relaid, false, placeOf(instance));
     });
   }
 
-  /** Lay out a child with swapped endpoint directions, memoised by `(libraryId, dir signature)`. */
+  /**
+   * Lay out a child with swapped endpoint directions, memoised per child document
+   * and direction signature until the document changes.
+   */
   private relaidChildLayout(
-    libraryId: string,
     resolved: SldDocument,
     engine: LayoutEngine,
     overrides: Map<string, ExternalDirection>
   ): DiagramLayout {
     const signature = [...overrides.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([id, dir]) => `${id}=${dir}`).join(',');
-    const key = `${libraryId}\u0000${signature}`;
-    const cached = this.detailLayoutCache.get(key);
+    let entry = this.detailLayoutCache.get(resolved);
+    const changes = this.changesOf(resolved);
+    if (!entry || entry.changes !== changes) {
+      entry = { changes, layouts: new Map() };
+      this.detailLayoutCache.set(resolved, entry);
+    }
+    const cached = entry.layouts.get(signature);
     if (cached) return cached;
 
     const clone = Serializer.fromJSON(Serializer.toJSON(resolved));
@@ -1294,8 +1545,65 @@ export class CompositeLayoutEngine {
       if (ext) ext.direction = dir;
     }
     const relaid = engine.layout(clone);
-    this.detailLayoutCache.set(key, relaid);
+    entry.layouts.set(signature, relaid);
     return relaid;
+  }
+
+  /**
+   * How many changes `doc` has notified since this engine first saw it: a
+   * private change counter (the engine subscribes once per child document), so
+   * caches keyed by a document's state need nothing from `SldDocument` itself.
+   */
+  private changesOf(doc: SldDocument): number {
+    let count = this.changeCounts.get(doc);
+    if (!count) {
+      const c = { n: 0 };
+      doc.subscribe(() => c.n++);
+      this.changeCounts.set(doc, c);
+      count = c;
+    }
+    return count.n;
+  }
+
+  /**
+   * A child document's drawing, reused until the document changes — so an
+   * unchanged child keeps the very same drawing from one layout to the next.
+   */
+  private drawingOf(engine: LayoutEngine, doc: SldDocument): DiagramLayout {
+    const changes = this.changesOf(doc);
+    let entry = this.docLayouts.get(doc);
+    if (!entry || entry.changes !== changes) {
+      entry = { changes, layouts: new Map() };
+      this.docLayouts.set(doc, entry);
+    }
+    let drawing = entry.layouts.get(engine);
+    if (!drawing) {
+      drawing = engine.layout(doc);
+      entry.layouts.set(engine, drawing);
+    }
+    return drawing;
+  }
+
+  /**
+   * Structural sharing: hand back last pass's `ChildLayout` object for every
+   * child that came out the same (same instance and drawing, same placement),
+   * so a view can skip re-rendering what didn't change (React.memo, Vue
+   * shallowRef, Svelte `immutable`). Values are identical either way; only
+   * object identity is kept. Kept per composite.
+   */
+  private share(doc: CompositeDocument, layout: CompositeLayout): CompositeLayout {
+    const previous = this.lastChildren.get(doc) ?? new Map<string, { key: string; child: ChildLayout }>();
+    const next = new Map<string, { key: string; child: ChildLayout }>();
+    const children = layout.children.map((child) => {
+      const key = childKey(child);
+      const hit = previous.get(child.instance.id);
+      const same = hit && hit.key === key && hit.child.instance === child.instance && hit.child.layout === child.layout;
+      const kept = same ? hit.child : child;
+      next.set(child.instance.id, { key, child: kept });
+      return kept;
+    });
+    this.lastChildren.set(doc, next);
+    return { ...layout, children };
   }
 
   /**
@@ -1315,6 +1623,9 @@ export class CompositeLayoutEngine {
   ): CompositeLayout {
     const resolver = new PortResolver(children, boxMode, { autoFacing, peerCenterOf });
     const routingDefault = defaultRouting ?? 'straight';
+    // Frozen layout: routes are remembered per view, keyed by their ports.
+    const frozen = this.frozenState(doc);
+    const view = boxMode ? 'box' : 'detail';
     // Every child box is an obstacle the auto router keeps its lines out of.
     const obstacles = this.obstacles(children);
 
@@ -1329,12 +1640,21 @@ export class CompositeLayoutEngine {
 
     const lines: CompositeLineLayout[] = [];
     for (const line of doc.allLines()) {
-      const routed = this.routeFloatingLine(line, resolver, line.routing ?? routingDefault, obstacles, offsets.get(`line:${line.id}`) ?? 0);
+      const routed = this.routeFloatingLine(
+        line,
+        resolver,
+        line.routing ?? routingDefault,
+        obstacles,
+        offsets.get(`line:${line.id}`) ?? 0,
+        (key, compute) => this.frozenRoute(frozen, `${view}:line:${line.id}`, key, compute)
+      );
       if (routed) lines.push(routed);
     }
 
     // The remaining auto-links go through the same floating router.
-    const links = this.routeFloatingLinks(linkPairs, routingDefault, obstacles, offsets);
+    const links = this.routeFloatingLinks(linkPairs, routingDefault, obstacles, offsets, (id, key, compute) =>
+      this.frozenRoute(frozen, `${view}:link:${id}`, key, compute)
+    );
     const hangers = boxMode ? this.hangingTies(children, resolver, claimed, links) : [];
     this.resolveTextCollisions(lines, links, hangers, children);
 
@@ -1471,7 +1791,9 @@ export class CompositeLayoutEngine {
     resolver: PortResolver,
     routing: LineRouting,
     obstacles: Rect[],
-    laneOffset = 0
+    laneOffset = 0,
+    /** Reuse a remembered route while its key (ports + lane) holds (frozen layout). */
+    remember: (key: string, compute: () => Point[] | null) => Point[] | null = (_key, compute) => compute()
   ): CompositeLineLayout | null {
     const ends = line.vertices.map((v) => this.resolveFloatingEnd(v, resolver));
     const first = ends[0];
@@ -1498,11 +1820,16 @@ export class CompositeLayoutEngine {
 
     let points: Point[] | null = null;
     if (first?.port && last?.port) {
-      points = this.router.route(first.port, last.port, obstacles, { laneOffset });
+      const [a, b] = [first.port, last.port];
+      points = remember(`route|${portKey(a)}|${portKey(b)}|${laneOffset}`, () =>
+        this.router.route(a, b, obstacles, { laneOffset })
+      );
     } else if (first?.port && last?.point) {
-      points = this.router.toPoint(first.port, last.point, obstacles);
+      const [a, p] = [first.port, last.point];
+      points = remember(`to|${portKey(a)}|${p.x},${p.y}`, () => this.router.toPoint(a, p, obstacles));
     } else if (first?.point && last?.port) {
-      points = this.router.toPoint(last.port, first.point, obstacles);
+      const [a, p] = [last.port, first.point];
+      points = remember(`to|${portKey(a)}|${p.x},${p.y}`, () => this.router.toPoint(a, p, obstacles));
     } else {
       // No floating end: draw the resolved free points straight (manual polyline).
       const raw = ends.flatMap((e) => (e?.point ? [e.point] : []));
@@ -1606,18 +1933,26 @@ export class CompositeLayoutEngine {
     pairs: FloatingLinkPair[],
     routingDefault: LineRouting,
     obstacles: Rect[],
-    offsets: Map<string, number>
+    offsets: Map<string, number>,
+    /** Reuse a remembered route while its key (ports + lane) holds (frozen layout). */
+    remember: (id: string, key: string, compute: () => Point[] | null) => Point[] | null = (_id, _key, compute) =>
+      compute()
   ): CompositeLink[] {
     const orthogonal = isOrthogonalRouting(routingDefault);
-    return pairs.map(({ connectionId, firstId, secondId, pa, pb }) => ({
-      connectionId,
-      a: { instanceId: firstId, point: pa.point },
-      b: { instanceId: secondId, point: pb.point },
-      points: orthogonal
-        ? this.router.route(pa, pb, obstacles, { laneOffset: offsets.get(`link:${connectionId}`) ?? 0 })
-        : simplify([pa.point, pb.point]),
-      ...this.corner(routingDefault)
-    }));
+    return pairs.map(({ connectionId, firstId, secondId, pa, pb }) => {
+      const laneOffset = offsets.get(`link:${connectionId}`) ?? 0;
+      const key = `route|${firstId}|${portKey(pa)}|${secondId}|${portKey(pb)}|${laneOffset}`;
+      const routed = orthogonal
+        ? remember(connectionId, key, () => this.router.route(pa, pb, obstacles, { laneOffset }))
+        : null;
+      return {
+        connectionId,
+        a: { instanceId: firstId, point: pa.point },
+        b: { instanceId: secondId, point: pb.point },
+        points: routed ?? simplify([pa.point, pb.point]),
+        ...this.corner(routingDefault)
+      };
+    });
   }
 
   /**

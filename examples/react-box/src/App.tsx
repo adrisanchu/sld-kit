@@ -26,6 +26,8 @@ import {
   SetLineNameCommand,
   DEFAULT_LINE_NAME_PLACEMENT,
   SetPortDirectionCommand,
+  SetChildrenLockedCommand,
+  tidyCommand,
   UpdateLineKindCommand,
   TransformChildCommand,
   newId,
@@ -49,23 +51,27 @@ import {
   slugify,
   useCommandStack,
   useSldDocument,
+  type ChildDecorView,
   type CompositeCanvasHandle
 } from '@sld-kit/react';
 import {
   ArrowLeft,
   Boxes,
   Layers,
+  Lock,
+  LockOpen,
   Magnet,
   Maximize,
   Move,
-  PenLine,
   Plus,
   Pointer,
   Redo2,
   Spline,
   SquarePen,
   Trash2,
-  Undo2
+  Undo2,
+  WandSparkles,
+  Waypoints
 } from 'lucide-react';
 import { buildBoxComposite, ratingLabels, voltageClass, voltageFill } from './fixture';
 import { barBusIdLabel, boxSplit, openFeeders, sectionLabel } from './topology';
@@ -75,6 +81,10 @@ import { TargetPin } from './editor/TargetPin';
 import type { AnchorFn } from './editor/Floating';
 import type { LineRatingData } from './fixture';
 import { SubstationDialog, type SubstationEditTarget } from './editor/SubstationDialog';
+import { ImportDialog } from './editor/ImportDialog';
+import { boltDecor } from './editor/BoltDecor';
+import { TidyPrompt } from './editor/TidyPrompt';
+import { appendCommand, appendOrigin, boxSizes } from './importBatch';
 import {
   barFor,
   boxAt,
@@ -87,12 +97,16 @@ import {
   type DraftVertex
 } from './editor/terminals';
 
+/**
+ * The kinds a drawn line can have. No `demand`: a consumer is a feeder hanging
+ * off its substation's bay (drawn by the layout in box view), not a line
+ * between boxes.
+ */
 const LINE_KINDS: { kind: CompositeLineKind; label: string }[] = [
   { kind: 'line', label: 'Overhead' },
   { kind: 'cable', label: 'Cable' },
   { kind: 'transformer', label: 'Transformer' },
-  { kind: 'transformer3w', label: 'Three-winding transformer' },
-  { kind: 'demand', label: 'Demand' }
+  { kind: 'transformer3w', label: 'Three-winding transformer' }
 ];
 
 /**
@@ -124,6 +138,13 @@ const VIEW_STYLE = resolveViewStyle({
   composite: { selection: { padding: 8, radius: 6, bodyRadius: 4, cornerArm: 22, hoverCornerArm: 14 } }
 });
 
+/**
+ * The lock shortcut as shown in tooltips and hints: ⌥L / Alt+L ("L for lock";
+ * plain and Shift+L are Draw). ⌘/Ctrl+Shift+L works too where the browser lets
+ * it through — password managers often claim it.
+ */
+const LOCK_KEY = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌥L' : 'Alt+L';
+
 /** Placement grid for a new substation (composite units). */
 const PLACE_SNAP = 20;
 const snap = (v: number) => Math.round(v / PLACE_SNAP) * PLACE_SNAP;
@@ -137,8 +158,9 @@ const snap = (v: number) => Math.round(v / PLACE_SNAP) * PLACE_SNAP;
 const TEXT_SCREEN_SIZE = { minPx: 11 };
 
 export default function App() {
-  const [composite] = useState(buildBoxComposite);
-  const [stack] = useState(() => new CommandStack<CompositeDocument>());
+  // Both are replaced when an imported composite is opened (a fresh history).
+  const [composite, setComposite] = useState<CompositeDocument>(buildBoxComposite);
+  const [stack, setStack] = useState(() => new CommandStack<CompositeDocument>());
 
   // The document mutates in place, so a version counter — not its identity — is
   // what tells React to re-derive (the hook is generic over CompositeDocument).
@@ -160,10 +182,22 @@ export default function App() {
         new LayoutEngine({ ...SLD_LAYOUT, busBarLabelAnchor: 'center-left' }, { busBarLabel: barBusIdLabel }),
         undefined,
         undefined,
-        // Line names at 16, the size of the rating labels beside them.
-        { lineLabels: ratingLabels, boxSections: boxSplit, lineNameFontSize: 16 }
+        // Line names at 16, the size of the rating labels beside them. Detail
+        // view spreads the drawings apart so they never overlap, while the
+        // stored positions stay the compact box-view ones. `freeze`: between
+        // Tidies the layout only changes where the composite did — a drag moves
+        // (and re-routes) only what's dragged, so big grids stay fast and calm.
+        {
+          lineLabels: ratingLabels,
+          boxSections: boxSplit,
+          lineNameFontSize: 16,
+          detailSpread: {},
+          freeze: true
+        }
       ),
-    []
+    // A fresh engine per opened composite, so no cached layout outlives it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [composite]
   );
   const [tool, setTool] = useState<Tool>('move');
   // Operate: the substation the user opened (box view: expanded in place;
@@ -174,10 +208,20 @@ export default function App() {
   // (its detail drawing, centred on its box); everything else stays a box.
   const expanded = operating && composite.meta.boxMode && focusedId ? [focusedId] : [];
   const expandedKey = expanded.join();
+  // Detail view: the substation last dragged, which the spread must not push —
+  // its neighbours make room instead, during the drag and after the drop (so
+  // it stays where it was dropped). View state, like a selection.
+  const [dragFixed, setDragFixed] = useState<string | null>(null);
+  // Bumped by a Tidy: the engine forgot its frozen layout, even when no
+  // position changed (so `version` didn't move), and must lay out again.
+  const [tidyTick, setTidyTick] = useState(0);
 
   // `version` is the load-bearing dep: `composite` mutates in place.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const layout = useMemo(() => engine.layout(composite, { expanded }), [engine, composite, version, expandedKey]);
+  const layout = useMemo(
+    () => engine.layout(composite, { expanded, fixed: dragFixed ? [dragFixed] : [] }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [engine, composite, version, expandedKey, dragFixed, tidyTick]
+  );
 
   const canvasRef = useRef<CompositeCanvasHandle>(null);
 
@@ -193,6 +237,13 @@ export default function App() {
     const t = setTimeout(() => setHint(null), 2500);
     return () => clearTimeout(t);
   }, [hint]);
+  // A neutral confirmation (e.g. "Layout tidied"), shown in any tool.
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 2500);
+    return () => clearTimeout(t);
+  }, [notice]);
   // Last pointer-down position (viewport px), to anchor popovers.
   const lastPointer = useRef({ x: 0, y: 0 });
   const mainRef = useRef<HTMLElement>(null);
@@ -211,17 +262,37 @@ export default function App() {
   const lastChildDown = useRef<{ id: string; t: number } | null>(null);
   // `openEdit` is declared further down; the drag handler reaches it through a ref.
   const openEditRef = useRef<(id: string) => void>(() => {});
+  // Likewise `openCreate`, for the `N` shortcut.
+  const openCreateRef = useRef<() => void>(() => {});
   // The click trailing a placing pointer-down must not reach the canvas (Draw
   // would read it as a line point).
   const swallowClick = useRef(false);
   const [dark, setDark] = useState(false);
+  // The bulk-import dialog; `fitPending` frames the canvas once an import lands.
+  const [importing, setImporting] = useState(false);
+  const [fitPending, setFitPending] = useState(false);
+  // Tidy asks first when some substations are locked.
+  const [tidyAsk, setTidyAsk] = useState(false);
+  const lockedCount = composite.allChildren().filter((c) => c.locked).length;
+  /** Re-run the layout algorithms on everything: one undoable step for what moves. */
+  const runTidy = (includeLocked: boolean) => {
+    setTidyAsk(false);
+    const cmd = tidyCommand(composite, engine, { includeLocked });
+    if (cmd) run(cmd);
+    setTidyTick((t) => t + 1);
+    setNotice(cmd ? 'Layout tidied · undo to go back' : 'Layout tidied');
+  };
+  const tidy = () => (lockedCount > 0 ? setTidyAsk(true) : runTidy(false));
 
   // Box drag: transient setChildTransform during the gesture, one undoable
   // TransformChildCommand committed on pointer-up (mirrors the Svelte editor).
+  // `base` is where the drag moves from: the stored spot plus the detail
+  // spread's offset, i.e. where the drawing is shown — so it doesn't jump.
   const dragRef = useRef<{
     id: string;
     startPtr: Point;
     before: { x: number; y: number; angleDeg: number };
+    base: Point;
   } | null>(null);
 
   const boxMode = !!composite.meta.boxMode;
@@ -233,18 +304,38 @@ export default function App() {
 
   // De-energised feeder connections (their bay is open, or cut off from every
   // bar), by object identity — element ids can repeat across children.
+  // Kept stable while nothing open changes: a new set means a new
+  // `formatResolver`, which re-renders every substation (they're memoised on
+  // their props) — on every drag frame of a large grid, if rebuilt each time.
+  // A substation's open feeders are recomputed only when its drawing changes:
+  // the core layout shares an unchanged child's drawing (same object) until
+  // its document changes.
+  const openByDrawing = useMemo(() => new WeakMap<object, { seq: number; ids: Set<string> }>(), []);
+  const drawingSeq = useRef(0);
+  const openSetRef = useRef<{ key: string; set: Set<SldElement> } | null>(null);
   const openConnections = useMemo(() => {
     const out = new Set<SldElement>();
+    const parts: string[] = [];
     for (const c of layout.children) {
       const doc = c.instance.resolved;
-      if (!doc) continue;
-      for (const id of openFeeders(doc)) {
+      if (!doc || !c.layout) continue;
+      let hit = openByDrawing.get(c.layout);
+      if (!hit) {
+        hit = { seq: ++drawingSeq.current, ids: openFeeders(doc) };
+        openByDrawing.set(c.layout, hit);
+      }
+      for (const id of hit.ids) {
         const el = doc.getElement(id);
-        if (el) out.add(el);
+        if (!el) continue;
+        out.add(el);
+        parts.push(`${c.instance.id}/${id}#${hit.seq}`);
       }
     }
+    const key = parts.join('|');
+    if (openSetRef.current?.key === key) return openSetRef.current.set;
+    openSetRef.current = { key, set: out };
     return out;
-  }, [layout]);
+  }, [layout, openByDrawing]);
   // Core already greys + dashes every connection that *directly* touches an open
   // position. This resolver only extends that look to feeders the topology cuts
   // off further away (same format, so both read alike). Core applies it to the
@@ -281,7 +372,8 @@ export default function App() {
   // ── Draw: lines join bays (feeder terminals), one line per terminal ───────
   // Only free terminals are snap targets. Ending on a box body opens the bay
   // picker (a free feeder, or a new bay grown on commit). An anchored end after
-  // the start finishes the line; a double-click finishes a free lead (demand).
+  // the start finishes the line; clicks in between add bends. Both ends must
+  // land on a feeder or a substation (no free leads).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const snapTargets = useMemo(() => freeTips(layout, composite), [layout, composite, version]);
 
@@ -329,9 +421,11 @@ export default function App() {
         });
         return;
       }
+      // A line starts on a feeder or a substation; empty canvas only bends it.
+      if (draft.length === 0) return setHint('Start the line on a feeder dot or a substation');
       addVertex({ kind: 'point', point });
     },
-    [tool, picker, layout, boxMode, addVertex]
+    [tool, picker, layout, boxMode, draft.length, addVertex]
   );
 
   const commitDraw = useCallback(() => {
@@ -381,6 +475,41 @@ export default function App() {
     setDraft((d) => (d.some((v) => v.kind !== 'point' && v.instanceId === id) ? [] : d));
   }, [selectedLineId, selectedChildId, focusedId, composite, run]);
 
+  // ── Lock: pin a substation exactly where it is ────────────────────────────
+  // Position only: a locked box keeps its stored x/y in both views, no layout
+  // algorithm moves it and it can't be dragged (it can still be deleted).
+  const selectedLocked = !!(selectedChildId && composite.getChild(selectedChildId)?.locked);
+  const toggleLock = useCallback(() => {
+    if (!selectedChildId || selectedLineId) return;
+    const child = composite.getChild(selectedChildId);
+    if (!child) return;
+    if (child.locked) return run(new SetChildrenLockedCommand([child.id], false));
+    // Detail view may show the drawing away from its stored spot (the spread):
+    // lock it where it's SHOWN, so both views agree — one undoable step.
+    const shown = layout.children.find((c) => c.instance.id === child.id)?.spreadOffset;
+    if (!shown) return run(new SetChildrenLockedCommand([child.id], true));
+    const before = { x: child.x, y: child.y, angleDeg: child.angleDeg };
+    const after = { ...before, x: child.x + shown.x, y: child.y + shown.y };
+    run(
+      new BatchCommand('Lock position', [
+        new TransformChildCommand('Move box', child.id, before, after),
+        new SetChildrenLockedCommand([child.id], true)
+      ])
+    );
+  }, [selectedChildId, selectedLineId, composite, layout, run]);
+  // A refused drag rattles the box's padlock for a moment.
+  const [shakeId, setShakeId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!shakeId) return;
+    const t = setTimeout(() => setShakeId(null), 400);
+    return () => clearTimeout(t);
+  }, [shakeId]);
+  const childDecor = useCallback(
+    (child: ChildLayout, view: ChildDecorView) =>
+      boltDecor(child, view, { boxMode, shake: child.instance.id === shakeId }),
+    [boxMode, shakeId]
+  );
+
   const handleChildDown = useCallback(
     ({ id, event }: { id: string; event: React.PointerEvent }) => {
       if (tool !== 'move') return;
@@ -400,13 +529,23 @@ export default function App() {
       const child = composite.getChild(id);
       const handle = canvasRef.current;
       if (!child || !handle) return;
+      if (child.locked) {
+        dragRef.current = null;
+        // Released over the background, the trailing click would clear the selection.
+        swallowClick.current = true;
+        setShakeId(id);
+        setHint(`Locked — unlock to move (${LOCK_KEY})`);
+        return;
+      }
+      const shown = layout.children.find((c) => c.instance.id === id)?.spreadOffset ?? { x: 0, y: 0 };
       dragRef.current = {
         id,
         startPtr: handle.clientToSvg(event.clientX, event.clientY),
-        before: { x: child.x, y: child.y, angleDeg: child.angleDeg }
+        before: { x: child.x, y: child.y, angleDeg: child.angleDeg },
+        base: { x: child.x + shown.x, y: child.y + shown.y }
       };
     },
-    [tool, composite]
+    [tool, composite, layout]
   );
 
   // Global drag handlers: move transiently, commit one undoable step on release.
@@ -416,10 +555,11 @@ export default function App() {
       const handle = canvasRef.current;
       if (!d || !handle) return;
       const p = handle.clientToSvg(e.clientX, e.clientY);
+      setDragFixed(d.id);
       composite.setChildTransform(
         d.id,
-        d.before.x + (p.x - d.startPtr.x),
-        d.before.y + (p.y - d.startPtr.y),
+        d.base.x + (p.x - d.startPtr.x),
+        d.base.y + (p.y - d.startPtr.y),
         d.before.angleDeg
       );
     };
@@ -530,6 +670,7 @@ export default function App() {
     setPicker(null);
     setEditor({ mode: 'create', voltageKv: lastKv });
   };
+  openCreateRef.current = openCreate;
   /** Open an existing substation's detailed SLD in the editor dialog. */
   const openEdit = (instanceId: string) => {
     const doc = composite.getChild(instanceId)?.resolved;
@@ -643,25 +784,58 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
-      if (editor) return; // the dialog owns the keyboard while open
+      if (editor || importing || tidyAsk) return; // a dialog owns the keyboard while open
+      // Escape steps back: first it cancels whatever is in progress (a line
+      // being drawn, the bay picker, a substation being placed, a line's editor);
+      // with nothing in progress, it leaves Draw for the default Move tool.
       if (e.key === 'Escape') {
+        const inProgress = draft.length > 0 || !!picker || !!placing || !!lineEditAt;
         setDraft([]);
         setPicker(null);
         setLineEditAt(null);
         setPlacing(null);
         setGhostAt(null);
         blur();
+        if (!inProgress && tool === 'draw') chooseTool('move');
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && (selectedLineId || selectedChildId)) deleteSelected();
-      // Tool shortcuts (no modifiers): O operate, V move, L draw.
+      // ⌥L / Alt+L (or ⌘/Ctrl+Shift+L): lock / unlock the selected substation.
+      // By physical key: ⌥L types "¬" on a Mac.
+      const lockAlt = e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey;
+      const lockMod = (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey;
+      if (e.code === 'KeyL' && (lockAlt || lockMod)) {
+        e.preventDefault();
+        toggleLock();
+        return;
+      }
+      // Tool shortcuts (no modifiers): O operate, V move, L draw; N new substation.
       if (!e.metaKey && !e.ctrlKey && !e.altKey) {
         const next = ({ o: 'operate', v: 'move', l: 'draw' } as const)[e.key.toLowerCase() as 'o' | 'v' | 'l'];
         if (next) chooseTool(next);
+        if (e.key.toLowerCase() === 'n') {
+          e.preventDefault(); // don't type the "n" into the dialog's autofocused name field
+          openCreateRef.current();
+        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedLineId, selectedChildId, deleteSelected, blur, chooseTool, editor]);
+  }, [
+    selectedLineId,
+    selectedChildId,
+    deleteSelected,
+    toggleLock,
+    blur,
+    chooseTool,
+    editor,
+    importing,
+    tidyAsk,
+    draft.length,
+    picker,
+    placing,
+    lineEditAt,
+    tool
+  ]);
 
   const exportSvg = () => {
     // Export through the same engine the canvas uses, so the SVG carries the
@@ -674,6 +848,35 @@ export default function App() {
     });
     downloadText(`${slugify(composite.meta.name)}.svg`, svg, 'image/svg+xml');
   };
+  // ── Bulk import: append diagrams, or open a composite ─────────────────────
+  const importSizes = useCallback((docs: SldDocument[]) => boxSizes(engine, docs), [engine]);
+  const appendBatch = (docs: SldDocument[], positions: Map<string, Point>) => {
+    // Right of what's already there, as ONE undoable step (boxes + their lines).
+    const origin = appendOrigin(layout.children.length ? layout.bounds : null);
+    run(appendCommand(composite, docs, positions, origin, PLACE_SNAP));
+    setImporting(false);
+    setFitPending(true);
+  };
+  const openComposite = (next: CompositeDocument) => {
+    setComposite(next);
+    setStack(new CommandStack<CompositeDocument>());
+    setFocusedId(null);
+    setSelectedChildId(null);
+    setSelectedLineId(null);
+    setLineEditAt(null);
+    setDraft([]);
+    setPicker(null);
+    setPlacing(null);
+    setDragFixed(null);
+    setImporting(false);
+    setFitPending(true);
+  };
+  useEffect(() => {
+    if (!fitPending) return;
+    setFitPending(false);
+    canvasRef.current?.flyToFit({ durationMs: 450 });
+  }, [fitPending, layout]);
+
   const exportJson = () =>
     downloadText(
       `${slugify(composite.meta.name)}.json`,
@@ -755,6 +958,7 @@ export default function App() {
             childColorClass={childColorClass}
             lineColorClass={lineColorClass}
             formatResolver={formatResolver}
+            childDecor={childDecor}
             onChildDown={handleChildDown}
             onCanvasPoint={onCanvasPoint}
             onDrawCommit={commitDraw}
@@ -806,7 +1010,7 @@ export default function App() {
 
         {/* Minimal floating chrome — the app owns all orchestration; the canvas
             just emits semantic callbacks (see the adapter contract). */}
-        <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 flex-wrap items-center gap-1 rounded-full border border-border bg-background/85 px-2 py-1 shadow-lg backdrop-blur-sm">
+        <div className="absolute bottom-4 left-1/2 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-wrap items-center gap-1 rounded-full border border-border bg-background/85 px-2 py-1 shadow-lg backdrop-blur-sm">
           <ToolButton
             title="Operate (O) — open a substation, toggle its switches"
             active={tool === 'operate'}
@@ -822,7 +1026,10 @@ export default function App() {
             <Move className="h-4 w-4" />
           </ToolButton>
           <ToolButton title="Draw line (L)" active={tool === 'draw'} onClick={() => chooseTool('draw')}>
-            <PenLine className="h-4 w-4" />
+            <Waypoints className="h-4 w-4" />
+          </ToolButton>
+          <ToolButton title="New substation (N)" active={!!placing} onClick={openCreate}>
+            <Plus className="h-4 w-4" />
           </ToolButton>
 
           {tool === 'move' && selectedChildId && (
@@ -840,17 +1047,6 @@ export default function App() {
 
           {tool === 'draw' && (
             <div className="mx-1 flex items-center rounded-md border border-border p-0.5 text-xs">
-              <button
-                type="button"
-                title="New substation"
-                onClick={openCreate}
-                className={`flex items-center gap-1 rounded px-2 py-0.5 transition-colors ${
-                  placing ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <Plus className="h-3.5 w-3.5" /> Substation
-              </button>
-              <span className="mx-1 h-4 w-px bg-border" />
               {LINE_KINDS.map((k) => (
                 <button
                   key={k.kind}
@@ -886,6 +1082,17 @@ export default function App() {
           >
             <Spline className="h-4 w-4" />
           </ToolButton>
+          <ToolButton title="Tidy the layout (re-route all lines, separate boxes)" onClick={tidy}>
+            <WandSparkles className="h-4 w-4" />
+          </ToolButton>
+          <ToolButton
+            title={`${selectedLocked ? 'Unlock position' : 'Lock position'} (${LOCK_KEY})`}
+            active={selectedLocked}
+            disabled={!selectedChildId || !!selectedLineId}
+            onClick={toggleLock}
+          >
+            {selectedLocked ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
+          </ToolButton>
           <ToolButton
             title={selectedChildId && !selectedLineId ? 'Delete substation (and its lines)' : 'Delete line'}
             disabled={!selectedLineId && !selectedChildId}
@@ -906,6 +1113,14 @@ export default function App() {
           </ToolButton>
 
           <Divider />
+          <button
+            type="button"
+            title="Import diagram / composite JSON files"
+            onClick={() => setImporting(true)}
+            className="rounded px-2 py-1 text-xs hover:bg-accent"
+          >
+            Import
+          </button>
           <button type="button" onClick={exportSvg} className="rounded px-2 py-1 text-xs hover:bg-accent">
             SVG
           </button>
@@ -919,6 +1134,16 @@ export default function App() {
             Click to place {placing.meta.name} · Esc to cancel
           </p>
         )}
+        {notice && (
+          <p className="pointer-events-none absolute left-1/2 top-12 z-10 -translate-x-1/2 rounded-full border border-border bg-background px-3 py-1 text-xs shadow">
+            {notice}
+          </p>
+        )}
+        {tool === 'move' && hint && (
+          <p className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-amber-500 px-3 py-1 text-xs text-white shadow">
+            {hint}
+          </p>
+        )}
         {tool === 'draw' && !placing && (
           <p
             className={`pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full px-3 py-1 text-xs shadow ${
@@ -927,8 +1152,8 @@ export default function App() {
           >
             {hint ??
               (draft.length === 0
-                ? 'Click a free feeder dot or a substation to start a line · Esc to cancel'
-                : 'Click a feeder dot or a substation to finish · click to bend · double-click ends a free lead')}
+                ? 'Click a free feeder dot or a substation to start a line · Esc to stop drawing'
+                : 'Click a feeder dot or a substation to finish · click to bend · Esc to cancel the line')}
           </p>
         )}
         {picker && pickerChild && (
@@ -953,6 +1178,16 @@ export default function App() {
             kinds={LINE_KINDS}
             onApply={applyLineEdit}
             onClose={() => setLineEditAt(null)}
+          />
+        )}
+        {tidyAsk && <TidyPrompt lockedCount={lockedCount} onTidy={runTidy} onCancel={() => setTidyAsk(false)} />}
+        {importing && (
+          <ImportDialog
+            existingNames={composite.allChildren().flatMap((c) => (c.resolved ? [c.resolved.meta.name] : []))}
+            sizesOf={importSizes}
+            onAppend={appendBatch}
+            onOpen={openComposite}
+            onCancel={() => setImporting(false)}
           />
         )}
         {editor && (

@@ -99,3 +99,41 @@ describe('Serializer migrations', () => {
     ).toThrow(/No migration available from version 0/);
   });
 });
+
+describe('Serializer meta.location', () => {
+  const withLocation = (location: unknown) => ({
+    version: SLD_SCHEMA_VERSION,
+    meta: { id: 'a', name: 'x', location },
+    grid: { rows: 0, cols: 0 },
+    elements: []
+  });
+
+  it('roundtrips a geographic location', () => {
+    const doc = Serializer.fromJSON(withLocation({ lat: 0.25, lng: -0.5 }));
+    expect(doc.meta.location).toEqual({ lat: 0.25, lng: -0.5 });
+    const json = Serializer.toJSON(doc);
+    expect(Serializer.fromJSON(cycle(json)).meta.location).toEqual({ lat: 0.25, lng: -0.5 });
+    // A copy, not the document's own object.
+    json.meta.location!.lat = 9;
+    expect(doc.meta.location!.lat).toBe(0.25);
+  });
+
+  it('keeps only lat/lng', () => {
+    const doc = Serializer.fromJSON(withLocation({ lat: 1, lng: 2, alt: 3 }));
+    expect(doc.meta.location).toEqual({ lat: 1, lng: 2 });
+  });
+
+  it.each([
+    ['out-of-range latitude', { lat: 91, lng: 0 }],
+    ['out-of-range longitude', { lat: 0, lng: -181 }],
+    ['a string coordinate', { lat: '1', lng: 2 }],
+    ['a missing coordinate', { lat: 1 }],
+    ['a non-object', 'somewhere']
+  ])('drops %s', (_, location) => {
+    expect(Serializer.fromJSON(withLocation(location)).meta).not.toHaveProperty('location');
+  });
+
+  it('is absent when the file has none', () => {
+    expect(Serializer.toJSON(buildSouth400()).meta).not.toHaveProperty('location');
+  });
+});

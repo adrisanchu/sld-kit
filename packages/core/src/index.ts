@@ -175,7 +175,8 @@ export {
   PARALLEL_LANE_SPACING,
   LEADER_STROKE_WIDTH,
   LEADER_OPACITY,
-  LEADER_DOT_RADIUS
+  LEADER_DOT_RADIUS,
+  DETAIL_SPREAD_GAP
 } from './composite/layout-constants';
 export { CompositeDocument, type CompositeMeta, type CompositeChange } from './composite/CompositeDocument';
 export {
@@ -239,6 +240,16 @@ export {
   type SectionTie
 } from './composite/sections';
 export { tallyComposite, type CompositeTally } from './composite/tally';
+export { tidyCommand, TIDY_BOX_GAP, type TidyOptions } from './composite/tidy';
+export {
+  removeOverlaps,
+  projectLocations,
+  arrangeByAnchors,
+  type OverlapItem,
+  type RemoveOverlapsOptions,
+  type ArrangeItem,
+  type ArrangeOptions
+} from './composite/arrange';
 export {
   AddChildCommand,
   RemoveChildCommand,
@@ -252,6 +263,7 @@ export {
   SetLineNameCommand,
   SetBoxModeCommand,
   SetPortDirectionCommand,
+  SetChildrenLockedCommand,
   ChildDocumentCommand,
   SetAutoFacingCommand,
   SetDefaultRoutingCommand

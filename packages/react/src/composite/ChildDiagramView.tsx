@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { BoxSection, ChildLayout, Rect } from '@sld-kit/core';
 import { BusBarView } from '../elements/BusBarView';
 import { PositionView } from '../elements/PositionView';
@@ -81,8 +81,13 @@ export interface ChildDiagramViewProps {
  * child's own element views (read-only), with a transparent full-frame rect on
  * top capturing pointer events for whole-child selection/dragging. Selection
  * chrome lives OUTSIDE this transform (see SelectionFrame), in world coords.
+ *
+ * Memoised: it re-renders only when a prop changes. The core layout hands back
+ * the same `child` object for an unchanged child (structural sharing), so on a
+ * large composite a drag re-renders the dragged child only — keep the other
+ * props (callbacks, resolvers) stable for that to hold.
  */
-export function ChildDiagramView({
+export const ChildDiagramView = memo(function ChildDiagramView({
   child,
   interactive = true,
   explore = false,
@@ -182,7 +187,12 @@ export function ChildDiagramView({
   }
 
   return (
-    <g transform={child.transform.toSvgTransform()} opacity={dimmed ? 0.3 : 1} className="sld-child">
+    <g
+      transform={child.transform.toSvgTransform()}
+      opacity={dimmed ? 0.3 : 1}
+      className="sld-child"
+      data-locked={child.instance.locked ? 'true' : undefined}
+    >
       {/* The morph ghost: the previous frame's outline scaling into the new one. */}
       {morph && (
         <rect
@@ -421,4 +431,4 @@ export function ChildDiagramView({
         ))}
     </g>
   );
-}
+});

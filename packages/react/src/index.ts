@@ -31,7 +31,13 @@ export { AssetLegend, type AssetLegendProps } from './AssetLegend';
 export type { AssetLegendCategory, AssetLegendTally } from './legend';
 
 // ── Composite ("diagram of diagrams") canvas primitives ───────────────────
-export { CompositeCanvas, type CompositeCanvasProps, type CompositeCanvasHandle } from './composite/CompositeCanvas';
+export {
+  CompositeCanvas,
+  type CompositeCanvasProps,
+  type CompositeCanvasHandle,
+  type ChildDecor,
+  type ChildDecorView
+} from './composite/CompositeCanvas';
 export {
   CompositeExplorer,
   type CompositeExplorerProps,
