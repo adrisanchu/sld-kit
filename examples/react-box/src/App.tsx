@@ -304,18 +304,38 @@ export default function App() {
 
   // De-energised feeder connections (their bay is open, or cut off from every
   // bar), by object identity — element ids can repeat across children.
+  // Kept stable while nothing open changes: a new set means a new
+  // `formatResolver`, which re-renders every substation (they're memoised on
+  // their props) — on every drag frame of a large grid, if rebuilt each time.
+  // A substation's open feeders are recomputed only when its drawing changes:
+  // the core layout shares an unchanged child's drawing (same object) until
+  // its document changes.
+  const openByDrawing = useMemo(() => new WeakMap<object, { seq: number; ids: Set<string> }>(), []);
+  const drawingSeq = useRef(0);
+  const openSetRef = useRef<{ key: string; set: Set<SldElement> } | null>(null);
   const openConnections = useMemo(() => {
     const out = new Set<SldElement>();
+    const parts: string[] = [];
     for (const c of layout.children) {
       const doc = c.instance.resolved;
-      if (!doc) continue;
-      for (const id of openFeeders(doc)) {
+      if (!doc || !c.layout) continue;
+      let hit = openByDrawing.get(c.layout);
+      if (!hit) {
+        hit = { seq: ++drawingSeq.current, ids: openFeeders(doc) };
+        openByDrawing.set(c.layout, hit);
+      }
+      for (const id of hit.ids) {
         const el = doc.getElement(id);
-        if (el) out.add(el);
+        if (!el) continue;
+        out.add(el);
+        parts.push(`${c.instance.id}/${id}#${hit.seq}`);
       }
     }
+    const key = parts.join('|');
+    if (openSetRef.current?.key === key) return openSetRef.current.set;
+    openSetRef.current = { key, set: out };
     return out;
-  }, [layout]);
+  }, [layout, openByDrawing]);
   // Core already greys + dashes every connection that *directly* touches an open
   // position. This resolver only extends that look to feeders the topology cuts
   // off further away (same format, so both read alike). Core applies it to the

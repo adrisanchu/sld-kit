@@ -540,6 +540,21 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
     () => [...layout.children.filter((c) => !c.expanded), ...layout.children.filter((c) => c.expanded)],
     [layout]
   );
+  // Stable callbacks for the (memoised) children, always calling the latest
+  // props — so an app passing fresh closures each render doesn't re-render
+  // every child of a large composite.
+  const latest = useRef({ onChildDown, onChildFocus, onElementActivate });
+  latest.current = { onChildDown, onChildFocus, onElementActivate };
+  const childDown = useCallback((d: { id: string; event: React.PointerEvent }) => latest.current.onChildDown?.(d), []);
+  const childFocus = useCallback(
+    (d: { id: string; event: React.PointerEvent }) => latest.current.onChildFocus?.(d),
+    []
+  );
+  const elementActivate = useCallback(
+    (d: { instanceId: string; elementId: string }) => latest.current.onElementActivate?.(d),
+    []
+  );
+
   // App decorations, asked once per render (they follow the zoom).
   const decor = childDecor
     ? orderedChildren.map((child) => ({ id: child.instance.id, ...(childDecor(child, { pxPerUnit }) ?? {}) }))
@@ -678,10 +693,10 @@ export const CompositeCanvas = forwardRef<CompositeCanvasHandle, CompositeCanvas
           boxMode={boxMode}
           boxSubLabel={boxSubLabel}
           notFoundLabel={notFoundLabel}
-          onChildDown={onChildDown}
+          onChildDown={onChildDown ? childDown : undefined}
           onChildHover={reportHover}
-          onChildFocus={onChildFocus}
-          onElementActivate={onElementActivate}
+          onChildFocus={onChildFocus ? childFocus : undefined}
+          onElementActivate={onElementActivate ? elementActivate : undefined}
         />
       ))}
 
