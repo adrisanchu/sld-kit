@@ -332,6 +332,121 @@ per character, erring wide), so the checks are conservative.
   wrapped in a `rotate` group only when rotated, with presentation attributes
   only (Office-safe). Composites without names export byte-for-byte as before.
 
+## Large composites
+
+Tools for composites with tens or hundreds of children. The engine options are
+opt-in, so a small composite lays out exactly as before.
+
+### Geographic placement
+
+A diagram can say where it is: `meta.location: { lat, lng }` on `DocumentMeta`,
+in decimal degrees. It's optional, validated on load (dropped unless both values
+are finite and in range) and roundtripped, with no schema bump. Location is a
+fact about the diagram's real-world site, so it lives on the diagram; the
+composite only stores where each child is drawn.
+
+To place many children from their locations:
+
+```ts
+const anchors = projectLocations(docs.map((d) => d.meta.location!)); // north up
+const topLeft = arrangeByAnchors(
+  docs.map((d, i) => ({ id: d.meta.id, anchor: anchors[i], size: boxSizeOf(d) })),
+  { gap: 100, compaction: 0.6 }
+);
+```
+
+`arrangeByAnchors`:
+
+1. puts items with the same anchor side by side (e.g. two voltage levels of one site);
+2. blends each axis toward its rank order: `compaction` 0 keeps the true
+   proportions, 1 spaces items evenly. Either way, the order along each axis is
+   kept, so who sits west / north of whom doesn't change;
+3. scales so neighbours sit about one box apart, capped (above 0) at a few times
+   the boxes' own area;
+4. pushes remaining overlaps apart with `removeOverlaps`.
+
+It returns top-left points with the arrangement starting at (0, 0). Nothing here
+reads a document, so the same helpers work for any rectangles.
+
+`removeOverlaps(items, { gap, fixed, expand })` separates overlapping rectangles
+with the smallest moves: each overlapping pair is pushed apart along the axis
+it overlaps least, in the order it already has. `fixed` ids never move.
+`expand` (on by default) first spreads a dense crowd out uniformly, which
+settles large piles much faster.
+
+### Detail spread
+
+A child's `x` / `y` is one point shared by both views, but a full drawing is
+much bigger than its box. Laid out from the same points, detail drawings would
+overlap. With `new CompositeLayoutEngine(…, { detailSpread: { gap } })`:
+
+- the stored position stays the **box-view** position;
+- in detail view, each drawing is centred on its box centre, and overlapping
+  drawings are pushed apart at layout time. Nothing is persisted, and the export
+  (same engine) matches the screen;
+- `layout(doc, { fixed })` keeps the given children put (e.g. the one being
+  dragged, so its neighbours make room instead);
+- `child.spreadOffset` is how far a drawing was moved. Adding it to the child's
+  `x` / `y` makes the shown spot the stored one, so a drag starting in detail
+  view doesn't jump.
+
+Auto-facing derives feeder sides from the box centres, before the spread, so a
+feeder leaves on the same side in both views.
+
+### Locks
+
+`DiagramInstance.locked` (optional, saved; absent = unlocked) pins a child's
+position: its stored `x` / `y` is exact in **both** views, and no layout
+algorithm moves it. The detail spread keeps it fixed, and so does Tidy unless
+asked to include locked children. A lock is about position only: the child's
+lines still route, and it can still be deleted or expanded in place. It belongs
+to the placement in this composite, not to the diagram.
+
+`SetChildrenLockedCommand(ids, locked)` takes a list of ids, ready for
+multi-select, and restores each child's previous state on undo. An app that
+locks a child shown displaced by the spread should first move its `x` / `y` to
+the shown spot (`spreadOffset`), so both views agree.
+
+### Frozen layout and Tidy
+
+By default every `layout()` is solved from scratch: every line re-routes around
+every box, and the detail spread re-solves. On a large composite, a drag then
+re-routes lines far from the dragged box and shifts drawings that weren't
+touched. `{ freeze: true }` makes layouts change only where the document did:
+
+- a line keeps its last route until one of its **own** end ports changes;
+  another box moving across it doesn't re-route it;
+- in detail view, a drawing whose frame didn't change keeps its spot and holds
+  still; only moved or new drawings are placed, around the others.
+
+The state is kept per composite, inside the engine. `engine.invalidate(doc?)`
+forgets it.
+
+Tidy re-runs the algorithms on demand:
+
+```ts
+const cmd = tidyCommand(doc, engine, { includeLocked: false });
+if (cmd) stack.execute(cmd, doc); // else nothing moved; routes were still re-solved
+```
+
+It always re-routes every line and re-solves the spread. In box view it also
+pushes overlapping boxes apart (gap `TIDY_BOX_GAP`). In detail view with
+`includeLocked`, locked drawings join the spread and their new spots are
+stored; they stay locked. Position changes come back as one undoable command;
+re-solved routes are view state, with nothing to undo.
+
+One known limit: a drawing placed between two drawings that hold still, with
+no room for it, can stay overlapping until the next Tidy.
+
+### Structural sharing
+
+`layout()` always hands back the same `ChildLayout` object for a child that
+came out the same as in the engine's previous layout of that composite (same
+instance and drawing, same placement). A child's drawing is reused until its
+document changes (the engine subscribes to each child document it draws).
+Renderers can skip unchanged children by identity: React `memo`, Vue
+`shallowRef`, Svelte `immutable`. Treat layouts as read-only.
+
 ## `Transform2D`
 
 A rigid transform: rotate `angleDeg` about a child-local `pivot` (typically the
@@ -396,8 +511,8 @@ and in the Office-safe export (plain `<text>`, presentation attributes only).
 composite schema is early-stage and **current-only**: its version was reset
 (older shapes are rebuilt, not migrated), and later additions — line `kind`,
 `meta.boxMode`, `portDirections`, `meta.autoFacing`, line `data`, `name` and
-`namePlacement` — are all optional fields under v2, so v1 documents load
-unchanged. A version **newer** than the current one is rejected with
+`namePlacement`, and a child's `locked` — are all optional fields under v2, so
+v1 documents load unchanged. A version **newer** than the current one is rejected with
 `Unsupported composite version N (maximum: 2)`, including documents saved
 under the old, pre-reset numbering (e.g. `version: 3`), which the library
 can't interpret. An app should surface that message rather than a generic

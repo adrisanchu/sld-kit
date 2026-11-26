@@ -4,7 +4,8 @@ A private Vite + React demo of the **grid-level "box" view**: a simplified
 single-line diagram where each substation/bus is a voltage-coloured **box**
 (name + integer bus id) and the connections between them are drawn as orthogonal
 lines carrying a _kind_ — overhead (solid), cable (dashed), transformer
-(two-circle glyph) or demand (triangle terminus).
+(two-circle glyph) or three-winding transformer. Consumers, generators and
+reactors hang off their own bay as short leads with their glyph.
 
 **[▶ Live demo](https://adrisanchu.github.io/sld-kit/box/)**
 
@@ -19,6 +20,7 @@ pnpm --filter @sld-kit/core build     # adapters resolve core types from dist
 pnpm run dev:example:react-box        # Vite dev server on http://localhost:5176
 pnpm run build:example:react-box      # static SPA → examples/react-box/dist
 pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
+node examples/react-box/scripts/gen-sample-batch.mjs <dir>   # write the fictional sample batch as JSON files
 ```
 
 ## What it demonstrates
@@ -56,7 +58,9 @@ pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
   `busBarLabel` resolver and `busBarLabelAnchor: 'center-left'`, so the id sits
   beside the bar and never runs into a stem.
 - **Three tools** in the toolbar: **Operate** (`O`), **Move** (`V`, the
-  default) and **Draw** (`L`).
+  default) and **Draw** (`L`), plus **+** (`N`) for a new substation. `Esc`
+  steps back: it cancels what's in progress (a line, the bay picker, a
+  placement), and with nothing in progress it leaves Draw for Move.
   - **Operate** reuses the adapter's explore mode (`explore`, `focusedId`,
     `onChildFocus`, `onElementActivate`). In box view, clicking a substation
     *expands it in place* (core `layout(doc, { expanded })`): the box morphs
@@ -67,7 +71,7 @@ pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
     feeder sides. With a box selected, **Edit** (or a double-click) opens it in
     the substation editor; Delete removes it **with every line anchored to it**.
     A selected line opens a popover to change its kind and ratings.
-  - **Draw** adds lines and substations (see *Authoring* below).
+  - **Draw** adds lines (see _Authoring_ below).
   - Each toggle is a core `ChildDocumentCommand` wrapping an
     `UpdateElementCommand` on `Position.state`, so it's one step in the same
     undo/redo history as box moves and line edits.
@@ -83,7 +87,7 @@ pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
     (grown on commit by `AutoBayCommand`, wrapped in `ChildDocumentCommand`), or
     **Design bay…**. The new bays and the line are one core `BatchCommand`, so a
     single undo removes them all.
-  - **+ Substation** (in the Draw tool's group) opens `SubstationDialog`: a
+  - **+** (toolbar, or `N`) opens `SubstationDialog`: a
     modal editor for the detailed SLD — grid, bars (with their bus id), bays and
     feeders (connection tool: bay → margin), plus name and kV — on a throwaway
     working copy with its own undo stack. **Done** turns it into a ghost that
@@ -110,6 +114,38 @@ pnpm --filter @sld-kit-examples/react-box test   # headless SSR smoke test
   point.
 - **Office-safe export** — `CompositeSvgExporter` with `boxMode`, `boxFill` and
   `boxSubLabel` produces a PowerPoint-pasteable SVG.
+- **Bulk import** — **Import** (toolbar) opens `ImportDialog`: choose files, a
+  folder, drop `.json` files, or **Try a sample batch**. Core's `ImportPlan`
+  checks every file and the dialog reports each one. Diagrams are appended as
+  one undo step, to the right of what's there:
+  - **Geographic** placement from each diagram's `meta.location`
+    (`projectLocations` + `arrangeByAnchors`), with a slider from _True
+    distances_ to _Even spacing_ and a live preview; diagrams without a location
+    go in a grid below. Or plain **Grid** placement.
+  - Every feeder id two diagrams share becomes a line (a transformer feeder
+    gets the transformer kind).
+  - A batch holding a **composite** opens it instead, replacing the canvas
+    (its children resolved from the batch's diagrams).
+  - The sample (`src/samples/sampleBatch.ts`) is about 100 fictional "NODE nn"
+    diagrams over open sea near 0°N 0°E: a dense cluster, a looser ring, far
+    outliers, two-level sites and a few without a location.
+- **Detail spread** — the engine's `detailSpread` centres each detail drawing
+  on its box and pushes overlapping drawings apart, so the box view stays
+  compact while the detail view never overlaps. A drag in detail view starts
+  from the shown spot.
+- **Lock** — select a substation and use the padlock next to the bin (or
+  `⌥L` / `Alt+L`; `⌘/Ctrl+Shift+L` where the browser allows it). A locked
+  substation keeps its exact spot in both views, can't be dragged (its padlock
+  rattles) and is skipped by every layout algorithm (`DiagramInstance.locked`,
+  `SetChildrenLockedCommand`). On the canvas it looks "bolted to the board": a
+  neutral offset plate and a padlock tab, drawn through the canvas's
+  `childDecor` hook (`src/editor/BoltDecor.tsx`); screen only, never exported.
+- **Frozen layout + Tidy** — the engine runs with `freeze`: a drag moves and
+  re-routes only the dragged substation, so large grids stay responsive and
+  nothing else shifts. **Tidy** (the wand) re-runs everything on demand
+  (`tidyCommand`): every line re-routes and, in box view, overlapping boxes
+  are pushed apart, as one undo step. With locked substations it asks first
+  whether to include them.
 
 ## Floating-connector routing (in core)
 

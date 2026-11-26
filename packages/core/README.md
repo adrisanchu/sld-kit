@@ -586,13 +586,50 @@ t.unresolved;          // children left out (missing/corrupt → placeholder)
   custom types in first-seen order.
 - `tallyPositions(docs, opts)` does the same over plain `SldDocument`s.
 
+### Large composites: placement, locks and a frozen layout
+
+Helpers for composites with tens or hundreds of children, such as a whole grid
+imported at once. Full rules in
+[`docs/composite.md`](../../docs/composite.md#large-composites).
+
+- **Geographic placement.** A diagram can carry `meta.location: { lat, lng }`
+  (optional; validated, roundtripped). `projectLocations` turns locations into
+  plane points (north up), and `arrangeByAnchors(items, { gap, compaction })`
+  places boxes without overlaps while keeping who sits west / north of whom.
+  `compaction` runs from `0` (true distances) to `1` (even spacing) and also
+  caps the overall size. `removeOverlaps(rects, { gap, fixed })` is the
+  separation step on its own.
+- **Detail spread.** `new CompositeLayoutEngine(…, { detailSpread: {} })`: in
+  detail view each drawing is centred on its box and overlapping drawings are
+  pushed apart, at layout time only. A child's `x` / `y` stays its box-view
+  position. `layout(doc, { fixed })` keeps children put (e.g. one being dragged);
+  `child.spreadOffset` says how far a drawing was moved.
+- **Locks.** `DiagramInstance.locked` (saved; absent = unlocked) pins a child's
+  position in both views: no layout algorithm moves it. It's about position
+  only: its lines still route and it can be deleted.
+  `SetChildrenLockedCommand(ids, locked)` locks or unlocks several at once, as
+  one undo step.
+- **Frozen layout.** With `{ freeze: true }`, layouts change only where the
+  document did: a line keeps its route until one of its own ends moves, and
+  in detail view only moved or new drawings are placed. A drag then touches
+  only what is dragged. `engine.invalidate(doc?)` forgets the frozen state.
+- **Tidy.** `tidyCommand(doc, engine, { includeLocked })` re-routes everything,
+  re-solves the spread and, in box view, pushes overlapping boxes apart. It
+  returns one undoable command for what moved, or `null`. Locked children stay
+  put unless `includeLocked`.
+
+Layouts are **structurally shared**: a child that comes out the same as in the
+engine's previous layout of that composite keeps the very same `ChildLayout`
+object, so renderers can skip it by identity (React `memo`, Vue `shallowRef`,
+Svelte `immutable`). Treat layouts as read-only.
+
 ## Serialization & compatibility
 
 `Serializer` validates and (if needed) migrates unknown input, throwing an
 English `SldParseError` with a user-presentable message on malformed data. The
 current schema is **version 2**; v1 documents upgrade transparently on load. The
-`data` field is additive and optional, so the schema stays at v2 and every
-existing document loads unchanged.
+`data` field and `meta.location` are additive and optional, so the schema stays
+at v2 and every existing document loads unchanged.
 
 For a fix-then-recheck loop (an editor surfacing every issue at once, or an LLM
 self-correcting generated JSON), use the non-throwing validators that return the
@@ -665,9 +702,10 @@ the metadata helper `getElementData`, the asset counters `tallyPositions` /
 and the composite classes (`CompositeDocument`,
 `DiagramInstance`, `CompositeLayoutEngine`, `CompositeSerializer`,
 `CompositeSvgExporter`, `Transform2D`, `MapResolver`, the box-view section
-helpers `layoutSectionBoxes` / `sectionWorldCorners`, and the line-name helpers
+helpers `layoutSectionBoxes` / `sectionWorldCorners`, the line-name helpers
 `placeLineName` / `lineNameLayout` / `fittedLineNameSize` /
-`readableLineNameSize`).
+`readableLineNameSize`, the placement helpers `removeOverlaps` /
+`projectLocations` / `arrangeByAnchors`, and `tidyCommand`).
 
 See [`docs/architecture.md`](../../docs/architecture.md) for the design.
 
