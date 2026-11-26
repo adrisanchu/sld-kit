@@ -179,6 +179,23 @@ interface FrozenState {
   spread: Map<string, { rect: string; offset: Point }> | null;
 }
 
+/** Everything a `ChildLayout` shows, besides its instance and drawing (compared by identity). */
+function childKey(c: ChildLayout): string {
+  return JSON.stringify([
+    c.transform.toSvgTransform(),
+    c.frame,
+    c.worldBounds,
+    c.labelAngleDeg,
+    c.name,
+    c.nameLabel,
+    c.boxes ?? null,
+    c.ties ?? null,
+    c.expanded ?? false,
+    c.spreadOffset ?? null,
+    c.instance.locked
+  ]);
+}
+
 /** Where `makeChildLayout` puts a child's frame relative to its instance position. */
 interface ChildPlacement {
   /** Centre the frame on a box of this size at the instance position (instead of at its top-left). */
@@ -1172,8 +1189,9 @@ export interface CompositeLayoutOptions {
    * - in detail view (with `detailSpread`), a drawing whose frame didn't change
    *   keeps its spread offset and holds still; only moved or new drawings are
    *   placed, around the rest.
-   * A drag then moves only what is dragged, and a large composite stays fast.
-   * The state is kept per document; {@link CompositeLayoutEngine.invalidate}
+   * A drag then moves only what is dragged, and a large composite stays fast
+   * (unchanged children are shared either way; see `layout`). The state is
+   * kept per document; {@link CompositeLayoutEngine.invalidate}
    * (e.g. a "Tidy" — see `tidyCommand`) re-solves everything from scratch.
    * Off by default: every layout is solved from scratch.
    */
@@ -1193,8 +1211,17 @@ export class CompositeLayoutEngine {
   private frozen = new WeakMap<CompositeDocument, FrozenState>();
   /** Last detail spread, keyed by its inputs, so re-renders don't re-solve it. */
   private spreadMemo: { key: string; offsets: Map<string, Point> } | null = null;
-  /** Detail-view child layouts with swapped directions, keyed by `(libraryId, dir signature)`. */
-  private detailLayoutCache = new Map<string, DiagramLayout>();
+  /**
+   * Detail-view child layouts with swapped directions, per child document and
+   * direction signature; dropped when the document changes (see `changesOf`).
+   */
+  private detailLayoutCache = new WeakMap<SldDocument, { changes: number; layouts: Map<string, DiagramLayout> }>();
+  /** Each child document's drawing per child engine, until the document changes (see `changesOf`). */
+  private docLayouts = new WeakMap<SldDocument, { changes: number; layouts: Map<LayoutEngine, DiagramLayout> }>();
+  /** How many changes each child document has notified since this engine first drew it. */
+  private changeCounts = new WeakMap<SldDocument, { n: number }>();
+  /** Last pass's child layouts per composite, by instance id (see `share`). */
+  private lastChildren = new WeakMap<CompositeDocument, Map<string, { key: string; child: ChildLayout }>>();
 
   constructor(
     private childEngine: LayoutEngine = new LayoutEngine(),
@@ -1256,6 +1283,14 @@ export class CompositeLayoutEngine {
     return points;
   }
 
+  /**
+   * Lay out a composite for the current view (`meta.boxMode`).
+   *
+   * **Structurally shared:** a child that comes out the same as in this
+   * engine's previous layout of `doc` keeps the very same `ChildLayout` object
+   * (and drawing), so a renderer can skip it by identity — React `memo`, Vue
+   * `shallowRef`, Svelte `immutable`. Treat layouts as read-only.
+   */
   layout(doc: CompositeDocument, request: CompositeLayoutRequest = {}): CompositeLayout {
     const boxMode = doc.meta.boxMode ?? false;
     const defaultRouting = doc.meta.defaultRouting;
@@ -1275,9 +1310,10 @@ export class CompositeLayoutEngine {
           : {};
     let children = doc.allChildren().map((instance) => {
       if (expanded.has(instance.id) && instance.resolved) {
-        return this.makeChildLayout(instance, this.childEngine.layout(instance.resolved), false, placeOf(instance));
+        return this.makeChildLayout(instance, this.drawingOf(this.childEngine, instance.resolved), false, placeOf(instance));
       }
-      return this.makeChildLayout(instance, instance.resolved ? engine.layout(instance.resolved) : null, boxMode, placeOf(instance));
+      const drawing = instance.resolved ? this.drawingOf(engine, instance.resolved) : null;
+      return this.makeChildLayout(instance, drawing, boxMode, placeOf(instance));
     });
 
     // The floating-connector model (attach-per-view, node-relative leads,
@@ -1301,7 +1337,7 @@ export class CompositeLayoutEngine {
       else if (expanded.size) children = this.applyEffectiveDirections(doc, children, this.childEngine, autoFacing, peerCenterOf, placeOf, expanded);
       // Spread on the final frames (the arrow re-layout may have resized them).
       if (spread) children = this.spreadDetail(doc, children, request, placeOf);
-      return this.layoutFloating(doc, children, boxMode, defaultRouting, autoFacing, peerCenterOf);
+      return this.share(doc, this.layoutFloating(doc, children, boxMode, defaultRouting, autoFacing, peerCenterOf));
     }
 
     if (spread) children = this.spreadDetail(doc, children, request, placeOf);
@@ -1312,7 +1348,14 @@ export class CompositeLayoutEngine {
     const links = this.detectLinks(children, claimed, defaultRouting);
     this.resolveTextCollisions(lines, links, [], children);
     const bounds = this.unionBounds(children, links, lines, []);
-    return { children, links, lines, hangers: [], bounds, snapTips: this.externalConnectionTips(children) };
+    return this.share(doc, {
+      children,
+      links,
+      lines,
+      hangers: [],
+      bounds,
+      snapTips: this.externalConnectionTips(children)
+    });
   }
 
   /**
@@ -1470,21 +1513,28 @@ export class CompositeLayoutEngine {
       }
       if (overrides.size === 0) return child; // no effective change → share the cached layout
 
-      const relaid = this.relaidChildLayout(instance.libraryId, instance.resolved, engine, overrides);
+      const relaid = this.relaidChildLayout(instance.resolved, engine, overrides);
       return this.makeChildLayout(instance, relaid, false, placeOf(instance));
     });
   }
 
-  /** Lay out a child with swapped endpoint directions, memoised by `(libraryId, dir signature)`. */
+  /**
+   * Lay out a child with swapped endpoint directions, memoised per child document
+   * and direction signature until the document changes.
+   */
   private relaidChildLayout(
-    libraryId: string,
     resolved: SldDocument,
     engine: LayoutEngine,
     overrides: Map<string, ExternalDirection>
   ): DiagramLayout {
     const signature = [...overrides.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([id, dir]) => `${id}=${dir}`).join(',');
-    const key = `${libraryId}\u0000${signature}`;
-    const cached = this.detailLayoutCache.get(key);
+    let entry = this.detailLayoutCache.get(resolved);
+    const changes = this.changesOf(resolved);
+    if (!entry || entry.changes !== changes) {
+      entry = { changes, layouts: new Map() };
+      this.detailLayoutCache.set(resolved, entry);
+    }
+    const cached = entry.layouts.get(signature);
     if (cached) return cached;
 
     const clone = Serializer.fromJSON(Serializer.toJSON(resolved));
@@ -1495,8 +1545,65 @@ export class CompositeLayoutEngine {
       if (ext) ext.direction = dir;
     }
     const relaid = engine.layout(clone);
-    this.detailLayoutCache.set(key, relaid);
+    entry.layouts.set(signature, relaid);
     return relaid;
+  }
+
+  /**
+   * How many changes `doc` has notified since this engine first saw it: a
+   * private change counter (the engine subscribes once per child document), so
+   * caches keyed by a document's state need nothing from `SldDocument` itself.
+   */
+  private changesOf(doc: SldDocument): number {
+    let count = this.changeCounts.get(doc);
+    if (!count) {
+      const c = { n: 0 };
+      doc.subscribe(() => c.n++);
+      this.changeCounts.set(doc, c);
+      count = c;
+    }
+    return count.n;
+  }
+
+  /**
+   * A child document's drawing, reused until the document changes — so an
+   * unchanged child keeps the very same drawing from one layout to the next.
+   */
+  private drawingOf(engine: LayoutEngine, doc: SldDocument): DiagramLayout {
+    const changes = this.changesOf(doc);
+    let entry = this.docLayouts.get(doc);
+    if (!entry || entry.changes !== changes) {
+      entry = { changes, layouts: new Map() };
+      this.docLayouts.set(doc, entry);
+    }
+    let drawing = entry.layouts.get(engine);
+    if (!drawing) {
+      drawing = engine.layout(doc);
+      entry.layouts.set(engine, drawing);
+    }
+    return drawing;
+  }
+
+  /**
+   * Structural sharing: hand back last pass's `ChildLayout` object for every
+   * child that came out the same (same instance and drawing, same placement),
+   * so a view can skip re-rendering what didn't change (React.memo, Vue
+   * shallowRef, Svelte `immutable`). Values are identical either way; only
+   * object identity is kept. Kept per composite.
+   */
+  private share(doc: CompositeDocument, layout: CompositeLayout): CompositeLayout {
+    const previous = this.lastChildren.get(doc) ?? new Map<string, { key: string; child: ChildLayout }>();
+    const next = new Map<string, { key: string; child: ChildLayout }>();
+    const children = layout.children.map((child) => {
+      const key = childKey(child);
+      const hit = previous.get(child.instance.id);
+      const same = hit && hit.key === key && hit.child.instance === child.instance && hit.child.layout === child.layout;
+      const kept = same ? hit.child : child;
+      next.set(child.instance.id, { key, child: kept });
+      return kept;
+    });
+    this.lastChildren.set(doc, next);
+    return { ...layout, children };
   }
 
   /**

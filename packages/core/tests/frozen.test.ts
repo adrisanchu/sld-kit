@@ -129,6 +129,70 @@ describe('frozen layout (freeze)', () => {
   });
 });
 
+describe('structural sharing: unchanged children keep their layout object', () => {
+  // Always on (frozen layout or not): an unchanged child's ChildLayout is the
+  // very same object from one layout to the next, so views can skip it.
+  const engines = [
+    ['plain', () => new CompositeLayoutEngine()],
+    ['frozen', frozenEngine]
+  ] as const;
+
+  it.each(engines.flatMap(([name, make]) => [true, false].map((box) => [name, box, make] as const)))(
+    '%s engine, box view %s: only the moved child gets a new ChildLayout',
+    (_name, boxMode, make) => {
+      const doc = blockedDoc(boxMode);
+      const engine = make();
+      const first = engine.layout(doc);
+      doc.setChildTransform('d', 900, 600, 0);
+      const next = engine.layout(doc);
+      const same = (id: string) =>
+        first.children.find((c) => c.instance.id === id) === next.children.find((c) => c.instance.id === id);
+      expect(same('a') && same('b') && same('c')).toBe(true);
+      expect(same('d')).toBe(false);
+    }
+  );
+
+  it('a child whose document changed gets a new layout', () => {
+    const doc = blockedDoc();
+    const engine = new CompositeLayoutEngine();
+    const before = engine.layout(doc).children.find((c) => c.instance.id === 'c')!;
+    doc.getChild('c')!.resolved!.updateMeta({ name: 'Renamed' });
+    const after = engine.layout(doc).children.find((c) => c.instance.id === 'c')!;
+    expect(after).not.toBe(before);
+    expect(after.name).toBe('Renamed');
+  });
+
+  it('a lock toggle gives the child a new layout (views re-render it)', () => {
+    const doc = blockedDoc();
+    const engine = new CompositeLayoutEngine();
+    const before = engine.layout(doc).children.find((c) => c.instance.id === 'a')!;
+    doc.setChildLocked('a', true);
+    expect(engine.layout(doc).children.find((c) => c.instance.id === 'a')).not.toBe(before);
+  });
+
+  it('a re-laid detail drawing (pinned feeder) follows edits to its document', () => {
+    // Pinning a feeder to another side re-lays the child out from a copy, cached
+    // per document: an edit to the document must not leave the old copy in use.
+    const doc = blockedDoc(false);
+    doc.setPortDirection('c', 'c-d', 'up');
+    const engine = new CompositeLayoutEngine();
+    const before = engine.layout(doc).children.find((c) => c.instance.id === 'c')!;
+    const resolved = doc.getChild('c')!.resolved!;
+    resolved.replaceContents(Serializer.toJSON(sub('c', { 'c-d': 'down', 'c-x': 'right', 'c-y': 'right' })));
+    const after = engine.layout(doc).children.find((c) => c.instance.id === 'c')!;
+    expect(after.frame.width).toBeGreaterThan(before.frame.width);
+  });
+
+  it('keeps sharing per composite', () => {
+    const engine = new CompositeLayoutEngine();
+    const one = blockedDoc();
+    const first = engine.layout(one);
+    engine.layout(blockedDoc()); // another composite on the same engine
+    expect(engine.layout(one).children).toEqual(first.children);
+    expect(engine.layout(one).children.every((c, i) => c === first.children[i])).toBe(true);
+  });
+});
+
 describe('tidyCommand', () => {
   /** Box view, C dropped on top of B. */
   const piled = () => {
